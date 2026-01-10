@@ -1,0 +1,981 @@
+# Building a Data Processor Device
+
+A guide to message formats, codecs, and cryptographic signatures
+
+---
+
+## What You'll Build
+
+A data transformation device that converts between formats, signs messages cryptographically, and resolves named references. Think of it as a data pipeline processor.
+
+```
+POST /~processor@1.0/encode?format=json      Encode to JSON
+POST /~processor@1.0/decode?format=json      Decode from JSON
+POST /~processor@1.0/sign                    Sign message
+POST /~processor@1.0/verify                  Verify signature
+POST /~processor@1.0/convert?from=flat&to=structured  Convert formats
+GET  /~processor@1.0/lookup?name=alice       Resolve name
+POST /~processor@1.0/register?name=alice     Register name
+```
+
+---
+
+## What You'll Learn
+
+1. **hb_message** - Message signing, verification, and ID generation
+2. **dev_codec_*** - Format conversion between JSON, Structured, Flat
+3. **hb_link** - Link normalization and lazy loading
+4. **hb_maps** - Link-resolving map operations
+5. **hb_singleton** - Path-to-message conversion
+6. **dev_stack** - Message composition patterns
+7. **dev_name/dev_lookup** - Name resolution
+
+---
+
+## Prerequisites
+
+- Completed [L1: Key-Value Store](/book/build1)
+- Understanding of [Data Structures](/book/hb3)
+- Understanding of [Codecs](/book/dev2)
+
+---
+
+## Part 1: Message Signing with hb_message
+
+Every message in HyperBEAM can be cryptographically signed. The `hb_message` module handles signing, verification, and ID generation.
+
+### Signing Basics
+
+```erlang
+%% Create a wallet (RSA-4096 keypair)
+Wallet = ar_wallet:new(),
+
+%% Sign a message
+Msg = #{<<"data">> => <<"Hello">>},
+SignedMsg = hb_message:commit(Msg, #{priv_wallet => Wallet}),
+
+%% SignedMsg now contains:
+%% #{
+%%     <<"data">> => <<"Hello">>,
+%%     <<"commitments">> => #{...signatures...}
+%% }
+```
+
+### Verification
+
+```erlang
+%% Verify all signatures
+true = hb_message:verify(SignedMsg, all, Opts),
+
+%% Get list of signers (addresses)
+Signers = hb_message:signers(SignedMsg, Opts),
+%% Returns [<<"address1">>, <<"address2">>, ...]
+```
+
+### Message IDs
+
+```erlang
+%% Unsigned ID (content hash only)
+UnsignedID = hb_message:id(Msg, unsigned, Opts),
+
+%% Signed ID (includes signatures)
+SignedID = hb_message:id(SignedMsg, signed, Opts).
+```
+
+### Implementing Sign Endpoint
+
+```erlang
+-module(dev_processor).
+-export([info/3, sign/3, verify/3]).
+-include("include/hb.hrl").
+
+info(_M1, _M2, _Opts) ->
+    {ok, #{
+        <<"name">> => <<"processor">>,
+        <<"version">> => <<"1.0">>,
+        <<"description">> => <<"Data Processor with Codecs & Signatures">>
+    }}.
+
+%% POST /~processor@1.0/sign
+%% Signs the request body with the node's wallet
+sign(_M1, M2, Opts) ->
+    %% Get the message to sign from request body
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% Get wallet from options (node's wallet)
+    Wallet = hb_opts:get(priv_wallet, no_wallet, Opts),
+    case Wallet of
+        no_wallet ->
+            {error, #{<<"status">> => 500, <<"error">> => <<"No wallet configured">>}};
+        _ ->
+            %% Sign the message
+            SignedMsg = hb_message:commit(Body, #{priv_wallet => Wallet}),
+
+            %% Get the signer address
+            [Signer | _] = hb_message:signers(SignedMsg, Opts),
+
+            %% Get the message ID
+            ID = hb_message:id(SignedMsg, signed, Opts),
+
+            {ok, #{
+                <<"signed">> => SignedMsg,
+                <<"signer">> => Signer,
+                <<"id">> => hb_util:human_id(ID)
+            }}
+    end.
+
+%% POST /~processor@1.0/verify
+%% Verifies signatures on a message
+verify(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% Check if message has commitments
+    case maps:is_key(<<"commitments">>, Body) of
+        false ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Message not signed">>}};
+        true ->
+            %% Verify all signatures
+            Valid = hb_message:verify(Body, all, Opts),
+
+            %% Get signers
+            Signers = hb_message:signers(Body, Opts),
+
+            {ok, #{
+                <<"valid">> => Valid,
+                <<"signers">> => Signers,
+                <<"signer_count">> => length(Signers)
+            }}
+    end.
+```
+
+---
+
+## Part 2: Format Conversion with Codecs
+
+HyperBEAM has several codec devices for converting between formats:
+
+| Codec | Format | Use Case |
+|-------|--------|----------|
+| `dev_codec_json` | JSON | HTTP APIs |
+| `dev_codec_structured` | RFC 9651 | AO-Core messages |
+| `dev_codec_flat` | Flat map | Configuration |
+| `dev_codec_ans104` | ANS-104 | Arweave storage |
+
+### Using Codecs
+
+```erlang
+%% Encode to JSON
+{ok, JSON} = dev_codec_json:to(Msg, Opts),
+
+%% Decode from JSON
+{ok, Msg} = dev_codec_json:from(JSON, Opts).
+
+%% Convert between formats using hb_message
+Structured = hb_message:convert(Msg, <<"structured@1.0">>, Opts),
+ANS104 = hb_message:convert(Msg, <<"ans104@1.0">>, Opts).
+```
+
+### Implementing Encode/Decode
+
+```erlang
+-export([info/3, sign/3, verify/3, encode/3, decode/3]).
+
+%% POST /~processor@1.0/encode?format=json
+encode(_M1, M2, Opts) ->
+    Format = hb_ao:get(<<"format">>, M2, Opts, <<"json">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    case Format of
+        <<"json">> ->
+            {ok, Encoded} = dev_codec_json:to(Body, Opts),
+            {ok, #{<<"encoded">> => Encoded, <<"format">> => <<"json">>}};
+
+        <<"structured">> ->
+            Encoded = hb_message:convert(Body, <<"structured@1.0">>, Opts),
+            {ok, #{<<"encoded">> => Encoded, <<"format">> => <<"structured">>}};
+
+        <<"flat">> ->
+            {ok, Encoded} = dev_codec_flat:to(Body, Opts),
+            {ok, #{<<"encoded">> => Encoded, <<"format">> => <<"flat">>}};
+
+        _ ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Unknown format">>}}
+    end.
+
+%% POST /~processor@1.0/decode?format=json
+decode(_M1, M2, Opts) ->
+    Format = hb_ao:get(<<"format">>, M2, Opts, <<"json">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, <<>>),
+
+    case Format of
+        <<"json">> ->
+            {ok, Decoded} = dev_codec_json:from(Body, Opts),
+            {ok, #{<<"decoded">> => Decoded, <<"format">> => <<"json">>}};
+
+        <<"structured">> ->
+            Decoded = hb_message:convert(Body, tabm, <<"structured@1.0">>, Opts),
+            {ok, #{<<"decoded">> => Decoded, <<"format">> => <<"structured">>}};
+
+        <<"flat">> ->
+            {ok, Decoded} = dev_codec_flat:from(Body, Opts),
+            {ok, #{<<"decoded">> => Decoded, <<"format">> => <<"flat">>}};
+
+        _ ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Unknown format">>}}
+    end.
+```
+
+### Format Conversion
+
+```erlang
+-export([convert/3]).
+
+%% POST /~processor@1.0/convert?from=flat&to=structured
+convert(_M1, M2, Opts) ->
+    FromFormat = hb_ao:get(<<"from">>, M2, Opts, <<"flat">>),
+    ToFormat = hb_ao:get(<<"to">>, M2, Opts, <<"structured">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% First decode from source format
+    Decoded = case FromFormat of
+        <<"json">> ->
+            {ok, D} = dev_codec_json:from(Body, Opts), D;
+        <<"flat">> ->
+            {ok, D} = dev_codec_flat:from(Body, Opts), D;
+        <<"structured">> ->
+            hb_message:convert(Body, tabm, <<"structured@1.0">>, Opts);
+        _ ->
+            Body
+    end,
+
+    %% Then encode to target format
+    Encoded = case ToFormat of
+        <<"json">> ->
+            {ok, E} = dev_codec_json:to(Decoded, Opts), E;
+        <<"flat">> ->
+            {ok, E} = dev_codec_flat:to(Decoded, Opts), E;
+        <<"structured">> ->
+            hb_message:convert(Decoded, <<"structured@1.0">>, Opts);
+        _ ->
+            Decoded
+    end,
+
+    {ok, #{
+        <<"converted">> => Encoded,
+        <<"from">> => FromFormat,
+        <<"to">> => ToFormat
+    }}.
+```
+
+---
+
+## Part 3: Link Normalization with hb_link
+
+Links are references to cached data. Instead of embedding large nested structures, you store them separately and link to them.
+
+### Link Concept
+
+```erlang
+%% Full nested message:
+#{
+    <<"header">> => <<"value">>,
+    <<"body">> => #{<<"large">> => <<"data...">>}
+}
+
+%% After normalization (body offloaded to cache):
+#{
+    <<"header">> => <<"value">>,
+    <<"body+link">> => <<"ID-of-body">>
+}
+```
+
+### Creating Links
+
+```erlang
+%% Normalize (offload nested maps to cache)
+Normalized = hb_link:normalize(Msg, offload, Opts),
+
+%% The +link suffix indicates a link
+true = hb_link:is_link_key(<<"body+link">>),
+
+%% Remove the suffix
+<<"body">> = hb_link:remove_link_specifier(<<"body+link">>).
+```
+
+### Resolving Links
+
+```erlang
+%% Decode link keys to link tuples
+Decoded = hb_link:decode_all_links(Normalized),
+%% #{<<"body">> => {link, <<"ID">>, #{...}}}
+
+%% Load all linked data
+Loaded = hb_cache:ensure_all_loaded(Decoded, Opts).
+%% Back to full nested structure
+```
+
+### Implementing Normalize Endpoint
+
+```erlang
+-export([normalize/3, expand/3]).
+
+%% POST /~processor@1.0/normalize
+%% Normalizes nested structures into links
+normalize(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% Normalize with offload mode (writes to cache)
+    Normalized = hb_link:normalize(Body, offload, Opts),
+
+    %% Count how many links were created
+    LinkKeys = [K || K <- maps:keys(Normalized), hb_link:is_link_key(K)],
+
+    {ok, #{
+        <<"normalized">> => Normalized,
+        <<"links_created">> => length(LinkKeys)
+    }}.
+
+%% POST /~processor@1.0/expand
+%% Expands all links to full data
+expand(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% Decode link keys
+    Decoded = hb_link:decode_all_links(Body),
+
+    %% Load all linked data
+    Expanded = hb_cache:ensure_all_loaded(Decoded, Opts),
+
+    {ok, #{<<"expanded">> => Expanded}}.
+```
+
+---
+
+## Part 4: Link-Resolving Maps with hb_maps
+
+The `hb_maps` module provides map operations that automatically resolve links.
+
+### Standard vs hb_maps
+
+```erlang
+%% Standard maps module:
+Map = #{key => {link, ID, #{}}},
+Value = maps:get(key, Map),
+%% Value = {link, ID, #{}}  -- just the link tuple
+
+%% hb_maps module:
+Value = hb_maps:get(key, Map),
+%% Value = <actual cached data>  -- automatically loaded
+```
+
+### All Operations Resolve Links
+
+```erlang
+%% get resolves automatically
+Value = hb_maps:get(<<"key">>, Map),
+
+%% find also resolves
+{ok, Value} = hb_maps:find(<<"key">>, Map),
+
+%% map transforms resolved values
+Transformed = hb_maps:map(fun(_K, V) -> process(V) end, Map),
+
+%% filter works on resolved values
+Filtered = hb_maps:filter(fun(_K, V) -> is_valid(V) end, Map),
+
+%% fold accumulates resolved values
+Sum = hb_maps:fold(fun(_K, V, Acc) -> V + Acc end, 0, Map).
+```
+
+---
+
+## Part 5: Path Parsing with hb_singleton
+
+The `hb_singleton` module converts URL-like paths into message sequences.
+
+### Path Syntax
+
+```erlang
+%% Simple path
+Msgs = hb_singleton:from(#{<<"path">> => <<"/a/b/c">>}, Opts),
+%% [#{}, #{path => <<"a">>}, #{path => <<"b">>}, #{path => <<"c">>}]
+
+%% Inline parameters
+Msgs = hb_singleton:from(#{<<"path">> => <<"/action&key=value">>}, Opts),
+%% [#{}, #{path => <<"action">>, key => <<"value">>}]
+
+%% Device routing
+Msgs = hb_singleton:from(#{<<"path">> => <<"/~device@1.0/func">>}, Opts),
+%% Routes through device@1.0
+```
+
+### Round-Trip Conversion
+
+```erlang
+%% Path -> Messages
+Messages = hb_singleton:from(#{<<"path">> => <<"/a/b">>}, Opts),
+
+%% Messages -> Path
+TABM = hb_singleton:to(Messages),
+%% #{<<"path">> => <<"/a/b">>, ...}
+```
+
+---
+
+## Part 6: Message Composition with dev_stack
+
+The `dev_stack` device chains devices into ordered execution pipelines.
+
+### Stack Modes
+
+| Mode | Behavior |
+|------|----------|
+| **Fold** | Pass result through each device sequentially |
+| **Map** | Execute each device independently, collect results |
+
+### Using Stacks
+
+```erlang
+%% Define a stack device
+StackDevice = #{
+    <<"device">> => <<"stack@1.0">>,
+    <<"device-stack">> => [
+        #{<<"device">> => <<"json@1.0">>},
+        #{<<"device">> => <<"processor@1.0">>}
+    ],
+    <<"stack-execution-mode">> => <<"fold">>
+}.
+
+%% Execute the stack
+{ok, Result} = hb_ao:resolve(StackDevice, Request, Opts).
+```
+
+---
+
+## Part 7: Name Resolution
+
+### dev_lookup
+
+Retrieves resources by ID with format negotiation:
+
+```erlang
+%% Look up by ID
+{ok, Resource} = dev_lookup:get(
+    #{},
+    #{<<"id">> => <<"some-id">>},
+    Opts
+).
+```
+
+### dev_name / dev_local_name
+
+Resolves human-readable names:
+
+```erlang
+%% Register a name locally
+{ok, _} = dev_local_name:set(
+    #{},
+    #{<<"name">> => <<"alice">>, <<"value">> => <<"addr123">>},
+    Opts
+).
+
+%% Resolve the name
+{ok, Addr} = dev_name:resolve(
+    #{},
+    #{<<"name">> => <<"alice">>},
+    Opts
+).
+```
+
+### Implementing Name Endpoints
+
+```erlang
+-export([register_name/3, lookup/3]).
+
+%% POST /~processor@1.0/register?name=alice
+register_name(M1, M2, Opts) ->
+    Name = hb_ao:get(<<"name">>, M2, Opts),
+    Value = hb_ao:get(<<"value">>, M2, Opts),
+
+    case {Name, Value} of
+        {not_found, _} ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'name'">>}};
+        {_, not_found} ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'value'">>}};
+        {N, V} ->
+            %% Use our KV store pattern for name registry
+            State = load_names(M1, Opts),
+            NewState = maps:put(N, V, State),
+            M1Updated = save_names(M1, NewState, Opts),
+            {ok, hb_ao:set(M1Updated, #{
+                <<"registered">> => N,
+                <<"value">> => V
+            }, Opts)}
+    end.
+
+%% GET /~processor@1.0/lookup?name=alice
+lookup(M1, M2, Opts) ->
+    Name = hb_ao:get(<<"name">>, M2, Opts),
+
+    case Name of
+        not_found ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'name'">>}};
+        N ->
+            State = load_names(M1, Opts),
+            case maps:get(N, State, not_found) of
+                not_found ->
+                    {error, #{<<"status">> => 404, <<"error">> => <<"Name not found">>}};
+                Value ->
+                    {ok, #{<<"name">> => N, <<"value">> => Value}}
+            end
+    end.
+
+%% Internal helpers for name storage
+-define(NAMES_KEY, <<"processor-names-id">>).
+
+load_names(M1, Opts) ->
+    case hb_private:get(M1, ?NAMES_KEY, Opts) of
+        not_found -> #{};
+        ID ->
+            case hb_cache:read(ID, Opts) of
+                {ok, State} -> hb_cache:ensure_all_loaded(State, Opts);
+                not_found -> #{}
+            end
+    end.
+
+save_names(M1, State, Opts) ->
+    {ok, ID} = hb_cache:write(State, Opts),
+    hb_private:set(M1, #{?NAMES_KEY => ID}, Opts).
+```
+
+---
+
+## Part 8: Deduplication with dev_dedup
+
+Prevents processing duplicate messages:
+
+```erlang
+%% Check for duplicates before processing
+case dev_dedup:check(M1, M2, Opts) of
+    {ok, seen} ->
+        %% Already processed
+        {ok, #{<<"status">> => <<"duplicate">>}};
+    {ok, M1New} ->
+        %% First time, mark as seen and process
+        process(M1New, M2, Opts)
+end.
+```
+
+---
+
+## Complete Code
+
+Here's the complete `dev_processor.erl`:
+
+```erlang
+%%%-------------------------------------------------------------------
+%%% @doc Data Processor Device
+%%%
+%%% Format conversion, signing, and name resolution.
+%%%
+%%% API:
+%%%   POST /~processor@1.0/encode?format=json    Encode to format
+%%%   POST /~processor@1.0/decode?format=json    Decode from format
+%%%   POST /~processor@1.0/convert?from=X&to=Y   Convert between formats
+%%%   POST /~processor@1.0/sign                  Sign message
+%%%   POST /~processor@1.0/verify                Verify signatures
+%%%   POST /~processor@1.0/normalize             Normalize to links
+%%%   POST /~processor@1.0/expand                Expand links
+%%%   POST /~processor@1.0/register?name=X       Register name
+%%%   GET  /~processor@1.0/lookup?name=X         Lookup name
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(dev_processor).
+-export([
+    info/3,
+    encode/3, decode/3, convert/3,
+    sign/3, verify/3,
+    normalize/3, expand/3,
+    register_name/3, lookup/3
+]).
+-include("include/hb.hrl").
+
+-define(NAMES_KEY, <<"processor-names-id">>).
+
+%%====================================================================
+%% Device Info
+%%====================================================================
+
+info(_M1, _M2, _Opts) ->
+    {ok, #{
+        <<"name">> => <<"processor">>,
+        <<"version">> => <<"1.0">>,
+        <<"description">> => <<"Data Processor with Codecs & Signatures">>,
+        <<"endpoints">> => [
+            <<"encode">>, <<"decode">>, <<"convert">>,
+            <<"sign">>, <<"verify">>,
+            <<"normalize">>, <<"expand">>,
+            <<"register">>, <<"lookup">>
+        ]
+    }}.
+
+%%====================================================================
+%% Encoding/Decoding
+%%====================================================================
+
+encode(_M1, M2, Opts) ->
+    Format = hb_ao:get(<<"format">>, M2, Opts, <<"json">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    Result = case Format of
+        <<"json">> ->
+            case dev_codec_json:to(Body, Opts) of
+                {ok, E} -> {ok, E};
+                _ -> {error, <<"JSON encoding failed">>}
+            end;
+        <<"structured">> ->
+            {ok, hb_message:convert(Body, <<"structured@1.0">>, Opts)};
+        <<"flat">> ->
+            case dev_codec_flat:to(Body, Opts) of
+                {ok, E} -> {ok, E};
+                _ -> {error, <<"Flat encoding failed">>}
+            end;
+        _ ->
+            {error, <<"Unknown format">>}
+    end,
+
+    case Result of
+        {ok, Encoded} ->
+            {ok, #{<<"encoded">> => Encoded, <<"format">> => Format}};
+        {error, Reason} ->
+            {error, #{<<"status">> => 400, <<"error">> => Reason}}
+    end.
+
+decode(_M1, M2, Opts) ->
+    Format = hb_ao:get(<<"format">>, M2, Opts, <<"json">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, <<>>),
+
+    Result = case Format of
+        <<"json">> ->
+            case dev_codec_json:from(Body, Opts) of
+                {ok, D} -> {ok, D};
+                _ -> {error, <<"JSON decoding failed">>}
+            end;
+        <<"structured">> ->
+            {ok, hb_message:convert(Body, tabm, <<"structured@1.0">>, Opts)};
+        <<"flat">> ->
+            case dev_codec_flat:from(Body, Opts) of
+                {ok, D} -> {ok, D};
+                _ -> {error, <<"Flat decoding failed">>}
+            end;
+        _ ->
+            {error, <<"Unknown format">>}
+    end,
+
+    case Result of
+        {ok, Decoded} ->
+            {ok, #{<<"decoded">> => Decoded, <<"format">> => Format}};
+        {error, Reason} ->
+            {error, #{<<"status">> => 400, <<"error">> => Reason}}
+    end.
+
+convert(_M1, M2, Opts) ->
+    FromFormat = hb_ao:get(<<"from">>, M2, Opts, <<"flat">>),
+    ToFormat = hb_ao:get(<<"to">>, M2, Opts, <<"structured">>),
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    %% Decode from source
+    Decoded = case FromFormat of
+        <<"json">> ->
+            case dev_codec_json:from(Body, Opts) of
+                {ok, D} -> D;
+                _ -> Body
+            end;
+        <<"flat">> ->
+            case dev_codec_flat:from(Body, Opts) of
+                {ok, D} -> D;
+                _ -> Body
+            end;
+        _ -> Body
+    end,
+
+    %% Encode to target
+    Encoded = case ToFormat of
+        <<"json">> ->
+            case dev_codec_json:to(Decoded, Opts) of
+                {ok, E} -> E;
+                _ -> Decoded
+            end;
+        <<"flat">> ->
+            case dev_codec_flat:to(Decoded, Opts) of
+                {ok, E} -> E;
+                _ -> Decoded
+            end;
+        <<"structured">> ->
+            hb_message:convert(Decoded, <<"structured@1.0">>, Opts);
+        _ -> Decoded
+    end,
+
+    {ok, #{
+        <<"converted">> => Encoded,
+        <<"from">> => FromFormat,
+        <<"to">> => ToFormat
+    }}.
+
+%%====================================================================
+%% Signing/Verification
+%%====================================================================
+
+sign(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+    Wallet = hb_opts:get(priv_wallet, no_wallet, Opts),
+
+    case Wallet of
+        no_wallet ->
+            {error, #{<<"status">> => 500, <<"error">> => <<"No wallet">>}};
+        _ ->
+            SignedMsg = hb_message:commit(Body, #{priv_wallet => Wallet}),
+            Signers = hb_message:signers(SignedMsg, Opts),
+            ID = hb_message:id(SignedMsg, signed, Opts),
+
+            {ok, #{
+                <<"signed">> => SignedMsg,
+                <<"signer">> => hd(Signers),
+                <<"id">> => hb_util:human_id(ID)
+            }}
+    end.
+
+verify(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+
+    case maps:is_key(<<"commitments">>, Body) of
+        false ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Not signed">>}};
+        true ->
+            Valid = hb_message:verify(Body, all, Opts),
+            Signers = hb_message:signers(Body, Opts),
+
+            {ok, #{
+                <<"valid">> => Valid,
+                <<"signers">> => Signers,
+                <<"signer_count">> => length(Signers)
+            }}
+    end.
+
+%%====================================================================
+%% Link Operations
+%%====================================================================
+
+normalize(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+    Normalized = hb_link:normalize(Body, offload, Opts),
+    LinkKeys = [K || K <- maps:keys(Normalized), hb_link:is_link_key(K)],
+
+    {ok, #{
+        <<"normalized">> => Normalized,
+        <<"links_created">> => length(LinkKeys)
+    }}.
+
+expand(_M1, M2, Opts) ->
+    Body = hb_ao:get(<<"body">>, M2, Opts, #{}),
+    Decoded = hb_link:decode_all_links(Body),
+    Expanded = hb_cache:ensure_all_loaded(Decoded, Opts),
+
+    {ok, #{<<"expanded">> => Expanded}}.
+
+%%====================================================================
+%% Name Resolution
+%%====================================================================
+
+register_name(M1, M2, Opts) ->
+    Name = hb_ao:get(<<"name">>, M2, Opts),
+    Value = hb_ao:get(<<"value">>, M2, Opts),
+
+    case {Name, Value} of
+        {not_found, _} ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'name'">>}};
+        {_, not_found} ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'value'">>}};
+        {N, V} ->
+            State = load_names(M1, Opts),
+            NewState = maps:put(N, V, State),
+            M1Updated = save_names(M1, NewState, Opts),
+            {ok, hb_ao:set(M1Updated, #{
+                <<"registered">> => N,
+                <<"value">> => V
+            }, Opts)}
+    end.
+
+lookup(M1, M2, Opts) ->
+    Name = hb_ao:get(<<"name">>, M2, Opts),
+
+    case Name of
+        not_found ->
+            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'name'">>}};
+        N ->
+            State = load_names(M1, Opts),
+            case maps:get(N, State, not_found) of
+                not_found ->
+                    {error, #{<<"status">> => 404, <<"error">> => <<"Not found">>}};
+                Value ->
+                    {ok, #{<<"name">> => N, <<"value">> => Value}}
+            end
+    end.
+
+%%====================================================================
+%% Internal Helpers
+%%====================================================================
+
+load_names(M1, Opts) ->
+    case hb_private:get(M1, ?NAMES_KEY, Opts) of
+        not_found -> #{};
+        ID ->
+            case hb_cache:read(ID, Opts) of
+                {ok, State} -> hb_cache:ensure_all_loaded(State, Opts);
+                not_found -> #{}
+            end
+    end.
+
+save_names(M1, State, Opts) ->
+    {ok, ID} = hb_cache:write(State, Opts),
+    hb_private:set(M1, #{?NAMES_KEY => ID}, Opts).
+
+%%====================================================================
+%% Tests
+%%====================================================================
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+info_test() ->
+    {ok, Info} = info(#{}, #{}, #{}),
+    ?assertEqual(<<"processor">>, maps:get(<<"name">>, Info)).
+
+encode_json_test() ->
+    Opts = #{},
+    M2 = #{<<"format">> => <<"json">>, <<"body">> => #{<<"key">> => <<"value">>}},
+    {ok, Result} = encode(#{}, M2, Opts),
+    ?assertEqual(<<"json">>, maps:get(<<"format">>, Result)).
+
+sign_verify_test() ->
+    Wallet = ar_wallet:new(),
+    Opts = #{priv_wallet => Wallet},
+    Body = #{<<"data">> => <<"test">>},
+
+    %% Sign
+    {ok, SignResult} = sign(#{}, #{<<"body">> => Body}, Opts),
+    SignedMsg = maps:get(<<"signed">>, SignResult),
+
+    %% Verify
+    {ok, VerifyResult} = verify(#{}, #{<<"body">> => SignedMsg}, Opts),
+    ?assertEqual(true, maps:get(<<"valid">>, VerifyResult)),
+    ?assertEqual(1, maps:get(<<"signer_count">>, VerifyResult)).
+
+name_resolution_test() ->
+    Store = hb_store_fs:new("test_processor"),
+    hb_store:reset(Store),
+    Opts = #{store => Store},
+    M1 = #{},
+
+    %% Register
+    {ok, RegResult} = register_name(M1, #{
+        <<"name">> => <<"alice">>,
+        <<"value">> => <<"addr123">>
+    }, Opts),
+    ?assertEqual(<<"alice">>, hb_ao:get(<<"registered">>, RegResult, Opts)),
+
+    %% Lookup
+    {ok, LookupResult} = lookup(RegResult, #{<<"name">> => <<"alice">>}, Opts),
+    ?assertEqual(<<"addr123">>, maps:get(<<"value">>, LookupResult)).
+
+-endif.
+```
+
+---
+
+## Testing with WAO SDK
+
+```javascript
+import assert from "assert"
+import { describe, it, before, after } from "node:test"
+import { HyperBEAM } from "wao"
+
+describe("Data Processor Device", function () {
+    let hbeam, hb
+
+    before(async () => {
+        hbeam = await new HyperBEAM({ cwd: "../HyperBEAM", reset: true }).ready()
+        hb = hbeam.hb
+    })
+
+    after(async () => hbeam.kill())
+
+    it("should encode to JSON", async () => {
+        const result = await hb.post("/~processor@1.0/encode", {
+            format: "json",
+            body: { hello: "world" }
+        })
+        assert.equal(result.format, "json")
+    })
+
+    it("should sign and verify messages", async () => {
+        // Sign
+        const signResult = await hb.post("/~processor@1.0/sign", {
+            body: { data: "test" }
+        })
+        assert.ok(signResult.signer)
+        assert.ok(signResult.id)
+
+        // Verify
+        const verifyResult = await hb.post("/~processor@1.0/verify", {
+            body: signResult.signed
+        })
+        assert.equal(verifyResult.valid, true)
+        assert.equal(verifyResult.signer_count, 1)
+    })
+
+    it("should register and lookup names", async () => {
+        // Register
+        await hb.post("/~processor@1.0/register", {
+            name: "bob",
+            value: "address456"
+        })
+
+        // Lookup
+        const result = await hb.get("/~processor@1.0/lookup?name=bob")
+        assert.equal(result.value, "address456")
+    })
+})
+```
+
+---
+
+## What You Learned
+
+| Concept | Module | Key Functions |
+|---------|--------|---------------|
+| Signing | `hb_message` | `commit/2`, `verify/3`, `signers/2` |
+| IDs | `hb_message` | `id/3` |
+| JSON codec | `dev_codec_json` | `to/2`, `from/2` |
+| Structured codec | `hb_message` | `convert/3`, `convert/4` |
+| Links | `hb_link` | `normalize/3`, `decode_all_links/1` |
+| Link maps | `hb_maps` | `get/2`, `map/2`, `filter/2` |
+| Paths | `hb_singleton` | `from/2`, `to/1` |
+| Names | `dev_name` | `resolve/3` |
+
+---
+
+## Next Steps
+
+1. **[L3: API Gateway](/book/build3)** - Add authentication and payment
+2. **[L4: Data Platform](/book/build4)** - Add Arweave persistence
+
+---
+
+## Resources
+
+- [hb_message Reference](/src/hb_message)
+- [hb_link Reference](/src/hb_link)
+- [Codecs Tutorial](/book/dev2)
+- [Data Structures](/book/hb3)
