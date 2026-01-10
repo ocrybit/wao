@@ -136,7 +136,7 @@ register_key(M1, M2, Opts) ->
 %% POST /~gateway@1.0/authenticate
 %% Validates an API key and returns the associated address
 authenticate(M1, M2, Opts) ->
-    APIKey = hb_ao:get(<<"api-key">>, M2, Opts),
+    APIKey = hb_maps:get(<<"api-key">>, M2, Opts),
 
     case APIKey of
         not_found ->
@@ -197,7 +197,7 @@ verify_httpsig(M2, Opts) ->
     case dev_codec_httpsig:verify(M2, Opts) of
         {ok, VerifiedMsg} ->
             %% Get the signer's address
-            KeyID = hb_ao:get(<<"signature-input">>, VerifiedMsg, Opts),
+            KeyID = hb_maps:get(<<"signature-input">>, VerifiedMsg, Opts),
             {ok, VerifiedMsg, KeyID};
         {error, Reason} ->
             {error, Reason}
@@ -247,7 +247,7 @@ balance(M1, M2, Opts) ->
 %% POST /~gateway@1.0/deposit
 deposit(M1, M2, Opts) ->
     Address = get_authenticated_address(M1, M2, Opts),
-    Amount = hb_ao:get(<<"amount">>, M2, Opts, 0),
+    Amount = hb_maps:get(<<"amount">>, M2, Opts, 0),
 
     case Address of
         {error, E} -> {error, E};
@@ -269,7 +269,7 @@ deposit(M1, M2, Opts) ->
 %% POST /~gateway@1.0/withdraw
 withdraw(M1, M2, Opts) ->
     Address = get_authenticated_address(M1, M2, Opts),
-    Amount = hb_ao:get(<<"amount">>, M2, Opts, 0),
+    Amount = hb_maps:get(<<"amount">>, M2, Opts, 0),
 
     case Address of
         {error, E} -> {error, E};
@@ -296,7 +296,7 @@ withdraw(M1, M2, Opts) ->
 
 get_authenticated_address(M1, M2, Opts) ->
     %% First try API key authentication
-    case hb_ao:get(<<"api-key">>, M2, Opts) of
+    case hb_maps:get(<<"api-key">>, M2, Opts) of
         not_found ->
             %% Try signature-based auth
             case get_signer(M2, Opts) of
@@ -348,7 +348,7 @@ api_call(M1, M2, Opts) ->
                     }};
                 true ->
                     %% Step 3: Execute the API call
-                    Action = hb_ao:get(<<"action">>, M2, Opts, <<"default">>),
+                    Action = hb_maps:get(<<"action">>, M2, Opts, <<"default">>),
                     Result = execute_action(Action, M2, Opts),
 
                     %% Step 4: Charge for the call
@@ -366,7 +366,7 @@ api_call(M1, M2, Opts) ->
 
 execute_action(Action, M2, Opts) ->
     %% Placeholder for actual API logic
-    Data = hb_ao:get(<<"data">>, M2, Opts, #{}),
+    Data = hb_maps:get(<<"data">>, M2, Opts, #{}),
     #{
         <<"action">> => Action,
         <<"processed">> => true,
@@ -405,9 +405,9 @@ schedule(M1, M2, Opts) ->
         {error, E} -> {error, E};
         Addr ->
             %% Get scheduling parameters
-            Cron = hb_ao:get(<<"cron">>, M2, Opts, <<"* * * * *">>),
-            Action = hb_ao:get(<<"action">>, M2, Opts),
-            Data = hb_ao:get(<<"data">>, M2, Opts, #{}),
+            Cron = hb_maps:get(<<"cron">>, M2, Opts, <<"* * * * *">>),
+            Action = hb_maps:get(<<"action">>, M2, Opts),
+            Data = hb_maps:get(<<"data">>, M2, Opts, #{}),
 
             case Action of
                 not_found ->
@@ -458,7 +458,7 @@ tasks(M1, M2, Opts) ->
 %% DELETE /~gateway@1.0/task?id=X
 cancel_task(M1, M2, Opts) ->
     Address = get_authenticated_address(M1, M2, Opts),
-    TaskID = hb_ao:get(<<"id">>, M2, Opts),
+    TaskID = hb_maps:get(<<"id">>, M2, Opts),
 
     case {Address, TaskID} of
         {{error, E}, _} -> {error, E};
@@ -526,8 +526,8 @@ add_route(M1, M2, Opts) ->
         not_found ->
             {error, #{<<"status">> => 401, <<"error">> => <<"Unauthorized">>}};
         _Admin ->
-            Template = hb_ao:get(<<"template">>, M2, Opts),
-            Node = hb_ao:get(<<"node">>, M2, Opts),
+            Template = hb_maps:get(<<"template">>, M2, Opts),
+            Node = hb_maps:get(<<"node">>, M2, Opts),
 
             case {Template, Node} of
                 {not_found, _} ->
@@ -538,7 +538,7 @@ add_route(M1, M2, Opts) ->
                     Route = #{
                         <<"template">> => T,
                         <<"node">> => N,
-                        <<"methods">> => hb_ao:get(<<"methods">>, M2, Opts, [<<"GET">>, <<"POST">>]),
+                        <<"methods">> => hb_maps:get(<<"methods">>, M2, Opts, [<<"GET">>, <<"POST">>]),
                         <<"created">> => erlang:system_time(second)
                     },
 
@@ -667,7 +667,7 @@ register_key(M1, M2, Opts) ->
     end.
 
 authenticate(M1, M2, Opts) ->
-    case hb_ao:get(<<"api-key">>, M2, Opts) of
+    case hb_maps:get(<<"api-key">>, M2, Opts) of
         not_found ->
             {error, #{<<"status">> => 401, <<"error">> => <<"Missing API key">>}};
         Key ->
@@ -696,7 +696,7 @@ deposit(M1, M2, Opts) ->
     case get_authenticated_address(M1, M2, Opts) of
         {error, E} -> {error, E};
         Addr ->
-            Amount = hb_ao:get(<<"amount">>, M2, Opts, 0),
+            Amount = hb_maps:get(<<"amount">>, M2, Opts, 0),
             case Amount > 0 of
                 false ->
                     {error, #{<<"status">> => 400, <<"error">> => <<"Invalid amount">>}};
@@ -716,7 +716,7 @@ withdraw(M1, M2, Opts) ->
     case get_authenticated_address(M1, M2, Opts) of
         {error, E} -> {error, E};
         Addr ->
-            Amount = hb_ao:get(<<"amount">>, M2, Opts, 0),
+            Amount = hb_maps:get(<<"amount">>, M2, Opts, 0),
             Balances = load_data(M1, ?BALANCES_KEY, Opts),
             CurrentBalance = maps:get(Addr, Balances, 0),
             case {Amount > 0, CurrentBalance >= Amount} of
@@ -754,8 +754,8 @@ api_call(M1, M2, Opts) ->
                         <<"balance">> => Balance
                     }};
                 true ->
-                    Action = hb_ao:get(<<"action">>, M2, Opts, <<"default">>),
-                    Data = hb_ao:get(<<"data">>, M2, Opts, #{}),
+                    Action = hb_maps:get(<<"action">>, M2, Opts, <<"default">>),
+                    Data = hb_maps:get(<<"data">>, M2, Opts, #{}),
                     Result = #{
                         <<"action">> => Action,
                         <<"processed">> => true,
@@ -781,9 +781,9 @@ schedule(M1, M2, Opts) ->
     case get_authenticated_address(M1, M2, Opts) of
         {error, E} -> {error, E};
         Addr ->
-            Cron = hb_ao:get(<<"cron">>, M2, Opts, <<"* * * * *">>),
-            Action = hb_ao:get(<<"action">>, M2, Opts),
-            Data = hb_ao:get(<<"data">>, M2, Opts, #{}),
+            Cron = hb_maps:get(<<"cron">>, M2, Opts, <<"* * * * *">>),
+            Action = hb_maps:get(<<"action">>, M2, Opts),
+            Data = hb_maps:get(<<"data">>, M2, Opts, #{}),
             case Action of
                 not_found ->
                     {error, #{<<"status">> => 400, <<"error">> => <<"Missing action">>}};
@@ -815,7 +815,7 @@ tasks(M1, M2, Opts) ->
     end.
 
 cancel_task(M1, M2, Opts) ->
-    case {get_authenticated_address(M1, M2, Opts), hb_ao:get(<<"id">>, M2, Opts)} of
+    case {get_authenticated_address(M1, M2, Opts), hb_maps:get(<<"id">>, M2, Opts)} of
         {{error, E}, _} -> {error, E};
         {_, not_found} ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing task ID">>}};
@@ -838,7 +838,7 @@ cancel_task(M1, M2, Opts) ->
 %%====================================================================
 
 add_route(M1, M2, Opts) ->
-    case {hb_ao:get(<<"template">>, M2, Opts), hb_ao:get(<<"node">>, M2, Opts)} of
+    case {hb_maps:get(<<"template">>, M2, Opts), hb_maps:get(<<"node">>, M2, Opts)} of
         {not_found, _} ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing template">>}};
         {_, not_found} ->
@@ -846,7 +846,7 @@ add_route(M1, M2, Opts) ->
         {T, N} ->
             Route = #{
                 <<"template">> => T, <<"node">> => N,
-                <<"methods">> => hb_ao:get(<<"methods">>, M2, Opts, [<<"GET">>, <<"POST">>]),
+                <<"methods">> => hb_maps:get(<<"methods">>, M2, Opts, [<<"GET">>, <<"POST">>]),
                 <<"created">> => erlang:system_time(second)
             },
             Routes = load_data(M1, ?ROUTES_KEY, Opts),
@@ -869,7 +869,7 @@ get_signer(M2, Opts) ->
     end.
 
 get_authenticated_address(M1, M2, Opts) ->
-    case hb_ao:get(<<"api-key">>, M2, Opts) of
+    case hb_maps:get(<<"api-key">>, M2, Opts) of
         not_found ->
             case get_signer(M2, Opts) of
                 not_found -> {error, #{<<"status">> => 401, <<"error">> => <<"Not authenticated">>}};
@@ -927,7 +927,7 @@ payment_flow_test() ->
 
     %% Deposit
     {ok, DepRes} = deposit(M1, SignedMsg, Opts),
-    ?assertEqual(1000, hb_ao:get(<<"balance">>, DepRes, Opts)),
+    ?assertEqual(1000, hb_maps:get(<<"balance">>, DepRes, Opts)),
 
     %% Check balance
     {ok, BalRes} = balance(DepRes, SignedMsg, Opts),
@@ -936,7 +936,7 @@ payment_flow_test() ->
     %% Withdraw
     WithdrawMsg = hb_message:commit(#{<<"amount">> => 500}, #{priv_wallet => Wallet}),
     {ok, WithRes} = withdraw(DepRes, WithdrawMsg, Opts),
-    ?assertEqual(500, hb_ao:get(<<"balance">>, WithRes, Opts)).
+    ?assertEqual(500, hb_maps:get(<<"balance">>, WithRes, Opts)).
 
 -endif.
 ```

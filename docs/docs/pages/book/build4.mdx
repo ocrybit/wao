@@ -139,9 +139,9 @@ info(_M1, _M2, _Opts) ->
 
 %% Upload data with automatic bundling
 upload(M1, M2, Opts) ->
-    Data = hb_ao:get(<<"data">>, M2, Opts),
-    Tags = hb_ao:get(<<"tags">>, M2, #{}, Opts),
-    Replicate = hb_ao:get(<<"replicate">>, M2, false, Opts),
+    Data = hb_maps:get(<<"data">>, M2, Opts),
+    Tags = hb_maps:get(<<"tags">>, M2, #{}, Opts),
+    Replicate = hb_maps:get(<<"replicate">>, M2, false, Opts),
 
     case Data of
         not_found ->
@@ -175,7 +175,7 @@ upload(M1, M2, Opts) ->
 
 %% Upload a pre-created bundle
 upload_bundle(M1, M2, Opts) ->
-    Bundle = hb_ao:get(<<"bundle">>, M2, Opts),
+    Bundle = hb_maps:get(<<"bundle">>, M2, Opts),
 
     case Bundle of
         not_found ->
@@ -210,7 +210,7 @@ upload_bundle(M1, M2, Opts) ->
 
 %% Check upload/replication status
 upload_status(M1, M2, Opts) ->
-    ItemId = hb_ao:get(<<"id">>, M2, Opts),
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
 
     case ItemId of
         not_found ->
@@ -232,7 +232,7 @@ upload_status(M1, M2, Opts) ->
 
 %% Query local data by ID
 query(M1, M2, Opts) ->
-    ItemId = hb_ao:get(<<"id">>, M2, Opts),
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
 
     case ItemId of
         not_found ->
@@ -253,8 +253,8 @@ query(M1, M2, Opts) ->
 
 %% Query by tags (local search)
 query_by_tags(M1, M2, Opts) ->
-    Tags = hb_ao:get(<<"tags">>, M2, #{}, Opts),
-    Limit = hb_ao:get(<<"limit">>, M2, 100, Opts),
+    Tags = hb_maps:get(<<"tags">>, M2, #{}, Opts),
+    Limit = hb_maps:get(<<"limit">>, M2, 100, Opts),
 
     %% Get all stored item IDs
     ItemIds = get_all_item_ids(M1, Opts),
@@ -287,7 +287,7 @@ query_by_tags(M1, M2, Opts) ->
 
 %% Query remote nodes for data
 query_remote(M1, M2, Opts) ->
-    ItemId = hb_ao:get(<<"id">>, M2, Opts),
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
 
     case ItemId of
         not_found ->
@@ -314,8 +314,8 @@ query_remote(M1, M2, Opts) ->
 
 %% Replicate item to configured nodes
 replicate(M1, M2, Opts) ->
-    ItemId = hb_ao:get(<<"id">>, M2, Opts),
-    TargetNodes = hb_ao:get(<<"nodes">>, M2, all, Opts),
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
+    TargetNodes = hb_maps:get(<<"nodes">>, M2, all, Opts),
 
     case ItemId of
         not_found ->
@@ -355,7 +355,7 @@ replicate(M1, M2, Opts) ->
 
 %% Sync all data with remote nodes
 sync(M1, M2, Opts) ->
-    Direction = hb_ao:get(<<"direction">>, M2, <<"both">>, Opts),
+    Direction = hb_maps:get(<<"direction">>, M2, <<"both">>, Opts),
 
     Nodes = get_remote_nodes(M1, Opts),
     LocalIds = get_all_item_ids(M1, Opts),
@@ -402,7 +402,7 @@ nodes(M1, _M2, Opts) ->
 
 %% Add a remote node
 add_node(M1, M2, Opts) ->
-    NodeUrl = hb_ao:get(<<"url">>, M2, Opts),
+    NodeUrl = hb_maps:get(<<"url">>, M2, Opts),
 
     case NodeUrl of
         not_found ->
@@ -433,7 +433,7 @@ add_node(M1, M2, Opts) ->
 
 %% Remove a remote node
 remove_node(M1, M2, Opts) ->
-    NodeUrl = hb_ao:get(<<"url">>, M2, Opts),
+    NodeUrl = hb_maps:get(<<"url">>, M2, Opts),
 
     case NodeUrl of
         not_found ->
@@ -454,7 +454,7 @@ remove_node(M1, M2, Opts) ->
 
 %% Create a bundle from multiple items
 create_bundle(M1, M2, Opts) ->
-    Items = hb_ao:get(<<"items">>, M2, Opts),
+    Items = hb_maps:get(<<"items">>, M2, Opts),
 
     case Items of
         not_found ->
@@ -491,7 +491,7 @@ create_bundle(M1, M2, Opts) ->
 
 %% Get a bundle by ID
 get_bundle(M1, M2, Opts) ->
-    BundleId = hb_ao:get(<<"bundle_id">>, M2, Opts),
+    BundleId = hb_maps:get(<<"bundle_id">>, M2, Opts),
 
     case BundleId of
         not_found ->
@@ -510,8 +510,8 @@ get_bundle(M1, M2, Opts) ->
 
 %% Verify bundle signatures
 verify_bundle(M1, M2, Opts) ->
-    BundleId = hb_ao:get(<<"bundle_id">>, M2, Opts),
-    Bundle = hb_ao:get(<<"bundle">>, M2, Opts),
+    BundleId = hb_maps:get(<<"bundle_id">>, M2, Opts),
+    Bundle = hb_maps:get(<<"bundle">>, M2, Opts),
 
     %% Get bundle from ID or use provided
     ActualBundle = case {BundleId, Bundle} of

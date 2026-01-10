@@ -90,38 +90,25 @@ Response returned as HTTP
 
 ---
 
-## Part 2: Reading Request Data with hb_ao:get
+## Part 2: Reading Request Data with hb_maps:get
 
-The `hb_ao:get/3` function reads values from messages. It handles key normalization, link resolution, and type conversion.
+:::warning[Important API Note]
+Use `hb_maps:get/4` to read parameters from the request message (M2). Do NOT use `hb_ao:get` for this purpose as it performs AO-Core resolution which can transform values unexpectedly.
+:::
+
+The `hb_maps:get/4` function reads values directly from messages:
 
 ### Basic Usage
 
 ```erlang
-%% Read a single key
-Value = hb_ao:get(<<"key">>, M2, Opts),
-
-%% Read with default
-Value = hb_ao:get(<<"key">>, M2, Opts, <<"default">>),
-
-%% Read nested path
-Value = hb_ao:get([<<"body">>, <<"nested">>, <<"key">>], M2, Opts),
+%% Read a single key with default
+Value = hb_maps:get(<<"key">>, M2, not_found, Opts),
 
 %% Check if key exists
-case hb_ao:get(<<"key">>, M2, Opts) of
+case hb_maps:get(<<"key">>, M2, not_found, Opts) of
     not_found -> handle_missing();
     Value -> handle_value(Value)
 end.
-```
-
-### Key Normalization
-
-`hb_ao:get` normalizes keys automatically:
-
-```erlang
-%% These are equivalent:
-hb_ao:get(<<"Content-Type">>, M2, Opts),
-hb_ao:get(<<"content-type">>, M2, Opts),
-hb_ao:get(content_type, M2, Opts).
 ```
 
 ### Implementing GET
@@ -133,27 +120,19 @@ Add the `get` function to retrieve stored values:
 
 %% GET /~kv@1.0/get?key=mykey
 get(M1, M2, Opts) ->
-    %% Read the key from query parameters
-    case hb_ao:get(<<"key">>, M2, Opts) of
+    %% Read the key from request using hb_maps:get (NOT hb_ao:get)
+    Key = hb_maps:get(<<"key">>, M2, not_found, Opts),
+    case Key of
         not_found ->
-            {error, #{
-                <<"status">> => 400,
-                <<"error">> => <<"Missing 'key' parameter">>
-            }};
-        Key ->
+            {error, #{<<"error">> => <<"key_required">>}};
+        _ ->
             %% Read value from private state
-            State = hb_private:get(M1, Opts),
-            case maps:get(Key, State, not_found) of
+            %% hb_private:get(Key, Msg, Default, Opts)
+            case hb_private:get(Key, M1, not_found, Opts) of
                 not_found ->
-                    {error, #{
-                        <<"status">> => 404,
-                        <<"error">> => <<"Key not found">>
-                    }};
+                    {error, #{<<"error">> => <<"not_found">>, <<"key">> => Key}};
                 Value ->
-                    {ok, #{
-                        <<"key">> => Key,
-                        <<"value">> => Value
-                    }}
+                    {ok, #{<<"key">> => Key, <<"value">> => Value}}
             end
     end.
 ```
@@ -183,9 +162,13 @@ Private State (hidden):
 ### Private State API
 
 ```erlang
-%% Get all private state
-State = hb_private:get(M1, Opts),
-%% State = #{...} or #{}
+%% Get a specific key from private state
+Value = hb_private:get(Key, M1, Default, Opts),
+%% Returns Value or Default if not found
+
+%% Get all private state as a map
+Priv = hb_private:from_message(M1),
+%% Priv = #{<<"key1">> => Value1, ...}
 
 %% Get specific private key
 Value = hb_private:get(M1, <<"key">>, Opts),
@@ -204,32 +187,17 @@ Add the `set` function to store values:
 
 %% POST /~kv@1.0/set?key=mykey (with body as value)
 set(M1, M2, Opts) ->
-    case hb_ao:get(<<"key">>, M2, Opts) of
-        not_found ->
-            {error, #{
-                <<"status">> => 400,
-                <<"error">> => <<"Missing 'key' parameter">>
-            }};
-        Key ->
-            %% Get the value from request body or value parameter
-            Value = case hb_ao:get(<<"value">>, M2, Opts) of
-                not_found -> hb_ao:get(<<"body">>, M2, Opts, <<>>);
-                V -> V
-            end,
-
-            %% Get current state
-            State = hb_private:get(M1, Opts),
-
-            %% Update state with new key-value
-            NewState = maps:put(Key, Value, State),
-
-            %% Save updated state
-            M1Updated = hb_private:set(M1, NewState, Opts),
-
-            {ok, hb_ao:set(M1Updated, #{
-                <<"status">> => <<"stored">>,
-                <<"key">> => Key
-            }, Opts)}
+    Key = hb_maps:get(<<"key">>, M2, not_found, Opts),
+    Value = hb_maps:get(<<"value">>, M2, not_found, Opts),
+    case {Key, Value} of
+        {not_found, _} ->
+            {error, #{<<"error">> => <<"key_required">>}};
+        {_, not_found} ->
+            {error, #{<<"error">> => <<"value_required">>}};
+        {K, V} ->
+            %% hb_private:set returns updated message
+            M1Updated = hb_private:set(M1, K, V, Opts),
+            {ok, M1Updated#{<<"status">> => <<"stored">>, <<"key">> => K}}
     end.
 ```
 
@@ -272,14 +240,14 @@ info(_M1, _M2, _Opts) ->
     }}.
 
 get(M1, M2, Opts) ->
-    case hb_ao:get(<<"key">>, M2, Opts) of
+    Key = hb_maps:get(<<"key">>, M2, not_found, Opts),
+    case Key of
         not_found ->
-            {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key'">>}};
-        Key ->
-            State = load_state(M1, Opts),
-            case maps:get(Key, State, not_found) of
+            {error, #{<<"error">> => <<"key_required">>}};
+        _ ->
+            case hb_private:get(Key, M1, not_found, Opts) of
                 not_found ->
-                    {error, #{<<"status">> => 404, <<"error">> => <<"Key not found">>}};
+                    {error, #{<<"error">> => <<"not_found">>, <<"key">> => Key}};
                 Value ->
                     {ok, #{<<"key">> => Key, <<"value">> => Value}}
             end
