@@ -135,4 +135,5 @@ dist
 .pnp.*
 
 # Large compiled packages
-hyperbeam-v0.9-m3-b3-compiled.tar.gz
+*.tar.xz
+*.tar.gz

@@ -1,10 +1,10 @@
 # HyperBEAM Quick Install (v0.9-milestone-3-beta-3)
 
-## Option 1: Use Pre-compiled Package (Fastest - 10 seconds)
+## Option 1: Use Pre-compiled Package (Fastest - 3 seconds)
 
 ```bash
 cd /home/user
-tar -xzf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.gz
+tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
 . ~/.asdf/asdf.sh && cd HyperBEAM && rebar3 eunit --sname test
 ```
 
@@ -28,8 +28,4 @@ rebar3 compile && rebar3 eunit --sname test
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
-- `hyperbeam-v0.9-m3-b3-compiled.tar.gz` - Pre-compiled package (112MB)
-
-## Test Results
-- Passed: 118 tests
-- Failed: 42 tests (missing optional deps: prometheus, elmdb)
+- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled package (36MB)
