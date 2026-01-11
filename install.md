@@ -8,7 +8,7 @@ tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
 . ~/.asdf/asdf.sh && cd HyperBEAM && rebar3 eunit --sname test
 ```
 
-## Option 2: Fresh Install (~2.5 minutes)
+## Option 2: Fresh Install (~13 minutes)
 
 ### System Dependencies (fresh system only)
 ```bash
@@ -31,19 +31,31 @@ rm -f rebar.lock
 rebar3 compile && rebar3 eunit --sname test
 ```
 
-## Test Report
+## Test Report (January 11, 2026)
 | Status | Count | Notes |
 |--------|-------|-------|
-| Passed | 120 | Core functionality works |
-| Failed | 40 | Due to removed dependencies |
+| Passed | 92 | Core functionality works |
+| Failed | 14 | HTTP/cron tests (see below) |
 
-**Failed tests caused by removed dependencies:**
-- `elmdb` - LMDB storage (requires Rust/Cargo)
-- `prometheus` - Metrics collection
-- `prometheus_cowboy` - Prometheus HTTP integration
-- `prometheus_httpd` - HTTP metrics endpoint
+**Failed tests:**
+| File | Test | Line |
+|------|------|------|
+| dev_apply.erl | resolve_with_prefix_test | 254 |
+| dev_apply.erl | apply_over_http_test | 286 |
+| dev_arweave.erl | post_ans104_tx_test | 264 |
+| dev_auth_hook.erl | cookie_test | 452 |
+| dev_auth_hook.erl | http_auth_test | 542 |
+| dev_auth_hook.erl | chained_preprocess_test | 621 |
+| dev_auth_hook.erl | when_test | 648 |
+| dev_codec_cookie_auth.erl | http_set_get_cookies_test | 226 |
+| dev_codec_httpsig.erl | validate_large_message_from_http_test | 543 |
+| dev_cron.erl | stop_once_test | 186 |
+| dev_cron.erl | stop_every_test | 224 |
+| dev_cron.erl | once_executed_test | 273 |
+| dev_cron.erl | every_worker_loop_test | 299 |
+| dev_json_iface.erl | basic_aos_call_test | (timeout) |
 
-These dependencies were removed to enable installation without Rust toolchain and hex.pm access.
+Failures are HTTP server initialization and cron timing issues in the test environment.
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
