@@ -12,7 +12,7 @@ tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
 
 ### System Dependencies (fresh system only)
 ```bash
-sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git
+sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git cmake
 ```
 
 ### Prerequisites (one-time setup)
