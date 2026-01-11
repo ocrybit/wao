@@ -31,6 +31,20 @@ rm -f rebar.lock
 rebar3 compile && rebar3 eunit --sname test
 ```
 
+## Test Report
+| Status | Count | Notes |
+|--------|-------|-------|
+| Passed | 120 | Core functionality works |
+| Failed | 40 | Due to removed dependencies |
+
+**Failed tests caused by removed dependencies:**
+- `elmdb` - LMDB storage (requires Rust/Cargo)
+- `prometheus` - Metrics collection
+- `prometheus_cowboy` - Prometheus HTTP integration
+- `prometheus_httpd` - HTTP metrics endpoint
+
+These dependencies were removed to enable installation without Rust toolchain and hex.pm access.
+
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
 - `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled package (19MB)
