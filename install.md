@@ -1,38 +1,39 @@
 # HyperBEAM Quick Install (v0.9-milestone-3-beta-3)
 
-## Option 1: Use Pre-compiled Package (Fastest - 2 seconds)
+## Option 1: Pre-compiled (Fastest - 5 seconds)
+
+Requires: System dependencies only (no Erlang needed)
 
 ```bash
-cd /home/user
+sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libncurses5-dev
+cd ~
+tar -xJf /path/to/wao/asdf-erlang-rebar.tar.xz
 tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc && . ~/.asdf/asdf.sh
 ```
 
 Optional: Run tests
 ```bash
-. ~/.asdf/asdf.sh && cd HyperBEAM && rebar3 eunit --sname test
+cd ~/HyperBEAM && rebar3 eunit --sname test
 ```
 
 ## Option 2: Fresh Install (~13 minutes)
 
-### System Dependencies (fresh system only)
+### System Dependencies
 ```bash
 sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git cmake
 ```
 
-### Prerequisites (one-time setup)
+### Prerequisites
 ```bash
 git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 && . ~/.asdf/asdf.sh && asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git && asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6 && asdf install rebar 3.26.0 && asdf global rebar 3.26.0
-```
-
-**Optional:** Add asdf to shell profile for persistence:
-```bash
 echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 ```
 
 ### Install HyperBEAM
 ```bash
 . ~/.asdf/asdf.sh
-cd /home/user
+cd ~
 git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git
 cd HyperBEAM
 cp /path/to/wao/hyperbeam_rebar.config rebar.config
@@ -73,4 +74,5 @@ Failures are HTTP server initialization and cron timing issues in the test envir
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
-- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled package (13MB, xz compressed)
+- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM (13MB)
+- `asdf-erlang-rebar.tar.xz` - Pre-compiled Erlang 27.3.4.6 + rebar3 (57MB)
