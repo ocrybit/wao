@@ -10,6 +10,11 @@ tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
 
 ## Option 2: Fresh Install (~2.5 minutes)
 
+### System Dependencies (fresh system only)
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git
+```
+
 ### Prerequisites (one-time setup)
 ```bash
 git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 && . ~/.asdf/asdf.sh && asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git && asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6 && asdf install rebar 3.26.0 && asdf global rebar 3.26.0
