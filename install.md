@@ -1,6 +1,6 @@
 # HyperBEAM Quick Install (v0.9-milestone-3-beta-3)
 
-## Option 1: Pre-compiled (Fastest - 5 seconds)
+## Option 1: Pre-compiled (Fastest - ~4 seconds)
 
 Requires: System dependencies only (no Erlang needed)
 
@@ -9,10 +9,18 @@ sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libncu
 cd ~
 tar -xJf /path/to/wao/asdf-erlang-rebar.tar.xz
 tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
-echo '. ~/.asdf/asdf.sh' >> ~/.bashrc && . ~/.asdf/asdf.sh
+. ~/.asdf/asdf.sh
+asdf global erlang 27.3.4.6
+asdf global rebar 3.26.0
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 ```
 
-Optional: Run tests
+Validate installation (11 tests, ~1 second):
+```bash
+cd ~/HyperBEAM && rebar3 eunit --module=hb_path --sname test
+```
+
+Optional: Run all tests
 ```bash
 cd ~/HyperBEAM && rebar3 eunit --sname test
 ```
