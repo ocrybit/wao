@@ -20,6 +20,11 @@ sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-d
 git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 && . ~/.asdf/asdf.sh && asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git && asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6 && asdf install rebar 3.26.0 && asdf global rebar 3.26.0
 ```
 
+**Optional:** Add asdf to shell profile for persistence:
+```bash
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+```
+
 ### Install HyperBEAM
 ```bash
 . ~/.asdf/asdf.sh
