@@ -28,4 +28,4 @@ rebar3 compile && rebar3 eunit --sname test
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
-- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled package (36MB)
+- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled package (19MB)
