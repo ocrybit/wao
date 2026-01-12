@@ -431,35 +431,28 @@ aojs_js_eval() ->
 %% Following dev_genesis_wasm test patterns
 %% ============================================================
 
-%% Helper to create a base process message
-test_base_process(Opts) ->
-    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
-    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    hb_message:commit(#{
-        <<"device">> => <<"process@1.0">>,
-        <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"scheduler-location">> => Address,
-        <<"type">> => <<"Process">>,
-        <<"test-random-seed">> => rand:uniform(1337)
-    }, #{priv_wallet => Wallet}).
-
 %% Helper to create AOJS process with WASM
+%% Following dev_genesis_wasm:test_genesis_wasm_process pattern exactly
 test_aojs_process(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{<<"image">> := WASMImageID} = dev_wasm:cache_wasm_image("aojs/aojs.wasm", Opts),
+    %% Create the full process message in one commit
+    %% This avoids link resolution issues that occur with nested commits
     hb_message:commit(
-        maps:merge(
-            hb_message:uncommitted(test_base_process(Opts), Opts),
-            #{
-                <<"execution-device">> => <<"stack@1.0">>,
-                <<"device-stack">> => [<<"wasm-64@1.0">>],
-                <<"stack-keys">> => [<<"init">>, <<"compute">>],
-                <<"image">> => WASMImageID,
-                <<"scheduler">> => Address,
-                <<"authority">> => Address
-            }
-        ),
+        #{
+            <<"device">> => <<"process@1.0">>,
+            <<"scheduler-device">> => <<"scheduler@1.0">>,
+            <<"scheduler-location">> => Address,
+            <<"type">> => <<"Process">>,
+            <<"test-random-seed">> => rand:uniform(1337),
+            <<"execution-device">> => <<"stack@1.0">>,
+            <<"device-stack">> => [<<"wasm-64@1.0">>],
+            <<"stack-keys">> => [<<"init">>, <<"compute">>],
+            <<"image">> => WASMImageID,
+            <<"scheduler">> => Address,
+            <<"authority">> => Address
+        },
         #{priv_wallet => Wallet}
     ).
 
@@ -470,11 +463,13 @@ process_msg_creation_test_() ->
 
 process_msg_creation() ->
     start(),
-    Opts = setup_test_env(),
-    Opts1 = Opts#{priv_wallet => hb:wallet()},
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        store => hb_opts:get(store)
+    },
 
     %% Create aojs process message
-    Msg1 = test_aojs_process(Opts1),
+    Msg1 = test_aojs_process(Opts),
 
     %% Verify message structure
     ?assertEqual(<<"process@1.0">>, maps:get(<<"device">>, Msg1)),
@@ -486,7 +481,7 @@ process_msg_creation() ->
     ?assertMatch(<<_/binary>>, maps:get(<<"image">>, Msg1)),
 
     %% Verify the message can be cached
-    {ok, CachedId} = hb_cache:write(Msg1, Opts1),
+    {ok, CachedId} = hb_cache:write(Msg1, Opts),
     ?assertMatch(<<_/binary>>, CachedId),
 
     ok.
@@ -535,4 +530,195 @@ process_stack_init() ->
 
     ok.
 
--endif.
+%% ============================================================
+%% Full Scheduler Integration Tests
+%% These tests require the ENABLE_AOJS_SCHEDULER feature flag
+%% because they need the full scheduler infrastructure running.
+%% Following the same pattern as dev_genesis_wasm.
+%% ============================================================
+
+-ifdef(ENABLE_AOJS_SCHEDULER).
+
+%% Helper to schedule a test message to a process
+%% Following dev_genesis_wasm:schedule_test_message pattern
+schedule_test_message(Msg1, Text, Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
+    Msg2 =
+        hb_message:commit(#{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:commit(
+                        #{
+                            <<"type">> => <<"Message">>,
+                            <<"test-label">> => Text
+                        },
+                        #{ priv_wallet => Wallet }
+                    )
+            },
+            #{ priv_wallet => Wallet }
+        ),
+    hb_ao:resolve(Msg1, Msg2, Opts).
+
+%% Test full process lifecycle with scheduler
+%% This is the main scheduler integration test that:
+%% 1. Creates an AOJS process
+%% 2. Caches it
+%% 3. Registers with scheduler via POST /schedule
+%% 4. Schedules messages
+%% 5. Computes results via /now
+process_scheduler_integration_test_() ->
+    {timeout, 300, fun process_scheduler_integration/0}.
+
+process_scheduler_integration() ->
+    %% Setup - use default store like dev_genesis_wasm does
+    start(),
+    Wallet = hb:wallet(),
+    Opts = #{
+        priv_wallet => Wallet,
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
+
+    %% Create AOJS process
+    #{<<"image">> := WASMImageID} = dev_wasm:cache_wasm_image("aojs/aojs.wasm", Opts),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+
+    ProcessMap = #{
+        <<"device">> => <<"process@1.0">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
+        <<"scheduler-location">> => Address,
+        <<"type">> => <<"Process">>,
+        <<"test-random-seed">> => rand:uniform(1337),
+        <<"execution-device">> => <<"stack@1.0">>,
+        <<"device-stack">> => [<<"wasm-64@1.0">>],
+        <<"stack-keys">> => [<<"init">>, <<"compute">>],
+        <<"image">> => WASMImageID,
+        <<"scheduler">> => Address,
+        <<"authority">> => Address
+    },
+    Msg1 = hb_message:commit(ProcessMap, #{priv_wallet => Wallet}),
+
+    %% Cache the process
+    hb_cache:write(Msg1, Opts),
+
+    %% Initialize scheduler by POSTing process to /schedule
+    {ok, _SchedInit} =
+        hb_ao:resolve(
+            Msg1,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+
+    %% Schedule a test message
+    {ok, _} = schedule_test_message(Msg1, <<"INIT">>, Opts),
+
+    %% Get scheduler status to verify messages are scheduled
+    {ok, SchedulerRes} =
+        hb_ao:resolve(Msg1, #{
+            <<"method">> => <<"GET">>,
+            <<"path">> => <<"schedule">>
+        }, Opts),
+
+    %% Verify process message is scheduled first (slot 0)
+    ?assertMatch(
+        <<"Process">>,
+        hb_ao:get(<<"assignments/0/body/type">>, SchedulerRes, Opts)
+    ),
+
+    %% Compute results - this executes the scheduled messages
+    {ok, Result} = hb_ao:resolve(Msg1, #{ <<"path">> => <<"now">> }, Opts),
+
+    %% Verify we got a result back
+    ?assertMatch(#{}, Result),
+
+    ok.
+
+%% Test scheduling multiple messages and computing slots
+process_multi_slot_test_() ->
+    {timeout, 300, fun process_multi_slot/0}.
+
+process_multi_slot() ->
+    start(),
+    Wallet = hb:wallet(),
+    Opts = #{
+        priv_wallet => Wallet,
+        cache_control => <<"always">>,
+        store => hb_opts:get(store)
+    },
+
+    %% Create AOJS process
+    #{<<"image">> := WASMImageID} = dev_wasm:cache_wasm_image("aojs/aojs.wasm", Opts),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+
+    ProcessMap = #{
+        <<"device">> => <<"process@1.0">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
+        <<"scheduler-location">> => Address,
+        <<"type">> => <<"Process">>,
+        <<"test-random-seed">> => rand:uniform(1337),
+        <<"execution-device">> => <<"stack@1.0">>,
+        <<"device-stack">> => [<<"wasm-64@1.0">>],
+        <<"stack-keys">> => [<<"init">>, <<"compute">>],
+        <<"image">> => WASMImageID,
+        <<"scheduler">> => Address,
+        <<"authority">> => Address
+    },
+    Msg1 = hb_message:commit(ProcessMap, #{priv_wallet => Wallet}),
+
+    %% Cache the process
+    hb_cache:write(Msg1, Opts),
+
+    %% Initialize scheduler
+    {ok, _SchedInit} =
+        hb_ao:resolve(
+            Msg1,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+
+    %% Schedule multiple test messages
+    {ok, _} = schedule_test_message(Msg1, <<"MSG1">>, Opts),
+    {ok, _} = schedule_test_message(Msg1, <<"MSG2">>, Opts),
+
+    %% Get schedule to verify all messages are queued
+    {ok, SchedulerRes} =
+        hb_ao:resolve(Msg1, #{
+            <<"method">> => <<"GET">>,
+            <<"path">> => <<"schedule">>
+        }, Opts),
+
+    %% Verify process message is at slot 0
+    ?assertMatch(
+        <<"Process">>,
+        hb_ao:get(<<"assignments/0/body/type">>, SchedulerRes, Opts)
+    ),
+
+    %% Verify test messages are scheduled
+    ?assertMatch(
+        <<"MSG1">>,
+        hb_ao:get(<<"assignments/1/body/test-label">>, SchedulerRes, Opts)
+    ),
+    ?assertMatch(
+        <<"MSG2">>,
+        hb_ao:get(<<"assignments/2/body/test-label">>, SchedulerRes, Opts)
+    ),
+
+    %% Compute via /now
+    {ok, Result} = hb_ao:resolve(Msg1, #{ <<"path">> => <<"now">> }, Opts),
+
+    ?assertMatch(#{}, Result),
+
+    ok.
+
+-endif. %% ENABLE_AOJS_SCHEDULER
+
+-endif. %% TEST
