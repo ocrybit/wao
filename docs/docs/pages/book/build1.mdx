@@ -615,7 +615,7 @@ info(_M1, _M2, _Opts) ->
 
 %% @doc Get value by key
 get(M1, M2, Opts) ->
-    case hb_ao:get(<<"key">>, M2, Opts) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
@@ -630,23 +630,23 @@ get(M1, M2, Opts) ->
 
 %% @doc Set key to value
 set(M1, M2, Opts) ->
-    case hb_ao:get(<<"key">>, M2, Opts) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
-            Value = hb_ao:get(<<"value">>, M2, Opts, <<>>),
+            Value = hb_maps:get(<<"value">>, M2, <<>>, Opts),
             State = load_state(M1, Opts),
             NewState = maps:put(Key, Value, State),
             M1Updated = save_state(M1, NewState, Opts),
-            {ok, hb_ao:set(M1Updated, #{
+            {ok, maps:merge(M1Updated, #{
                 <<"status">> => <<"stored">>,
                 <<"key">> => Key
-            }, Opts)}
+            })}
     end.
 
 %% @doc Delete key
 delete(M1, M2, Opts) ->
-    case hb_ao:get(<<"key">>, M2, Opts) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
@@ -657,10 +657,10 @@ delete(M1, M2, Opts) ->
                 true ->
                     NewState = maps:remove(Key, State),
                     M1Updated = save_state(M1, NewState, Opts),
-                    {ok, hb_ao:set(M1Updated, #{
+                    {ok, maps:merge(M1Updated, #{
                         <<"status">> => <<"deleted">>,
                         <<"key">> => Key
-                    }, Opts)}
+                    })}
             end
     end.
 
@@ -676,7 +676,7 @@ keys(M1, _M2, Opts) ->
 
 %% @private Load state from cache
 load_state(M1, Opts) ->
-    case hb_private:get(M1, ?STATE_KEY, Opts) of
+    case hb_private:get(?STATE_KEY, M1, not_found, Opts) of
         not_found ->
             #{};
         StateID ->
@@ -694,49 +694,55 @@ save_state(M1, State, Opts) ->
     hb_private:set(M1, #{?STATE_KEY => StateID}, Opts).
 
 %%====================================================================
-%% Tests
+%% Tests - Direct function calls to test device logic
 %%====================================================================
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 setup_test_env() ->
-    Store = hb_store_fs:new("test_kv_data"),
-    hb_store:reset(Store),
-    #{store => Store}.
+    application:ensure_all_started(hb),
+    Store = hb_test_utils:test_store(hb_store_fs),
+    #{store => [Store]}.
 
+%% Test device info - direct call
 info_test() ->
     {ok, Info} = info(#{}, #{}, #{}),
     ?assertEqual(<<"kv">>, maps:get(<<"name">>, Info)),
     ?assertEqual(<<"1.0">>, maps:get(<<"version">>, Info)).
 
+%% Test set and get - direct function calls
 set_get_test() ->
     Opts = setup_test_env(),
-    M1 = #{<<"device">> => <<"kv@1.0">>},
+    M1 = #{},
+    M2_set = #{<<"key">> => <<"foo">>, <<"value">> => <<"bar">>},
 
     %% Set value
-    {ok, SetRes} = set(M1, #{<<"key">> => <<"foo">>, <<"value">> => <<"bar">>}, Opts),
-    ?assertEqual(<<"stored">>, hb_ao:get(<<"status">>, SetRes, Opts)),
+    {ok, SetRes} = set(M1, M2_set, Opts),
+    ?assertEqual(<<"stored">>, maps:get(<<"status">>, SetRes)),
 
-    %% Get value
-    {ok, GetRes} = get(SetRes, #{<<"key">> => <<"foo">>}, Opts),
+    %% Get value - use the returned message which has the state
+    M2_get = #{<<"key">> => <<"foo">>},
+    {ok, GetRes} = get(SetRes, M2_get, Opts),
     ?assertEqual(<<"bar">>, maps:get(<<"value">>, GetRes)).
 
+%% Test delete - direct function calls
 delete_test() ->
     Opts = setup_test_env(),
-    M1 = #{<<"device">> => <<"kv@1.0">>},
+    M1 = #{},
 
     %% Set then delete
     {ok, SetRes} = set(M1, #{<<"key">> => <<"temp">>, <<"value">> => <<"data">>}, Opts),
     {ok, DelRes} = delete(SetRes, #{<<"key">> => <<"temp">>}, Opts),
-    ?assertEqual(<<"deleted">>, hb_ao:get(<<"status">>, DelRes, Opts)),
+    ?assertEqual(<<"deleted">>, maps:get(<<"status">>, DelRes)),
 
     %% Verify gone
     {error, _} = get(DelRes, #{<<"key">> => <<"temp">>}, Opts).
 
+%% Test keys - direct function calls
 keys_test() ->
     Opts = setup_test_env(),
-    M1 = #{<<"device">> => <<"kv@1.0">>},
+    M1 = #{},
 
     {ok, M2} = set(M1, #{<<"key">> => <<"a">>, <<"value">> => <<"1">>}, Opts),
     {ok, M3} = set(M2, #{<<"key">> => <<"b">>, <<"value">> => <<"2">>}, Opts),
@@ -744,6 +750,7 @@ keys_test() ->
     {ok, KeysRes} = keys(M3, #{}, Opts),
     ?assertEqual(2, maps:get(<<"count">>, KeysRes)).
 
+%% Test error handling - direct function calls
 error_handling_test() ->
     Opts = setup_test_env(),
     M1 = #{},

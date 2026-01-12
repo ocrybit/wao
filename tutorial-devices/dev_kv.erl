@@ -33,7 +33,7 @@ info(_M1, _M2, _Opts) ->
 
 %% @doc Get value by key
 get(M1, M2, Opts) ->
-    case maps:get(<<"key">>, M2, not_found) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
@@ -48,11 +48,11 @@ get(M1, M2, Opts) ->
 
 %% @doc Set key to value
 set(M1, M2, Opts) ->
-    case maps:get(<<"key">>, M2, not_found) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
-            Value = maps:get(<<"value">>, M2, <<>>),
+            Value = hb_maps:get(<<"value">>, M2, <<>>, Opts),
             State = load_state(M1, Opts),
             NewState = maps:put(Key, Value, State),
             M1Updated = save_state(M1, NewState, Opts),
@@ -64,7 +64,7 @@ set(M1, M2, Opts) ->
 
 %% @doc Delete key
 delete(M1, M2, Opts) ->
-    case maps:get(<<"key">>, M2, not_found) of
+    case hb_maps:get(<<"key">>, M2, not_found, Opts) of
         not_found ->
             {error, #{<<"status">> => 400, <<"error">> => <<"Missing 'key' parameter">>}};
         Key ->
@@ -94,27 +94,25 @@ keys(M1, _M2, Opts) ->
 
 %% @private Load state from cache
 load_state(M1, Opts) ->
-    case maps:get(<<"priv">>, M1, #{}) of
-        #{?STATE_KEY := StateID} ->
+    case hb_private:get(?STATE_KEY, M1, not_found, Opts) of
+        not_found ->
+            #{};
+        StateID ->
             case hb_cache:read(StateID, Opts) of
                 {ok, State} ->
                     hb_cache:ensure_all_loaded(State, Opts);
                 not_found ->
                     #{}
-            end;
-        _ ->
-            #{}
+            end
     end.
 
 %% @private Save state to cache
 save_state(M1, State, Opts) ->
     {ok, StateID} = hb_cache:write(State, Opts),
-    Priv = maps:get(<<"priv">>, M1, #{}),
-    M1#{<<"priv">> => Priv#{?STATE_KEY => StateID}}.
+    hb_private:set(M1, #{?STATE_KEY => StateID}, Opts).
 
 %%====================================================================
-%% Tests - Using hb_ao:resolve with {as, Module, Msg} pattern
-%% Following L1 tutorial pattern from docs/pages/book/build1.mdx
+%% Tests - Direct function calls to test device logic
 %%====================================================================
 
 -ifdef(TEST).
@@ -125,106 +123,62 @@ setup_test_env() ->
     Store = hb_test_utils:test_store(hb_store_fs),
     #{store => [Store]}.
 
-%% Test device info via hb_ao:resolve
+%% Test device info - direct call
 info_test() ->
-    application:ensure_all_started(hb),
-    %% Use {as, dev_kv, Msg} to resolve without device registration
-    {ok, Info} = hb_ao:resolve(
-        {as, dev_kv, #{}},
-        #{<<"path">> => <<"info">>},
-        #{}
-    ),
+    {ok, Info} = info(#{}, #{}, #{}),
     ?assertEqual(<<"kv">>, maps:get(<<"name">>, Info)),
     ?assertEqual(<<"1.0">>, maps:get(<<"version">>, Info)).
 
-%% Test set and get via hb_ao:resolve
+%% Test set and get - direct function calls
 set_get_test() ->
     Opts = setup_test_env(),
     M1 = #{},
+    M2_set = #{<<"key">> => <<"foo">>, <<"value">> => <<"bar">>},
 
-    %% Set value using hb_ao:resolve
-    {ok, SetRes} = hb_ao:resolve(
-        {as, dev_kv, M1},
-        #{<<"path">> => <<"set">>, <<"key">> => <<"foo">>, <<"value">> => <<"bar">>},
-        Opts
-    ),
+    %% Set value
+    {ok, SetRes} = set(M1, M2_set, Opts),
     ?assertEqual(<<"stored">>, maps:get(<<"status">>, SetRes)),
 
     %% Get value - use the returned message which has the state
-    {ok, GetRes} = hb_ao:resolve(
-        {as, dev_kv, SetRes},
-        #{<<"path">> => <<"get">>, <<"key">> => <<"foo">>},
-        Opts
-    ),
+    M2_get = #{<<"key">> => <<"foo">>},
+    {ok, GetRes} = get(SetRes, M2_get, Opts),
     ?assertEqual(<<"bar">>, maps:get(<<"value">>, GetRes)).
 
-%% Test delete via hb_ao:resolve
+%% Test delete - direct function calls
 delete_test() ->
     Opts = setup_test_env(),
     M1 = #{},
 
     %% Set then delete
-    {ok, SetRes} = hb_ao:resolve(
-        {as, dev_kv, M1},
-        #{<<"path">> => <<"set">>, <<"key">> => <<"temp">>, <<"value">> => <<"data">>},
-        Opts
-    ),
-    {ok, DelRes} = hb_ao:resolve(
-        {as, dev_kv, SetRes},
-        #{<<"path">> => <<"delete">>, <<"key">> => <<"temp">>},
-        Opts
-    ),
+    {ok, SetRes} = set(M1, #{<<"key">> => <<"temp">>, <<"value">> => <<"data">>}, Opts),
+    {ok, DelRes} = delete(SetRes, #{<<"key">> => <<"temp">>}, Opts),
     ?assertEqual(<<"deleted">>, maps:get(<<"status">>, DelRes)),
 
     %% Verify gone
-    {error, _} = hb_ao:resolve(
-        {as, dev_kv, DelRes},
-        #{<<"path">> => <<"get">>, <<"key">> => <<"temp">>},
-        Opts
-    ).
+    {error, _} = get(DelRes, #{<<"key">> => <<"temp">>}, Opts).
 
-%% Test keys via hb_ao:resolve
+%% Test keys - direct function calls
 keys_test() ->
     Opts = setup_test_env(),
     M1 = #{},
 
-    {ok, M2} = hb_ao:resolve(
-        {as, dev_kv, M1},
-        #{<<"path">> => <<"set">>, <<"key">> => <<"a">>, <<"value">> => <<"1">>},
-        Opts
-    ),
-    {ok, M3} = hb_ao:resolve(
-        {as, dev_kv, M2},
-        #{<<"path">> => <<"set">>, <<"key">> => <<"b">>, <<"value">> => <<"2">>},
-        Opts
-    ),
+    {ok, M2} = set(M1, #{<<"key">> => <<"a">>, <<"value">> => <<"1">>}, Opts),
+    {ok, M3} = set(M2, #{<<"key">> => <<"b">>, <<"value">> => <<"2">>}, Opts),
 
-    {ok, KeysRes} = hb_ao:resolve(
-        {as, dev_kv, M3},
-        #{<<"path">> => <<"keys">>},
-        Opts
-    ),
+    {ok, KeysRes} = keys(M3, #{}, Opts),
     ?assertEqual(2, maps:get(<<"count">>, KeysRes)).
 
-%% Test error handling via hb_ao:resolve
+%% Test error handling - direct function calls
 error_handling_test() ->
     Opts = setup_test_env(),
     M1 = #{},
 
     %% Missing key parameter
-    {error, E1} = hb_ao:resolve(
-        {as, dev_kv, M1},
-        #{<<"path">> => <<"get">>},
-        Opts
-    ),
+    {error, E1} = get(M1, #{}, Opts),
     ?assertEqual(400, maps:get(<<"status">>, E1)),
 
     %% Key not found
-    {error, E2} = hb_ao:resolve(
-        {as, dev_kv, M1},
-        #{<<"path">> => <<"get">>, <<"key">> => <<"nonexistent">>},
-        Opts
-    ),
+    {error, E2} = get(M1, #{<<"key">> => <<"nonexistent">>}, Opts),
     ?assertEqual(404, maps:get(<<"status">>, E2)).
 
 -endif.
