@@ -6,8 +6,8 @@ No system dependencies required - everything is pre-compiled including WAMR and 
 
 ```bash
 cd ~
-tar -xJf /path/to/wao/asdf-erlang-rebar.tar.xz
-tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
+tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
+tar -xJf /path/to/wao/installation/hyperbeam-v0.9-m3-b3-compiled.tar.xz
 . ~/.asdf/asdf.sh
 asdf global erlang 27.3.4.6
 asdf global rebar 3.26.0
@@ -44,7 +44,7 @@ echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 cd ~
 git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git
 cd HyperBEAM
-cp /path/to/wao/hyperbeam_rebar.config rebar.config
+cp /path/to/wao/installation/hyperbeam_rebar.config rebar.config
 rm -f rebar.lock
 rebar3 compile
 ```
@@ -62,7 +62,7 @@ rebar3 eunit --sname test
 
 Failures are HTTP server initialization, cron timing, and external integration issues in sandboxed test environments. Core functionality (bundles, paths, wallets, codecs, WASM execution) works correctly.
 
-## Files Needed
+## Files (in `installation/` folder)
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
-- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM + WAMR + deps with git state (26MB)
-- `asdf-erlang-rebar.tar.xz` - Pre-compiled Erlang 27.3.4.6 + rebar3 (23MB, stripped)
+- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM + WAMR + deps (26MB)
+- `asdf-erlang-rebar.tar.xz` - Pre-compiled Erlang 27.3.4.6 + rebar3 (23MB)
