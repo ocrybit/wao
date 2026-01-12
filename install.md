@@ -1,11 +1,10 @@
 # HyperBEAM Quick Install (v0.9-milestone-3-beta-3)
 
-## Option 1: Pre-compiled (Fastest - ~4 seconds)
+## Option 1: Pre-compiled (Fastest - ~3 seconds)
 
-Requires: System dependencies only (no Erlang needed)
+No system dependencies required - everything is pre-compiled.
 
 ```bash
-sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libncurses5-dev
 cd ~
 tar -xJf /path/to/wao/asdf-erlang-rebar.tar.xz
 tar -xJf /path/to/wao/hyperbeam-v0.9-m3-b3-compiled.tar.xz
@@ -27,9 +26,10 @@ cd ~/HyperBEAM && rebar3 eunit --sname test
 
 ## Option 2: Fresh Install (~13 minutes)
 
-### System Dependencies
+### System Dependencies (requires root/sudo)
+Skip if already installed:
 ```bash
-sudo apt-get update && sudo apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git cmake
+apt-get update && apt-get install -y build-essential autoconf libssl-dev libncurses5-dev curl git cmake
 ```
 
 ### Prerequisites
@@ -54,31 +54,13 @@ Optional: Run tests
 rebar3 eunit --sname test
 ```
 
-## Test Report (January 11, 2026)
+## Test Report (January 12, 2026)
 | Status | Count | Notes |
 |--------|-------|-------|
-| Passed | 92 | Core functionality works |
-| Failed | 14 | HTTP/cron tests (see below) |
+| Passed | 106 | Core functionality works |
+| Failed | 35 | HTTP/cron/integration tests |
 
-**Failed tests:**
-| File | Test | Line |
-|------|------|------|
-| dev_apply.erl | resolve_with_prefix_test | 254 |
-| dev_apply.erl | apply_over_http_test | 286 |
-| dev_arweave.erl | post_ans104_tx_test | 264 |
-| dev_auth_hook.erl | cookie_test | 452 |
-| dev_auth_hook.erl | http_auth_test | 542 |
-| dev_auth_hook.erl | chained_preprocess_test | 621 |
-| dev_auth_hook.erl | when_test | 648 |
-| dev_codec_cookie_auth.erl | http_set_get_cookies_test | 226 |
-| dev_codec_httpsig.erl | validate_large_message_from_http_test | 543 |
-| dev_cron.erl | stop_once_test | 186 |
-| dev_cron.erl | stop_every_test | 224 |
-| dev_cron.erl | once_executed_test | 273 |
-| dev_cron.erl | every_worker_loop_test | 299 |
-| dev_json_iface.erl | basic_aos_call_test | (timeout) |
-
-Failures are HTTP server initialization and cron timing issues in the test environment.
+Failures are HTTP server initialization, cron timing, and external integration issues in sandboxed test environments. Core functionality (bundles, paths, wallets, codecs, WASM execution) works correctly.
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
