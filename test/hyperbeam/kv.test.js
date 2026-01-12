@@ -58,24 +58,28 @@ describe("L1 - Key-Value Store Device (kv@1.0)", function () {
     // Delete it
     const deleteRes = await hb.p("/~kv@1.0/remove_key", { k: "temp" })
     assert.equal(deleteRes.result, "deleted")
+    // Note: Erlang atoms are serialized as strings in HyperBEAM HTTP responses
+    assert.equal(String(deleteRes.ok), "true")
 
-    // Verify it's gone - check for error response (error_code 404)
+    // Verify it's gone - device returns {ok: "false", error: "..."}
     const fetchRes = await hb.g("/~kv@1.0/fetch", { k: "temp" })
-    // Device returns error_code (not status, to avoid HTTP status conflict)
-    assert.ok(fetchRes.error_code === 404 || fetchRes.error,
-      `Expected 404 error, got: ${JSON.stringify({error_code: fetchRes.error_code, error: fetchRes.error})}`)
+    assert.equal(String(fetchRes.ok), "false", `Expected ok="false", got: ${fetchRes.ok}`)
+    assert.ok(fetchRes.error, "Expected error message")
   })
 
-  it("should return 400 for missing key parameter", async () => {
+  it("should return ok=false for missing key parameter", async () => {
     const res = await hb.g("/~kv@1.0/fetch")
-    // Device returns error_code for client errors
-    assert.equal(res.error_code, 400)
+    // Device returns {ok: "false", error: "Missing..."} for missing parameter
+    // Erlang atoms are serialized as strings
+    assert.equal(String(res.ok), "false")
+    assert.ok(res.error.includes("Missing"), `Expected 'Missing' in error: ${res.error}`)
   })
 
-  it("should return 404 for nonexistent key", async () => {
+  it("should return ok=false for nonexistent key", async () => {
     const res = await hb.g("/~kv@1.0/fetch", { k: "nonexistent_key_xyz" })
-    // Device returns error_code for not found
-    assert.ok(res.error_code === 404 || res.error,
-      `Expected 404 or error, got error_code: ${res.error_code}`)
+    // Device returns {ok: "false", error: "Key not found"} for not found
+    // Erlang atoms are serialized as strings
+    assert.equal(String(res.ok), "false", `Expected ok="false", got: ${res.ok}`)
+    assert.ok(res.error.includes("not found"), `Expected 'not found' in error: ${res.error}`)
   })
 })
