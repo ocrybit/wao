@@ -433,12 +433,14 @@ aojs_js_eval() ->
 
 %% Helper to create AOJS process with WASM
 %% Following dev_genesis_wasm:test_genesis_wasm_process pattern exactly
+%% NOTE: Pass Opts to commit to ensure store configuration is available
+%% for caching nested values (device-stack, stack-keys lists)
 test_aojs_process(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{<<"image">> := WASMImageID} = dev_wasm:cache_wasm_image("aojs/aojs.wasm", Opts),
     %% Create the full process message in one commit
-    %% This avoids link resolution issues that occur with nested commits
+    %% Pass Opts with store config to ensure nested lists are cached properly
     hb_message:commit(
         #{
             <<"device">> => <<"process@1.0">>,
@@ -453,7 +455,7 @@ test_aojs_process(Opts) ->
             <<"scheduler">> => Address,
             <<"authority">> => Address
         },
-        #{priv_wallet => Wallet}
+        Opts#{priv_wallet => Wallet}
     ).
 
 %% Test process message creation
@@ -532,20 +534,16 @@ process_stack_init() ->
 
 %% ============================================================
 %% Full Scheduler Integration Tests
-%% These tests require the ENABLE_AOJS_SCHEDULER feature flag
-%% because they need the full scheduler infrastructure running.
-%% Following the same pattern as dev_genesis_wasm.
+%% Following dev_process test patterns exactly
 %% ============================================================
-
--ifdef(ENABLE_AOJS_SCHEDULER).
 
 %% Helper to schedule a test message to a process
 %% Following dev_process:schedule_test_message pattern
-schedule_test_message(Msg1, Text) ->
-    schedule_test_message(Msg1, Text, #{}).
-schedule_test_message(Msg1, Text, MsgBase) ->
+schedule_test_message(Msg1, Text, Opts) ->
+    schedule_test_message(Msg1, Text, #{}, Opts).
+schedule_test_message(Msg1, Text, MsgBase, Opts) ->
     Wallet = hb:wallet(),
-    UncommittedBase = hb_message:uncommitted(MsgBase, #{}),
+    UncommittedBase = hb_message:uncommitted(MsgBase, Opts),
     Msg2 =
         hb_message:commit(#{
                 <<"path">> => <<"schedule">>,
@@ -556,90 +554,97 @@ schedule_test_message(Msg1, Text, MsgBase) ->
                             <<"type">> => <<"Message">>,
                             <<"test-label">> => Text
                         },
-                        #{ priv_wallet => Wallet }
+                        Opts#{ priv_wallet => Wallet }
                     )
             },
-            #{ priv_wallet => Wallet }
+            Opts#{ priv_wallet => Wallet }
         ),
-    hb_ao:resolve(Msg1, Msg2, #{}).
+    {ok, _} = hb_ao:resolve(Msg1, Msg2, Opts).
 
 %% Test full process lifecycle with scheduler
 %% Following dev_process test patterns exactly
+%% Note: Uses setup_test_env() to ensure consistent store configuration
+%% throughout the message commit/cache/resolve flow
 process_scheduler_integration_test_() ->
     {timeout, 60, fun process_scheduler_integration/0}.
 
 process_scheduler_integration() ->
-    %% Setup - just start hb, no store setup needed
-    start(),
+    %% Setup with proper test environment including store
+    %% This ensures consistent store configuration for:
+    %% 1. Message commit (nested body gets cached via linkify_mode => offload)
+    %% 2. Scheduler resolution (body gets loaded from cache)
+    %% 3. Message verification (needs proper commitments structure)
+    Opts = setup_test_env(),
 
     %% Create AOJS process - following dev_process:test_wasm_process pattern
-    Msg1 = test_aojs_process(#{}),
+    Msg1 = test_aojs_process(Opts),
 
-    %% Schedule test messages - NO hb_cache:write needed!
-    %% The scheduler handles caching internally
-    {ok, _} = schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    {ok, _} = schedule_test_message(Msg1, <<"TEST TEXT 2">>),
+    %% Schedule test messages with consistent opts
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>, Opts),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>, Opts),
 
     %% Get scheduler status to verify messages are scheduled
     {ok, SchedulerRes} =
         hb_ao:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
-        }, #{}),
+        }, Opts),
 
     %% Verify test messages are scheduled (slot 0 and 1)
     ?assertMatch(
         <<"TEST TEXT 1">>,
-        hb_ao:get(<<"assignments/0/body/test-label">>, SchedulerRes, #{})
+        hb_ao:get(<<"assignments/0/body/test-label">>, SchedulerRes, Opts)
     ),
     ?assertMatch(
         <<"TEST TEXT 2">>,
-        hb_ao:get(<<"assignments/1/body/test-label">>, SchedulerRes, #{})
+        hb_ao:get(<<"assignments/1/body/test-label">>, SchedulerRes, Opts)
     ),
 
     ok.
 
 %% Test scheduling multiple messages and computing slots
+%% Uses setup_test_env() for consistent store configuration
 process_multi_slot_test_() ->
     {timeout, 60, fun process_multi_slot/0}.
 
 process_multi_slot() ->
-    start(),
+    %% Setup with proper test environment including store
+    Opts = setup_test_env(),
 
     %% Create AOJS process
-    Msg1 = test_aojs_process(#{}),
+    Msg1 = test_aojs_process(Opts),
 
     %% Schedule multiple test messages
-    {ok, _} = schedule_test_message(Msg1, <<"MSG1">>),
-    {ok, _} = schedule_test_message(Msg1, <<"MSG2">>),
-    {ok, _} = schedule_test_message(Msg1, <<"MSG3">>),
+    schedule_test_message(Msg1, <<"MSG1">>, Opts),
+    schedule_test_message(Msg1, <<"MSG2">>, Opts),
+    schedule_test_message(Msg1, <<"MSG3">>, Opts),
 
     %% Get schedule to verify all messages are queued
     {ok, SchedulerRes} =
         hb_ao:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
-        }, #{}),
+        }, Opts),
 
     %% Verify test messages are scheduled in order
     ?assertMatch(
         <<"MSG1">>,
-        hb_ao:get(<<"assignments/0/body/test-label">>, SchedulerRes, #{})
+        hb_ao:get(<<"assignments/0/body/test-label">>, SchedulerRes, Opts)
     ),
     ?assertMatch(
         <<"MSG2">>,
-        hb_ao:get(<<"assignments/1/body/test-label">>, SchedulerRes, #{})
+        hb_ao:get(<<"assignments/1/body/test-label">>, SchedulerRes, Opts)
     ),
     ?assertMatch(
         <<"MSG3">>,
-        hb_ao:get(<<"assignments/2/body/test-label">>, SchedulerRes, #{})
+        hb_ao:get(<<"assignments/2/body/test-label">>, SchedulerRes, Opts)
     ),
 
     %% Get slot info
     {ok, SlotRes} = hb_ao:resolve(Msg1, #{
         <<"method">> => <<"GET">>,
         <<"path">> => <<"slot">>
-    }, #{}),
+    }, Opts),
 
     %% Verify current slot > 0
     ?assertMatch(
@@ -648,7 +653,5 @@ process_multi_slot() ->
     ),
 
     ok.
-
--endif. %% ENABLE_AOJS_SCHEDULER
 
 -endif. %% TEST
