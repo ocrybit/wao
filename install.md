@@ -64,5 +64,5 @@ Failures are HTTP server initialization, cron timing, and external integration i
 
 ## Files Needed
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
-- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM + WAMR + deps with git state (30MB)
+- `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM + WAMR + deps with git state (26MB)
 - `asdf-erlang-rebar.tar.xz` - Pre-compiled Erlang 27.3.4.6 + rebar3 (23MB, stripped)
