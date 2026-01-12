@@ -14,7 +14,13 @@ asdf global rebar 3.26.0
 echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 ```
 
-Validate installation (11 tests, ~7 seconds first run):
+Validate rebar3 is available:
+```bash
+rebar3 --version
+# Expected: rebar 3.26.0 on Erlang/OTP 27 Erts 15.x
+```
+
+Validate HyperBEAM (11 tests, ~7 seconds first run):
 ```bash
 cd ~/HyperBEAM && rebar3 eunit --module=hb_path --sname test
 ```
@@ -36,6 +42,12 @@ apt-get update && apt-get install -y build-essential autoconf libssl-dev libncur
 ```bash
 git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 && . ~/.asdf/asdf.sh && asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git && asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6 && asdf install rebar 3.26.0 && asdf global rebar 3.26.0
 echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+```
+
+Validate rebar3 is available:
+```bash
+rebar3 --version
+# Expected: rebar 3.26.0 on Erlang/OTP 27 Erts 15.x
 ```
 
 ### Install HyperBEAM
