@@ -398,58 +398,77 @@ curl http://localhost:8734/~kv@1.0/info
 
 ### Erlang Unit Tests
 
-Add tests directly in your module:
+Add tests directly in your module. Use `hb_ao:resolve` with the `{as, Module, Msg}` pattern to properly test through the device framework:
 
 ```erlang
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-basic_operations_test() ->
-    %% Setup
-    Store = hb_store_fs:new("test_data"),
-    hb_store:reset(Store),
-    Opts = #{store => Store},
-    M1 = #{<<"device">> => <<"kv@1.0">>},
+setup_test_env() ->
+    application:ensure_all_started(hb),
+    Store = hb_test_utils:test_store(hb_store_fs),
+    #{store => [Store]}.
 
-    %% Test info
-    {ok, Info} = info(M1, #{}, Opts),
+%% Test device info via hb_ao:resolve
+info_test() ->
+    application:ensure_all_started(hb),
+    %% Use {as, dev_kv, Msg} to resolve without device registration
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_kv, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
     ?assertEqual(<<"kv">>, maps:get(<<"name">>, Info)),
+    ?assertEqual(<<"1.0">>, maps:get(<<"version">>, Info)).
 
-    %% Test set
-    M2Set = #{<<"key">> => <<"test-key">>, <<"value">> => <<"test-value">>},
-    {ok, SetResult} = set(M1, M2Set, Opts),
-    ?assertEqual(<<"stored">>, hb_ao:get(<<"status">>, SetResult, Opts)),
+%% Test set and get via hb_ao:resolve
+set_get_test() ->
+    Opts = setup_test_env(),
+    M1 = #{},
 
-    %% Get the updated M1 with state
-    M1Updated = SetResult,
+    %% Set value using hb_ao:resolve
+    {ok, SetRes} = hb_ao:resolve(
+        {as, dev_kv, M1},
+        #{<<"path">> => <<"set">>, <<"key">> => <<"foo">>, <<"value">> => <<"bar">>},
+        Opts
+    ),
+    ?assertEqual(<<"stored">>, maps:get(<<"status">>, SetRes)),
 
-    %% Test get
-    M2Get = #{<<"key">> => <<"test-key">>},
-    {ok, GetResult} = get(M1Updated, M2Get, Opts),
-    ?assertEqual(<<"test-value">>, maps:get(<<"value">>, GetResult)),
+    %% Get value - use the returned message which has the state
+    {ok, GetRes} = hb_ao:resolve(
+        {as, dev_kv, SetRes},
+        #{<<"path">> => <<"get">>, <<"key">> => <<"foo">>},
+        Opts
+    ),
+    ?assertEqual(<<"bar">>, maps:get(<<"value">>, GetRes)).
 
-    %% Test keys
-    {ok, KeysResult} = keys(M1Updated, #{}, Opts),
-    ?assertEqual(1, maps:get(<<"count">>, KeysResult)),
+%% Test error handling via hb_ao:resolve
+error_handling_test() ->
+    Opts = setup_test_env(),
+    M1 = #{},
 
-    %% Test delete
-    {ok, DeleteResult} = delete(M1Updated, M2Get, Opts),
-    ?assertEqual(<<"deleted">>, hb_ao:get(<<"status">>, DeleteResult, Opts)),
+    %% Missing key parameter
+    {error, E1} = hb_ao:resolve(
+        {as, dev_kv, M1},
+        #{<<"path">> => <<"get">>},
+        Opts
+    ),
+    ?assertEqual(400, maps:get(<<"status">>, E1)),
 
-    %% Cleanup
-    hb_store:reset(Store),
-    ok.
-
-missing_key_test() ->
-    Opts = #{store => hb_store_fs:new("test_data")},
-    M1 = #{<<"device">> => <<"kv@1.0">>},
-    M2 = #{},
-
-    {error, Error} = get(M1, M2, Opts),
-    ?assertEqual(400, maps:get(<<"status">>, Error)).
+    %% Key not found
+    {error, E2} = hb_ao:resolve(
+        {as, dev_kv, M1},
+        #{<<"path">> => <<"get">>, <<"key">> => <<"nonexistent">>},
+        Opts
+    ),
+    ?assertEqual(404, maps:get(<<"status">>, E2)).
 
 -endif.
 ```
+
+:::info[Why use hb_ao:resolve?]
+The `{as, Module, Msg}` pattern allows testing devices through the HyperBEAM resolution framework without requiring device registration in `preloaded_devices`. This ensures your tests exercise the same code paths as production.
+:::
 
 Run the tests:
 

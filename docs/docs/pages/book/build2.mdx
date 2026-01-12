@@ -842,51 +842,88 @@ save_names(M1, State, Opts) ->
     hb_private:set(M1, #{?NAMES_KEY => ID}, Opts).
 
 %%====================================================================
-%% Tests
+%% Tests - Using hb_ao:resolve with {as, Module, Msg} pattern
 %%====================================================================
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+setup_test_env() ->
+    application:ensure_all_started(hb),
+    Store = hb_test_utils:test_store(hb_store_fs),
+    #{store => [Store]}.
+
+%% Test device info via hb_ao:resolve
 info_test() ->
-    {ok, Info} = info(#{}, #{}, #{}),
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_processor, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
     ?assertEqual(<<"processor">>, maps:get(<<"name">>, Info)).
 
+%% Test JSON encoding via hb_ao:resolve
 encode_json_test() ->
-    Opts = #{},
-    M2 = #{<<"format">> => <<"json">>, <<"body">> => #{<<"key">> => <<"value">>}},
-    {ok, Result} = encode(#{}, M2, Opts),
+    application:ensure_all_started(hb),
+    {ok, Result} = hb_ao:resolve(
+        {as, dev_processor, #{}},
+        #{
+            <<"path">> => <<"encode">>,
+            <<"format">> => <<"json">>,
+            <<"body">> => #{<<"key">> => <<"value">>}
+        },
+        #{}
+    ),
     ?assertEqual(<<"json">>, maps:get(<<"format">>, Result)).
 
+%% Test sign and verify via hb_ao:resolve
 sign_verify_test() ->
+    application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
     Opts = #{priv_wallet => Wallet},
     Body = #{<<"data">> => <<"test">>},
 
     %% Sign
-    {ok, SignResult} = sign(#{}, #{<<"body">> => Body}, Opts),
+    {ok, SignResult} = hb_ao:resolve(
+        {as, dev_processor, #{}},
+        #{<<"path">> => <<"sign">>, <<"body">> => Body},
+        Opts
+    ),
     SignedMsg = maps:get(<<"signed">>, SignResult),
 
     %% Verify
-    {ok, VerifyResult} = verify(#{}, #{<<"body">> => SignedMsg}, Opts),
+    {ok, VerifyResult} = hb_ao:resolve(
+        {as, dev_processor, #{}},
+        #{<<"path">> => <<"verify">>, <<"body">> => SignedMsg},
+        Opts
+    ),
     ?assertEqual(true, maps:get(<<"valid">>, VerifyResult)),
     ?assertEqual(1, maps:get(<<"signer_count">>, VerifyResult)).
 
+%% Test name registration and lookup via hb_ao:resolve
 name_resolution_test() ->
-    Store = hb_store_fs:new("test_processor"),
-    hb_store:reset(Store),
-    Opts = #{store => Store},
+    Opts = setup_test_env(),
     M1 = #{},
 
     %% Register
-    {ok, RegResult} = register_name(M1, #{
-        <<"name">> => <<"alice">>,
-        <<"value">> => <<"addr123">>
-    }, Opts),
-    ?assertEqual(<<"alice">>, hb_maps:get(<<"registered">>, RegResult, Opts)),
+    {ok, RegResult} = hb_ao:resolve(
+        {as, dev_processor, M1},
+        #{
+            <<"path">> => <<"register_name">>,
+            <<"name">> => <<"alice">>,
+            <<"value">> => <<"addr123">>
+        },
+        Opts
+    ),
+    ?assertEqual(<<"alice">>, maps:get(<<"registered">>, RegResult)),
 
     %% Lookup
-    {ok, LookupResult} = lookup(RegResult, #{<<"name">> => <<"alice">>}, Opts),
+    {ok, LookupResult} = hb_ao:resolve(
+        {as, dev_processor, RegResult},
+        #{<<"path">> => <<"lookup">>, <<"name">> => <<"alice">>},
+        Opts
+    ),
     ?assertEqual(<<"addr123">>, maps:get(<<"value">>, LookupResult)).
 
 -endif.

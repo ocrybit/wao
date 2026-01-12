@@ -1398,6 +1398,83 @@ describe("Data Platform Device", () => {
 })
 ```
 
+## Erlang Unit Tests
+
+Add tests to your module using `hb_ao:resolve` with the `{as, Module, Msg}` pattern:
+
+```erlang
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test device info via hb_ao:resolve
+info_test() ->
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_dataplatform, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
+    ?assertEqual(<<"dataplatform">>, maps:get(<<"name">>, Info)).
+
+%% Test upload via hb_ao:resolve
+upload_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    {ok, Result} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{
+            <<"path">> => <<"upload">>,
+            <<"data">> => <<"Hello Arweave">>,
+            <<"tags">> => #{<<"Content-Type">> => <<"text/plain">>}
+        },
+        #{}
+    ),
+    ?assertMatch(#{<<"id">> := _, <<"status">> := <<"uploaded">>}, Result).
+
+%% Test query via hb_ao:resolve
+query_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    %% First upload
+    {ok, UploadRes} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{<<"path">> => <<"upload">>, <<"data">> => <<"Test data">>},
+        #{}
+    ),
+    ItemId = maps:get(<<"id">>, UploadRes),
+
+    %% Then query
+    {ok, QueryRes} = hb_ao:resolve(
+        {as, dev_dataplatform, UploadRes},
+        #{<<"path">> => <<"query">>, <<"id">> => ItemId},
+        #{}
+    ),
+    ?assertEqual(ItemId, maps:get(<<"id">>, QueryRes)),
+    ?assertEqual(<<"Test data">>, maps:get(<<"data">>, QueryRes)).
+
+%% Test bundle creation via hb_ao:resolve
+create_bundle_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    {ok, Result} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{
+            <<"path">> => <<"create_bundle">>,
+            <<"items">> => [
+                #{<<"data">> => <<"Item 1">>, <<"tags">> => #{}},
+                #{<<"data">> => <<"Item 2">>, <<"tags">> => #{}}
+            ]
+        },
+        #{}
+    ),
+    ?assertEqual(2, maps:get(<<"item_count">>, Result)),
+    ?assertMatch(#{<<"bundle_id">> := _}, Result).
+
+-endif.
+```
+
+---
+
 ## Key Concepts Covered
 
 ### 1. ANS-104 Bundle Format

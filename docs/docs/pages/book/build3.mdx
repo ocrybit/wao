@@ -904,39 +904,61 @@ save_data(M1, Key, Data, Opts) ->
     hb_private:set(M1, #{Key => ID}, Opts).
 
 %%====================================================================
-%% Tests
+%% Tests - Using hb_ao:resolve with {as, Module, Msg} pattern
 %%====================================================================
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-setup() ->
-    Store = hb_store_fs:new("test_gateway"),
-    hb_store:reset(Store),
+setup_test_env() ->
+    application:ensure_all_started(hb),
+    Store = hb_test_utils:test_store(hb_store_fs),
     Wallet = ar_wallet:new(),
-    #{store => Store, priv_wallet => Wallet}.
+    #{store => [Store], priv_wallet => Wallet}.
 
+%% Test device info via hb_ao:resolve
+info_test() ->
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_gateway, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
+    ?assertEqual(<<"gateway">>, maps:get(<<"name">>, Info)).
+
+%% Test payment flow via hb_ao:resolve
 payment_flow_test() ->
-    Opts = setup(),
+    Opts = setup_test_env(),
     Wallet = maps:get(priv_wallet, Opts),
     M1 = #{},
-    Addr = ar_wallet:to_address(Wallet),
 
-    %% Sign a message
+    %% Sign a message with amount
     SignedMsg = hb_message:commit(#{<<"amount">> => 1000}, #{priv_wallet => Wallet}),
 
-    %% Deposit
-    {ok, DepRes} = deposit(M1, SignedMsg, Opts),
-    ?assertEqual(1000, hb_maps:get(<<"balance">>, DepRes, Opts)),
+    %% Deposit via hb_ao:resolve
+    {ok, DepRes} = hb_ao:resolve(
+        {as, dev_gateway, M1},
+        maps:merge(SignedMsg, #{<<"path">> => <<"deposit">>}),
+        Opts
+    ),
+    ?assertEqual(1000, maps:get(<<"balance">>, DepRes)),
 
     %% Check balance
-    {ok, BalRes} = balance(DepRes, SignedMsg, Opts),
+    {ok, BalRes} = hb_ao:resolve(
+        {as, dev_gateway, DepRes},
+        maps:merge(SignedMsg, #{<<"path">> => <<"balance">>}),
+        Opts
+    ),
     ?assertEqual(1000, maps:get(<<"balance">>, BalRes)),
 
     %% Withdraw
     WithdrawMsg = hb_message:commit(#{<<"amount">> => 500}, #{priv_wallet => Wallet}),
-    {ok, WithRes} = withdraw(DepRes, WithdrawMsg, Opts),
-    ?assertEqual(500, hb_maps:get(<<"balance">>, WithRes, Opts)).
+    {ok, WithRes} = hb_ao:resolve(
+        {as, dev_gateway, DepRes},
+        maps:merge(WithdrawMsg, #{<<"path">> => <<"withdraw">>}),
+        Opts
+    ),
+    ?assertEqual(500, maps:get(<<"balance">>, WithRes)).
 
 -endif.
 ```

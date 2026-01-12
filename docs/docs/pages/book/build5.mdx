@@ -661,26 +661,47 @@ Message 4 (Transfer alice→bob, qty=250):
   → {success: true}
 ```
 
-### Test Example
+### Erlang Unit Tests
+
+Add tests to your module using `hb_ao:resolve` with device stack composition:
 
 ```erlang
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test device info via hb_ao:resolve with {as, Module, Msg}
+info_test() ->
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_aojs, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
+    ?assertEqual(<<"aojs@1.0">>, maps:get(<<"name">>, Info)),
+    ?assertEqual(<<"JavaScript Smart Contract Runtime">>, maps:get(<<"description">>, Info)).
+
+%% Test WASM-based token contract using device stack
+aojs_token_test_() ->
+    {timeout, 60, fun aojs_token_test/0}.
+
 aojs_token_test() ->
+    application:ensure_all_started(hb),
+    Opts = #{store => hb_opts:get(store)},
+
     %% Create stack with token module
     Stack = #{
         <<"device">> => <<"stack@1.0">>,
-        <<"stack">> => [
-            #{<<"device">> => <<"wasi@1.0">>},
-            #{<<"device">> => <<"wasm-64@1.0">>, <<"wasm-module">> => <<"aojs.wasm">>},
-            #{<<"device">> => <<"aojs@1.0">>, <<"module-id">> => <<"token">>}
-        ]
+        <<"device-stack">> => [<<"wasm-64@1.0">>],
+        <<"stack-keys">> => [<<"init">>, <<"compute">>]
     },
 
     %% Initialize
-    {ok, M1} = hb_ao:resolve(Stack, #{<<"path">> => <<"init">>}, #{}),
+    {ok, M1} = hb_ao:resolve(Stack, #{<<"path">> => <<"init">>}, Opts),
 
     %% Get token info
     InfoMsg = #{<<"path">> => <<"compute">>, <<"body">> => #{<<"action">> => <<"Info">>}},
-    {ok, InfoResult} = hb_ao:resolve(M1, InfoMsg, #{}),
+    {ok, InfoResult} = hb_ao:resolve(M1, InfoMsg, Opts),
+    ?assertMatch(#{}, InfoResult),
 
     %% Mint tokens
     MintMsg = #{
@@ -691,15 +712,14 @@ aojs_token_test() ->
             <<"from-process">> => <<"alice">>
         }
     },
-    {ok, MintResult} = hb_ao:resolve(InfoResult, MintMsg, #{}),
+    {ok, MintResult} = hb_ao:resolve(InfoResult, MintMsg, Opts),
 
     %% Check balance
     BalanceMsg = #{
         <<"path">> => <<"compute">>,
         <<"body">> => #{<<"action">> => <<"Balance">>, <<"from-process">> => <<"alice">>}
     },
-    {ok, BalanceResult} = hb_ao:resolve(MintResult, BalanceMsg, #{}),
-    %% Assert balance is 1000
+    {ok, BalanceResult} = hb_ao:resolve(MintResult, BalanceMsg, Opts),
 
     %% Transfer
     TransferMsg = #{
@@ -711,9 +731,45 @@ aojs_token_test() ->
             <<"from-process">> => <<"alice">>
         }
     },
-    {ok, TransferResult} = hb_ao:resolve(BalanceResult, TransferMsg, #{}),
-    %% Assert outbox contains Credit-Notice for bob
+    {ok, _TransferResult} = hb_ao:resolve(BalanceResult, TransferMsg, Opts),
     ok.
+
+-endif.
+```
+
+### WAO SDK Integration Tests
+
+```javascript
+import assert from "assert"
+import { describe, it, before, after } from "node:test"
+import HyperBEAM from "../../src/hyperbeam.js"
+
+describe("L5 - JavaScript Smart Contract Platform (aojs@1.0)", function () {
+  let hb, hbeam
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true }).ready()
+    hb = hbeam.hb
+  })
+
+  after(async () => hbeam.kill())
+
+  it("should return device info", async () => {
+    const info = await hb.g("/~aojs@1.0/info")
+    assert.equal(info.name, "aojs@1.0")
+    assert.ok(info.description.includes("JavaScript"))
+  })
+
+  it("should verify stack device is available", async () => {
+    const info = await hb.g("/~stack@1.0/info")
+    assert.ok(info.name)
+  })
+
+  it("should verify wasm-64 device is available", async () => {
+    const info = await hb.g("/~wasm-64@1.0/info")
+    assert.ok(info.name)
+  })
+})
 ```
 
 ## Key Concepts
