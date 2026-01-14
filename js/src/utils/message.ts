@@ -151,9 +151,9 @@ export function isBundle(msg: TABMMessage): boolean {
 
 /** Get bundle items */
 export function getBundleItems(msg: TABMMessage): TABMMessage[] {
-  const body = msg['body'] as TABMMessage;
-  if (!body) return [];
+  if (!isBundle(msg)) return [];
 
+  const body = msg['body'] as TABMMessage;
   const items: TABMMessage[] = [];
   let index = 1;
   while (String(index) in body) {

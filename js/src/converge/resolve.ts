@@ -7,7 +7,7 @@ import type { TABMMessage, TABMValue } from '../types/message.js';
 import type { Device, DeviceInfo } from '../types/device.js';
 import type { ResolveResult, Result } from '../types/result.js';
 import type { ResolveOptions } from '../types/options.js';
-import { isPass, ok, err } from '../types/result.js';
+import { isPass, ok, err, pass } from '../types/result.js';
 import { normalizeKey } from '../utils/keys.js';
 
 /** Resolution context for tracking state during resolution */
@@ -50,13 +50,13 @@ export function joinPath(segments: string[]): string {
 export function isExported(info: DeviceInfo, key: string): boolean {
   const normalizedKey = normalizeKey(key);
 
-  // Check exclusions first
-  if (info.excludes?.includes(normalizedKey)) {
+  // Check exclusions first (normalize for comparison)
+  if (info.excludes?.some(e => normalizeKey(e) === normalizedKey)) {
     return false;
   }
 
-  // Check if explicitly exported
-  return info.exports.includes(normalizedKey);
+  // Check if explicitly exported (normalize for comparison)
+  return info.exports.some(e => normalizeKey(e) === normalizedKey);
 }
 
 /** Get the handler function name for a device */
@@ -116,8 +116,8 @@ export async function resolveWithStack(
       return result;
     }
   }
-  // All devices passed - key not found
-  return err(404, `Key not found: ${key}`);
+  // All devices passed - let caller handle fallback
+  return pass();
 }
 
 /**

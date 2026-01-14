@@ -96,11 +96,13 @@ export class SchedulerDevice implements Device {
     messageId: Base64URL,
     slot: number
   ): Promise<Base64URL> {
-    const data = concat([
-      fromBase64URL(prevHash),
-      fromBase64URL(messageId),
-      toBinary(String(slot)),
-    ]);
+    // Decode prevHash (always valid base64URL from our initialization)
+    const prevHashBytes = fromBase64URL(prevHash);
+    // Message ID might be arbitrary string, so encode as UTF-8
+    const messageIdBytes = toBinary(messageId);
+    const slotBytes = toBinary(String(slot));
+
+    const data = concat([prevHashBytes, messageIdBytes, slotBytes]);
     const hash = await sha256(data);
     return toBase64URL(hash);
   }
