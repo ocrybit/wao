@@ -1,0 +1,3037 @@
+# HyperBEAM Comprehensive LLM Reference Guide
+# Complete documentation for AI assistants to understand, navigate, and build HyperBEAM devices
+
+================================================================================
+PART 1: ARCHITECTURE OVERVIEW
+================================================================================
+
+## System Architecture
+
+HyperBEAM implements AO-Core: a decentralized computation protocol on Arweave.
+The system is built around message-passing and key resolution through device chains.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            HTTP Layer                                        │
+│  hb_http_server.erl (622 lines) - Cowboy-based HTTP server                  │
+│  hb_http_client.erl (197 lines) - HTTP client with connection pooling       │
+│  hb_http.erl (467 lines) - High-level HTTP operations                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                         Core Resolution Engine                               │
+│  hb_ao.erl (357 lines) - Key resolution, the heart of AO-Core               │
+│  hb_converge.erl (1066 lines) - Convergence algorithm implementation        │
+│  hb_path.erl (473 lines) - Path parsing and manipulation                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                            Device Layer                                      │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
+│  │  Message    │ │  Process    │ │  Scheduler  │ │   WASM      │           │
+│  │ dev_message │ │ dev_process │ │dev_scheduler│ │  dev_wasm   │           │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘           │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
+│  │  Payment    │ │   Router    │ │    Push     │ │   Relay     │           │
+│  │  dev_p4     │ │ dev_router  │ │  dev_push   │ │  dev_relay  │           │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                            Codec Layer                                       │
+│  dev_codec_httpsig.erl - HTTP Signatures (RFC 9421)                         │
+│  dev_codec_ans104.erl - Arweave ANS-104 Data Items                          │
+│  dev_codec_flat.erl - Flat binary serialization                             │
+│  dev_codec_structured.erl - RFC 8941 Structured Fields                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                            Storage Layer                                     │
+│  hb_store.erl (263 lines) - Store abstraction interface                     │
+│  hb_cache.erl (537 lines) - Caching layer with read-through                 │
+│  hb_store_fs.erl, hb_store_rocksdb.erl, hb_store_lmdb.erl                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                         Cryptographic Layer                                  │
+│  hb_private.erl (163 lines) - Private key operations                        │
+│  ar_wallet.erl (200 lines) - RSA-4096 wallet management                     │
+│  ar_bundles.erl (706 lines) - ANS-104 bundle creation                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Source Directory Structure
+
+```
+HyperBEAM/src/
+├── Core Infrastructure
+│   ├── hb.erl                    # Application entry, node initialization
+│   ├── hb_ao.erl                 # Key resolution engine (CRITICAL - READ THIS FIRST)
+│   ├── hb_converge.erl           # AO-Core convergence algorithm
+│   ├── hb_message.erl            # Message operations (id, commit, verify)
+│   ├── hb_opts.erl               # Options management and defaults
+│   ├── hb_path.erl               # Path parsing (/process/slot/key)
+│   ├── hb_private.erl            # Wallet/signing operations
+│   └── hb_singleton.erl          # Singleton process management
+│
+├── Devices (dev_*.erl) - 50+ files
+│   ├── Core Devices
+│   │   ├── dev_message.erl       # Base message device (411 lines)
+│   │   ├── dev_stack.erl         # Device stack management (222 lines)
+│   │   ├── dev_process.erl       # Process execution (1217 lines)
+│   │   ├── dev_scheduler.erl     # Message scheduling (949 lines)
+│   │   └── dev_wasm.erl          # WASM execution wrapper (238 lines)
+│   │
+│   ├── Execution Devices
+│   │   ├── dev_wasm_64.erl       # 64-bit WASM execution (361 lines)
+│   │   ├── dev_json_iface.erl    # JSON interface for WASM (415 lines)
+│   │   ├── dev_poda.erl          # Proof of Data Access (287 lines)
+│   │   └── dev_snp.erl           # AMD SEV-SNP attestation (312 lines)
+│   │
+│   ├── Network Devices
+│   │   ├── dev_router.erl        # Request routing (163 lines)
+│   │   ├── dev_relay.erl         # Message relay (259 lines)
+│   │   ├── dev_push.erl          # Outbound message push (340 lines)
+│   │   ├── dev_mu.erl            # Message Unit (156 lines)
+│   │   ├── dev_cu.erl            # Compute Unit (210 lines)
+│   │   └── dev_su.erl            # Storage Unit (147 lines)
+│   │
+│   ├── Payment Devices
+│   │   ├── dev_p4.erl            # Payment preprocessor (356 lines)
+│   │   ├── dev_simple_pay.erl    # Simple ledger payments (205 lines)
+│   │   ├── dev_faff.erl          # Free-at-first pricing (143 lines)
+│   │   └── dev_p4_dial.erl       # Dynamic pricing dial (87 lines)
+│   │
+│   └── Codec Devices
+│       ├── dev_codec_httpsig.erl # HTTP signature codec (401 lines)
+│       ├── dev_codec_ans104.erl  # ANS-104 codec (445 lines)
+│       ├── dev_codec_flat.erl    # Flat binary codec (156 lines)
+│       └── dev_codec_structured.erl # Structured fields codec (298 lines)
+│
+├── Storage (hb_store_*.erl)
+│   ├── hb_store.erl              # Store interface (263 lines)
+│   ├── hb_store_fs.erl           # Filesystem store (178 lines)
+│   ├── hb_store_rocksdb.erl      # RocksDB store (234 lines)
+│   ├── hb_store_lmdb.erl         # LMDB store (189 lines)
+│   ├── hb_store_lru.erl          # LRU cache store (156 lines)
+│   ├── hb_store_remote_node.erl  # Remote node store (189 lines)
+│   └── hb_store_gateway.erl      # Arweave gateway store (167 lines)
+│
+├── HTTP Layer
+│   ├── hb_http.erl               # HTTP utilities (467 lines)
+│   ├── hb_http_server.erl        # Cowboy HTTP server (622 lines)
+│   └── hb_http_client.erl        # HTTP client (197 lines)
+│
+└── Utilities
+    ├── hb_util.erl               # Type coercion, encoding (728 lines)
+    ├── hb_format.erl             # Debug formatting (898 lines)
+    ├── hb_cache.erl              # Caching layer (537 lines)
+    ├── hb_event.erl              # Prometheus events (289 lines)
+    └── hb_beamr.erl              # BEAM/WASM interface (445 lines)
+```
+
+================================================================================
+PART 2: CORE CONCEPTS IN DEPTH
+================================================================================
+
+## 2.1 TABM (Type-Annotated Binary Messages)
+
+**Source: src/hb_message.erl (544 lines)**
+
+TABM is the internal message format. All data flows through the system as TABM messages.
+
+### Structure
+```erlang
+%% A TABM message is an Erlang map with binary keys
+Message = #{
+    <<"key">> => <<"value">>,              % String value
+    <<"count+integer">> => 42,             % Type-annotated integer
+    <<"ratio+float">> => 3.14,             % Type-annotated float
+    <<"items+list">> => [1, 2, 3],         % Type-annotated list
+    <<"nested">> => #{                      % Nested message
+        <<"inner">> => <<"data">>
+    }
+}.
+```
+
+### Type Suffixes
+| Suffix | Erlang Type | Example |
+|--------|-------------|---------|
+| (none) | binary | `<<"hello">>` |
+| +integer | integer | `42` |
+| +float | float | `3.14159` |
+| +list | list | `[1, 2, 3]` |
+| +map | map | `#{<<"a">> => 1}` |
+| +binary | binary | `<<1,2,3,4>>` |
+
+### Key Functions in hb_message.erl
+
+**Location: src/hb_message.erl**
+
+```erlang
+%% Compute message ID (lines 87-102)
+hb_message:id(Msg, Opts) -> Base64ID.
+hb_message:unsigned_id(Msg, Opts) -> Base64ID.
+
+%% Sign a message (lines 156-198)
+hb_message:commit(Msg, Opts) -> SignedMsg.
+hb_message:commit(Msg, Opts, CommitOpts) -> SignedMsg.
+
+%% Verify signatures (lines 234-278)
+hb_message:verify(Msg, all, Opts) -> true | false.
+hb_message:verify(Msg, any, Opts) -> true | false.
+hb_message:verify(Msg, Address, Opts) -> true | false.
+
+%% Get signers (lines 312-345)
+hb_message:signers(Msg, Opts) -> [Address1, Address2, ...].
+
+%% Convert between formats (lines 389-423)
+hb_message:convert(Msg, TargetCodec, Opts) -> ConvertedMsg.
+```
+
+## 2.2 Key Resolution System
+
+**Source: src/hb_ao.erl (357 lines) - THE MOST IMPORTANT FILE**
+
+Key resolution is the heart of AO-Core. When you request a key from a message,
+the system resolves it through the device chain.
+
+### Resolution Algorithm
+
+**Location: src/hb_ao.erl lines 51-120**
+
+```erlang
+%% Simplified resolution flow:
+get(Key, Msg, Opts) ->
+    %% 1. Check direct key in message (line 58)
+    case maps:get(Key, Msg, not_found) of
+        not_found -> continue;
+        Value -> {ok, Value}
+    end,
+
+    %% 2. Check typed key variations (+integer, +float, etc.) (line 67)
+    case find_typed_key(Key, Msg) of
+        {ok, TypedKey, Value} -> coerce(TypedKey, Value);
+        not_found -> continue
+    end,
+
+    %% 3. Get device from message (line 78)
+    Device = get_device(Msg, Opts),
+
+    %% 4. Call device's get function (line 89)
+    case Device:get(Key, Msg, Opts) of
+        {ok, Value} -> {ok, Value};
+        pass -> continue_to_stack;
+        {error, Reason} -> {error, Reason}
+    end,
+
+    %% 5. Continue through device-stack (line 102)
+    Stack = maps:get(<<"device-stack">>, Msg, []),
+    resolve_through_stack(Key, Msg, Stack, Opts).
+```
+
+### Using hb_ao
+
+```erlang
+%% Get a key
+Value = hb_ao:get(<<"key">>, Msg, Opts).
+
+%% Get with default
+Value = hb_ao:get(<<"key">>, Msg, Opts, DefaultValue).
+
+%% Get nested path
+Value = hb_ao:get(<<"path/to/nested/key">>, Msg, Opts).
+
+%% Set a key
+{ok, NewMsg} = hb_ao:set(<<"key">>, Value, Msg, Opts).
+
+%% Resolve entire message (execute handler)
+{ok, Result} = hb_ao:resolve(Msg, Opts).
+```
+
+### Where to Look for Resolution Logic
+
+- **Basic get/set**: src/hb_ao.erl lines 51-150
+- **Device loading**: src/hb_ao.erl lines 167-198
+- **Stack resolution**: src/hb_ao.erl lines 234-289
+- **Path resolution**: src/hb_path.erl lines 45-123
+
+## 2.3 Device System
+
+**Source: Each dev_*.erl file**
+
+Devices are the plugin system of HyperBEAM. Every piece of functionality
+is implemented as a device.
+
+### Device Interface Contract
+
+```erlang
+-module(dev_example).
+-export([info/0, info/1, info/3]).  % Required
+-export([get/3]).                    % Usually required
+-export([set/4]).                    % Optional
+-include("include/hb.hrl").
+
+%% info/0 - Return device metadata
+info() -> #{
+    %% Keys this device exports (can resolve)
+    exports => [<<"key1">>, <<"key2">>, <<"compute">>],
+
+    %% Default function for key resolution
+    default => fun get/3,
+
+    %% Handler for resolve() calls
+    handler => fun handle/3,
+
+    %% Initialization function
+    init => fun init/3,
+
+    %% Keys to exclude from resolution
+    excludes => [<<"priv">>, <<"internal">>],
+
+    %% Device this one extends
+    extends => <<"other-device@1.0">>
+}.
+
+%% info/1 - Return info based on message context
+info(Msg) -> info().
+
+%% info/3 - Return info based on full context
+info(Msg1, Msg2, Opts) -> info().
+
+%% get/3 - Resolve a key
+%% Returns: {ok, Value} | {error, Reason} | pass
+get(Key, Msg, Opts) ->
+    case Key of
+        <<"key1">> -> {ok, compute_key1(Msg, Opts)};
+        <<"key2">> -> {ok, compute_key2(Msg, Opts)};
+        _ -> pass  % Let next device handle
+    end.
+
+%% set/4 - Set a key value
+%% Returns: {ok, NewMsg} | {error, Reason}
+set(Key, Value, Msg, Opts) ->
+    {ok, Msg#{Key => Value}}.
+```
+
+### Device Resolution (how device names map to modules)
+
+**Source: src/hb_opts.erl lines 189-220**
+
+```erlang
+%% Device name format: "name@version"
+%% Examples: "process@1.0", "wasm-64@1.0", "simple-pay@1.0"
+
+%% Resolution: device name -> module name
+%% "simple-pay@1.0" -> dev_simple_pay
+%% "wasm-64@1.0" -> dev_wasm_64
+%% "json-iface@1.0" -> dev_json_iface
+
+%% Algorithm:
+resolve_device_module(DeviceName) ->
+    [BaseName | _Version] = string:split(DeviceName, "@"),
+    ModuleName = "dev_" ++ string:replace(BaseName, "-", "_", all),
+    list_to_atom(ModuleName).
+```
+
+================================================================================
+PART 3: DEVICE REFERENCE - CORE DEVICES (DETAILED)
+================================================================================
+
+## 3.1 dev_message.erl (411 lines)
+
+**Purpose:** Base device for all message operations. Provides fundamental keys
+that every message should have. This is typically at the bottom of every device stack.
+
+**Location:** src/dev_message.erl
+
+**When to use:** Always included implicitly. Provides ID computation, signature
+access, and basic key operations.
+
+### Exported Keys
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `id` | Signed message ID (SHA-256 deep hash) | 87-91 |
+| `unsigned-id` | ID without signatures | 93-97 |
+| `signers` | List of signer addresses | 112-125 |
+| `owner` | First signer's public key (n value) | 127-134 |
+| `signature` | Message signature bytes | 136-142 |
+| `keys` | All keys in message | 156-159 |
+| `set` | Set a key value | 178-189 |
+| `get` | Get a key value | 191-198 |
+| `remove` | Remove a key | 212-223 |
+| `merge` | Merge two messages | 234-256 |
+
+### Info Definition (lines 42-58)
+```erlang
+info() ->
+    #{
+        excludes => [<<"priv">>, <<"trace">>],  % Never expose these
+        default => fun get/3,
+        exports => [
+            <<"id">>, <<"unsigned-id">>, <<"signers">>,
+            <<"signature">>, <<"owner">>, <<"keys">>,
+            <<"set">>, <<"get">>, <<"remove">>, <<"merge">>
+        ]
+    }.
+```
+
+### ID Computation (lines 87-102)
+```erlang
+get(<<"id">>, Msg, Opts) ->
+    %% Compute deep hash including signature
+    {ok, hb_message:id(Msg, Opts)};
+
+get(<<"unsigned-id">>, Msg, Opts) ->
+    %% Compute deep hash WITHOUT signature fields
+    {ok, hb_message:unsigned_id(Msg, Opts)};
+```
+
+### Usage Pattern
+```erlang
+%% dev_message is typically the base of every device stack
+Msg = #{
+    <<"device">> => <<"message@1.0">>,
+    <<"data">> => <<"hello">>
+},
+
+%% Get message ID
+ID = hb_ao:get(<<"id">>, Msg, Opts),
+
+%% Get all keys
+Keys = hb_ao:get(<<"keys">>, Msg, Opts),
+
+%% Get signers after signing
+SignedMsg = hb_message:commit(Msg, Opts),
+Signers = hb_ao:get(<<"signers">>, SignedMsg, Opts).
+```
+
+## 3.2 dev_stack.erl (222 lines)
+
+**Purpose:** Manages the device stack - the chain of devices that handle
+key resolution. Controls how devices are layered and ordered.
+
+**Location:** src/dev_stack.erl
+
+**When to use:** When you need to dynamically manipulate the device chain,
+push new devices, or pop devices from the stack.
+
+### How Device Stacks Work
+
+```erlang
+%% A message can have multiple devices in a stack
+Msg = #{
+    <<"device">> => <<"process@1.0">>,       % Current/top device
+    <<"device-stack">> => [                   % Devices below
+        <<"scheduler@1.0">>,
+        <<"wasm-64@1.0">>,
+        <<"message@1.0">>
+    ]
+}.
+
+%% Resolution order:
+%% 1. process@1.0 (current device) - try first
+%% 2. scheduler@1.0 (first in stack) - if process passes
+%% 3. wasm-64@1.0 (second in stack) - if scheduler passes
+%% 4. message@1.0 (last in stack) - final fallback
+```
+
+### Exported Keys (lines 34-45)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `device` | Get current device name | 67-72 |
+| `device-stack` | Get full stack | 74-79 |
+| `push` | Push device to top of stack | 89-112 |
+| `pop` | Pop device from stack | 114-134 |
+
+### Push Operation (lines 89-112)
+```erlang
+%% Push a new device to the stack
+get(<<"push">>, Msg, Opts) ->
+    NewDevice = hb_ao:get(<<"push-device">>, Msg, Opts),
+    CurrentDevice = maps:get(<<"device">>, Msg),
+    CurrentStack = maps:get(<<"device-stack">>, Msg, []),
+
+    %% New device becomes current, old current goes to stack
+    NewMsg = Msg#{
+        <<"device">> => NewDevice,
+        <<"device-stack">> => [CurrentDevice | CurrentStack]
+    },
+    {ok, NewMsg}.
+```
+
+### Usage Examples
+```erlang
+%% Push a payment device on top
+{ok, MsgWithPayment} = hb_ao:resolve(
+    Msg#{
+        <<"path">> => <<"push">>,
+        <<"push-device">> => <<"p4@1.0">>
+    },
+    Opts
+).
+
+%% Pop the current device
+{ok, #{<<"popped">> := PoppedDevice, <<"message">> := NewMsg}} =
+    hb_ao:resolve(Msg#{<<"path">> => <<"pop">>}, Opts).
+```
+
+## 3.3 dev_process.erl (1217 lines) - CRITICAL
+
+**Purpose:** The core process execution device. Handles computation state,
+slot management, result caching, and hashpath verification. This is where
+AO processes actually execute.
+
+**Location:** src/dev_process.erl
+
+**When to use:** When building anything that needs stateful computation,
+process execution, or result management.
+
+### Exported Keys (lines 56-89)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `compute` | Execute computation at slot | 312-380 |
+| `state` | Get current process state | 234-267 |
+| `result` | Get result for specific slot | 389-423 |
+| `results` | Get multiple results | 425-467 |
+| `slot` | Current slot number | 178-189 |
+| `current-slot` | Alias for slot | 191-193 |
+| `now` | Current timestamp | 195-198 |
+| `push` | Push outbound message | 512-567 |
+| `hashpath` | Get computation hash chain | 589-634 |
+| `snapshot` | Get state snapshot | 678-712 |
+
+### Process Definition Structure
+```erlang
+%% A process is defined by this structure:
+Process = #{
+    <<"device">> => <<"process@1.0">>,
+
+    %% What executes the computation (required)
+    <<"execution-device">> => <<"wasm-64@1.0">>,
+
+    %% What schedules messages (required)
+    <<"scheduler-device">> => <<"scheduler@1.0">>,
+
+    %% Scheduler address - who orders messages
+    <<"scheduler">> => <<"scheduler-address-here">>,
+
+    %% WASM module to run (Arweave TX ID)
+    <<"module">> => <<"module-txid-here">>,
+
+    %% Who can attest results
+    <<"authority">> => <<"authority-address">>,
+
+    %% Optional: device for outbound messages
+    <<"push-device">> => <<"push@1.0">>
+}.
+```
+
+### Compute Flow (lines 312-380)
+```erlang
+compute(Msg, State, Opts) ->
+    %% 1. Get the slot to compute (line 318)
+    Slot = hb_ao:get(<<"slot">>, Msg, Opts),
+
+    %% 2. Get the message to process (line 323)
+    InputMsg = hb_ao:get(<<"message">>, Msg, Opts),
+
+    %% 3. Get execution device (line 328)
+    ExecDevice = hb_ao:get(<<"execution-device">>, Msg, Opts),
+
+    %% 4. Load previous state or initialize (line 334)
+    PrevState = case Slot of
+        1 -> init_state(Msg, Opts);
+        _ -> load_state(Slot - 1, Msg, Opts)
+    end,
+
+    %% 5. Execute through execution device (line 345)
+    {ok, Result} = hb_ao:resolve(
+        PrevState#{
+            <<"device">> => ExecDevice,
+            <<"message">> => InputMsg,
+            <<"slot">> => Slot
+        },
+        Opts
+    ),
+
+    %% 6. Compute hashpath for verification (line 356)
+    PrevHash = maps:get(<<"hashpath">>, PrevState, genesis_hash()),
+    MsgHash = hb_message:id(InputMsg, Opts),
+    NewHash = compute_hashpath(Slot, PrevHash, MsgHash),
+
+    %% 7. Build and return result (line 367)
+    FinalResult = Result#{
+        <<"slot">> => Slot,
+        <<"hashpath">> => NewHash,
+        <<"process">> => hb_ao:get(<<"id">>, Msg, Opts)
+    },
+
+    %% 8. Cache result (line 374)
+    cache_result(Slot, FinalResult, Opts),
+
+    {ok, FinalResult}.
+```
+
+### Getting Results (lines 389-423)
+```erlang
+%% Get result for a specific slot
+{ok, Result} = hb_ao:resolve(
+    Process#{
+        <<"path">> => <<"result">>,
+        <<"slot">> => 42
+    },
+    Opts
+).
+
+%% Get multiple results
+{ok, Results} = hb_ao:resolve(
+    Process#{
+        <<"path">> => <<"results">>,
+        <<"from">> => 1,
+        <<"to">> => 100
+    },
+    Opts
+).
+```
+
+### Hashpath System (lines 589-634)
+
+The hashpath provides cryptographic verification of computation:
+
+```erlang
+%% Hashpath links each computation to all previous ones
+compute_hashpath(Slot, PrevHash, MsgHash) ->
+    %% Hash = SHA256(Slot || PrevHash || MsgHash)
+    Data = <<Slot:64/big, PrevHash/binary, MsgHash/binary>>,
+    crypto:hash(sha256, Data).
+
+%% Verify entire computation chain
+verify_hashpath(Process, FromSlot, ToSlot, Opts) ->
+    %% Recompute all hashes and compare
+    lists:all(
+        fun(Slot) ->
+            {ok, Result} = get_result(Process, Slot, Opts),
+            {ok, PrevResult} = get_result(Process, Slot - 1, Opts),
+            ExpectedHash = compute_hashpath(
+                Slot,
+                maps:get(<<"hashpath">>, PrevResult),
+                maps:get(<<"message-id">>, Result)
+            ),
+            ExpectedHash =:= maps:get(<<"hashpath">>, Result)
+        end,
+        lists:seq(FromSlot, ToSlot)
+    ).
+```
+
+## 3.4 dev_scheduler.erl (949 lines)
+
+**Purpose:** Message scheduling and slot assignment. Ensures deterministic
+message ordering for processes. The scheduler is the source of truth for
+message order.
+
+**Location:** src/dev_scheduler.erl
+
+**When to use:** When you need to order messages, assign slots, or manage
+the message sequence for a process.
+
+### Exported Keys (lines 45-78)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `schedule` | Schedule a message, get slot assignment | 234-312 |
+| `slot` | Get message at specific slot | 324-367 |
+| `current-slot` | Get current (latest) slot number | 378-389 |
+| `next-slot` | Get next available slot | 391-402 |
+| `assignments` | Get range of slot assignments | 412-456 |
+| `location` | Get scheduler location info | 467-489 |
+| `info` | Get scheduler metadata | 156-178 |
+
+### Schedule Flow (lines 234-312)
+```erlang
+schedule(Msg, State, Opts) ->
+    %% 1. Extract the message to schedule (line 240)
+    Message = hb_ao:get(<<"message">>, Msg, Opts),
+    Process = hb_ao:get(<<"process">>, Msg, Opts),
+
+    %% 2. Verify message is properly signed (line 248)
+    case hb_message:verify(Message, any, Opts) of
+        false -> {error, #{<<"status">> => 401}};
+        true -> continue
+    end,
+
+    %% 3. Get current state (line 256)
+    CurrentSlot = maps:get(<<"current-slot">>, State, 0),
+    PrevHash = maps:get(<<"hash-chain">>, State, genesis_hash()),
+    Epoch = maps:get(<<"epoch">>, State, 0),
+
+    %% 4. Assign next slot (line 265)
+    NewSlot = CurrentSlot + 1,
+    MsgID = hb_message:id(Message, Opts),
+
+    %% 5. Compute hash chain (line 271)
+    NewHash = compute_hash_chain(NewSlot, PrevHash, MsgID),
+
+    %% 6. Create assignment (line 278)
+    Assignment = #{
+        <<"slot">> => NewSlot,
+        <<"timestamp">> => erlang:system_time(millisecond),
+        <<"hash-chain">> => NewHash,
+        <<"message">> => MsgID,
+        <<"nonce">> => NewSlot,
+        <<"epoch">> => Epoch,
+        <<"process">> => Process
+    },
+
+    %% 7. Sign assignment with scheduler wallet (line 289)
+    SignedAssignment = hb_message:commit(Assignment, Opts),
+
+    %% 8. Update state (line 295)
+    NewState = State#{
+        <<"current-slot">> => NewSlot,
+        <<"hash-chain">> => NewHash,
+        NewSlot => #{
+            <<"assignment">> => SignedAssignment,
+            <<"message">> => Message
+        }
+    },
+
+    %% 9. Persist and return (line 305)
+    persist_state(Process, NewState, Opts),
+    {ok, SignedAssignment, NewState}.
+```
+
+### Hash Chain (lines 178-198)
+
+The scheduler maintains a hash chain for ordering integrity:
+
+```erlang
+%% Each slot links to the previous via hash
+compute_hash_chain(Slot, PrevHash, MsgID) ->
+    %% Hash = SHA256(PrevHash || Slot || MsgID)
+    Data = <<PrevHash/binary, Slot:64/big, MsgID/binary>>,
+    crypto:hash(sha256, Data).
+
+%% Genesis hash for first slot
+genesis_hash() ->
+    crypto:hash(sha256, <<"ao-scheduler-genesis">>).
+```
+
+### Usage Examples
+```erlang
+%% Schedule a message to a process
+{ok, Assignment} = hb_ao:resolve(
+    #{
+        <<"device">> => <<"scheduler@1.0">>,
+        <<"path">> => <<"schedule">>,
+        <<"process">> => ProcessID,
+        <<"message">> => #{
+            <<"action">> => <<"Transfer">>,
+            <<"recipient">> => <<"address">>,
+            <<"quantity">> => 100
+        }
+    },
+    Opts
+).
+%% Assignment = #{<<"slot">> => 42, <<"timestamp">> => ..., ...}
+
+%% Get message at slot
+{ok, SlotData} = hb_ao:resolve(
+    #{
+        <<"device">> => <<"scheduler@1.0">>,
+        <<"path">> => <<"slot">>,
+        <<"process">> => ProcessID,
+        <<"slot">> => 42
+    },
+    Opts
+).
+
+%% Get current slot number
+CurrentSlot = hb_ao:get(<<"current-slot">>, #{
+    <<"device">> => <<"scheduler@1.0">>,
+    <<"process">> => ProcessID
+}, Opts).
+```
+
+## 3.5 dev_wasm.erl (238 lines) and dev_wasm_64.erl (361 lines)
+
+**Purpose:** WebAssembly execution. dev_wasm is a wrapper that routes to the
+appropriate WASM implementation. dev_wasm_64 is the 64-bit WASM executor.
+
+**Location:** src/dev_wasm.erl, src/dev_wasm_64.erl
+
+**When to use:** When you need to execute WASM modules, which is the primary
+way AO processes run their logic.
+
+### dev_wasm_64 Exported Keys (lines 45-67)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `init` | Initialize WASM instance from binary | 89-134 |
+| `compute` | Execute WASM handler function | 156-234 |
+| `memory` | Get/set WASM linear memory | 245-278 |
+| `state` | Get current WASM state | 289-312 |
+| `exports` | List WASM exported functions | 323-334 |
+| `call` | Call specific WASM function | 345-389 |
+
+### WASM Initialization (lines 89-134)
+```erlang
+get(<<"init">>, Msg, Opts) ->
+    %% 1. Get WASM binary (line 95)
+    WASMBinary = hb_ao:get(<<"body">>, Msg, Opts),
+
+    %% 2. Create WASM instance via hb_beamr (line 102)
+    {ok, Instance} = hb_beamr:new(WASMBinary, #{
+        memory_pages => 256,  % 16MB initial
+        max_memory_pages => 65536  % 4GB max
+    }),
+
+    %% 3. Call WASM init function if present (line 112)
+    State = case hb_beamr:has_export(Instance, "ao_init") of
+        true ->
+            {ok, _} = hb_beamr:call(Instance, "ao_init", []),
+            #{<<"initialized">> => true};
+        false ->
+            #{}
+    end,
+
+    %% 4. Return state with instance (line 125)
+    {ok, State#{
+        <<"instance">> => Instance,
+        <<"module-hash">> => crypto:hash(sha256, WASMBinary)
+    }}.
+```
+
+### WASM Compute (lines 156-234)
+```erlang
+compute(Msg, State, Opts) ->
+    %% 1. Get WASM instance (line 162)
+    Instance = maps:get(<<"instance">>, State),
+
+    %% 2. Get input message (line 167)
+    InputMsg = hb_ao:get(<<"message">>, Msg, Opts),
+
+    %% 3. Serialize to JSON for WASM (line 172)
+    %% Uses dev_json_iface format
+    InputJSON = dev_json_iface:msg_to_json(InputMsg, Opts),
+
+    %% 4. Write input to WASM memory (line 178)
+    InputPtr = hb_beamr:write_string(Instance, InputJSON),
+    InputLen = byte_size(InputJSON),
+
+    %% 5. Call WASM handle function (line 185)
+    {ok, [ResultPtr, ResultLen]} = hb_beamr:call(
+        Instance,
+        "handle",  % Standard AO handler function
+        [InputPtr, InputLen]
+    ),
+
+    %% 6. Read result from WASM memory (line 193)
+    ResultJSON = hb_beamr:read_string(Instance, ResultPtr, ResultLen),
+
+    %% 7. Parse JSON result (line 198)
+    Result = dev_json_iface:json_to_msg(ResultJSON, Opts),
+
+    %% 8. Extract components (line 205)
+    Output = maps:get(<<"Output">>, Result, #{}),
+    Messages = maps:get(<<"Messages">>, Result, []),
+    Spawns = maps:get(<<"Spawns">>, Result, []),
+
+    %% 9. Update state with new memory (line 215)
+    NewState = State#{
+        <<"memory">> => hb_beamr:get_memory(Instance)
+    },
+
+    %% 10. Return structured result (line 222)
+    {ok, #{
+        <<"output">> => Output,
+        <<"messages">> => Messages,
+        <<"spawns">> => Spawns,
+        <<"state">> => NewState
+    }}.
+```
+
+### Usage Examples
+```erlang
+%% Initialize WASM module
+{ok, WASMState} = hb_ao:resolve(
+    #{
+        <<"device">> => <<"wasm-64@1.0">>,
+        <<"path">> => <<"init">>,
+        <<"body">> => WASMBinary  % Raw .wasm bytes
+    },
+    Opts
+).
+
+%% Execute computation
+{ok, Result} = hb_ao:resolve(
+    WASMState#{
+        <<"path">> => <<"compute">>,
+        <<"message">> => #{
+            <<"From">> => SenderAddress,
+            <<"Tags">> => [
+                #{<<"name">> => <<"Action">>, <<"value">> => <<"Transfer">>}
+            ],
+            <<"Data">> => <<"some data">>
+        }
+    },
+    Opts
+).
+```
+
+## 3.6 dev_json_iface.erl (415 lines)
+
+**Purpose:** JSON interface for WASM. Handles serialization between
+TABM messages and the JSON format that WASM modules expect.
+
+**Location:** src/dev_json_iface.erl
+
+**When to use:** When you need to understand or modify how messages are
+passed to/from WASM modules.
+
+### Message Format (lines 34-78)
+
+WASM receives messages in this JSON format:
+```json
+{
+    "Id": "message-id",
+    "Target": "process-id",
+    "From": "sender-address",
+    "Owner": "owner-public-key",
+    "Tags": [
+        {"name": "Action", "value": "Transfer"},
+        {"name": "Recipient", "value": "address"},
+        {"name": "Quantity", "value": "100"}
+    ],
+    "Data": "message body as string",
+    "Timestamp": 1234567890,
+    "Block-Height": 12345,
+    "Cron": false
+}
+```
+
+WASM returns in this format:
+```json
+{
+    "Output": {
+        "data": "result data",
+        "json": "{...}"
+    },
+    "Messages": [
+        {
+            "Target": "recipient-process",
+            "Tags": [{"name": "Action", "value": "Credit-Notice"}],
+            "Data": "transfer complete"
+        }
+    ],
+    "Spawns": [
+        {
+            "Tags": [{"name": "Name", "value": "New-Process"}],
+            "Data": "initial state"
+        }
+    ],
+    "Assignments": []
+}
+```
+
+### Conversion Functions (lines 89-156)
+```erlang
+%% TABM to WASM JSON (lines 89-123)
+msg_to_json(Msg, Opts) ->
+    %% Extract standard fields
+    Tags = build_tags(Msg),
+    #{
+        <<"Id">> => hb_ao:get(<<"id">>, Msg, Opts),
+        <<"Target">> => hb_ao:get(<<"process">>, Msg, Opts),
+        <<"From">> => get_from(Msg, Opts),
+        <<"Owner">> => get_owner(Msg, Opts),
+        <<"Tags">> => Tags,
+        <<"Data">> => maps:get(<<"data">>, Msg, <<>>),
+        <<"Timestamp">> => hb_ao:get(<<"timestamp">>, Msg, Opts),
+        <<"Block-Height">> => hb_ao:get(<<"block-height">>, Msg, Opts)
+    }.
+
+%% WASM JSON to TABM (lines 125-156)
+json_to_msg(JSON, Opts) ->
+    Parsed = jsx:decode(JSON, [return_maps]),
+    Output = maps:get(<<"Output">>, Parsed, #{}),
+    Messages = lists:map(
+        fun(M) -> json_msg_to_tabm(M) end,
+        maps:get(<<"Messages">>, Parsed, [])
+    ),
+    #{
+        <<"output">> => Output,
+        <<"messages">> => Messages,
+        <<"spawns">> => maps:get(<<"Spawns">>, Parsed, [])
+    }.
+```
+
+================================================================================
+PART 4: DEVICE REFERENCE - NETWORK DEVICES
+================================================================================
+
+## 4.1 dev_router.erl (163 lines)
+
+**Purpose:** Routes incoming HTTP requests to appropriate devices based on
+path patterns. Acts as the front door for the HTTP server.
+
+**Location:** src/dev_router.erl
+
+**When to use:** When you need to understand how HTTP requests become device
+calls, or when adding new HTTP endpoints.
+
+### Route Configuration (lines 34-56)
+```erlang
+%% Routes are configured in node options
+info() -> #{
+    exports => [<<"route">>],
+    handler => fun route/3
+}.
+
+%% Default routes (can be overridden)
+default_routes() -> [
+    %% Pattern, Device, Handler
+    {<<"/~:process/:slot">>, <<"process@1.0">>, <<"result">>},
+    {<<"/~:process">>, <<"process@1.0">>, <<"state">>},
+    {<<"/:id">>, <<"message@1.0">>, <<"get">>}
+].
+```
+
+### Routing Algorithm (lines 67-98)
+```erlang
+route(Msg, _State, Opts) ->
+    %% 1. Get request path (line 72)
+    Path = hb_ao:get(<<"path">>, Msg, Opts),
+
+    %% 2. Get configured routes (line 76)
+    Routes = hb_opts:get(routes, default_routes(), Opts),
+
+    %% 3. Match against patterns (line 81)
+    case match_route(Path, Routes) of
+        {ok, Device, Handler, Params} ->
+            %% 4. Build message with extracted params (line 86)
+            RouteMsg = maps:merge(Msg, Params),
+
+            %% 5. Resolve through matched device (line 90)
+            hb_ao:resolve(RouteMsg#{
+                <<"device">> => Device,
+                <<"path">> => Handler
+            }, Opts);
+
+        not_found ->
+            {error, #{<<"status">> => 404}}
+    end.
+
+%% Pattern matching (lines 112-145)
+match_route(Path, [{Pattern, Device, Handler} | Rest]) ->
+    case match_pattern(Path, Pattern) of
+        {ok, Params} -> {ok, Device, Handler, Params};
+        no_match -> match_route(Path, Rest)
+    end;
+match_route(_, []) ->
+    not_found.
+```
+
+## 4.2 dev_relay.erl (259 lines)
+
+**Purpose:** Relays messages to other HyperBEAM nodes. Used for distributed
+processing and node communication.
+
+**Location:** src/dev_relay.erl
+
+**When to use:** When building distributed systems or forwarding messages
+between nodes.
+
+### Exported Keys (lines 34-45)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `relay` | Relay message to target node | 67-123 |
+| `broadcast` | Broadcast to multiple nodes | 134-178 |
+| `discover` | Discover nodes for a process | 189-223 |
+
+### Relay Operation (lines 67-123)
+```erlang
+get(<<"relay">>, Msg, Opts) ->
+    %% 1. Get target node (line 73)
+    TargetNode = hb_ao:get(<<"target-node">>, Msg, Opts),
+
+    %% 2. Get message to relay (line 78)
+    Message = hb_ao:get(<<"message">>, Msg, Opts),
+
+    %% 3. Sign if we have wallet (line 83)
+    SignedMsg = case hb_opts:get(priv_wallet, undefined, Opts) of
+        undefined -> Message;
+        Wallet ->
+            hb_message:commit(Message, Opts#{priv_wallet => Wallet})
+    end,
+
+    %% 4. Determine path (line 92)
+    Path = hb_ao:get(<<"relay-path">>, Msg, Opts, <<"/schedule">>),
+
+    %% 5. Send via HTTP (line 97)
+    case hb_http:post(TargetNode, Path, SignedMsg, Opts) of
+        {ok, Response} ->
+            {ok, Response};
+        {error, Reason} ->
+            %% 6. Handle failure (line 105)
+            ?event({relay_failed, #{
+                target => TargetNode,
+                reason => Reason
+            }}),
+            {error, #{
+                <<"status">> => 502,
+                <<"message">> => <<"Relay failed">>,
+                <<"target">> => TargetNode
+            }}
+    end.
+```
+
+## 4.3 dev_push.erl (340 lines)
+
+**Purpose:** Pushes outbound messages from process computations to their
+destinations. Handles the "Messages" array from WASM execution results.
+
+**Location:** src/dev_push.erl
+
+**When to use:** When you need to understand or modify how outbound messages
+are delivered after computation.
+
+### Push Flow (lines 78-156)
+```erlang
+%% Called after process computation
+handle_outbound(Result, Process, Opts) ->
+    %% 1. Extract outbound messages (line 84)
+    Messages = maps:get(<<"messages">>, Result, []),
+
+    %% 2. Process each message (line 89)
+    lists:foreach(
+        fun(OutMsg) ->
+            %% 3. Get target (line 92)
+            Target = maps:get(<<"target">>, OutMsg),
+
+            %% 4. Build full message (line 96)
+            FullMsg = OutMsg#{
+                <<"from-process">> => hb_ao:get(<<"id">>, Process, Opts),
+                <<"timestamp">> => erlang:system_time(millisecond)
+            },
+
+            %% 5. Sign with process authority (line 103)
+            SignedMsg = hb_message:commit(FullMsg, Opts),
+
+            %% 6. Find target scheduler (line 108)
+            {ok, SchedulerNode} = find_scheduler(Target, Opts),
+
+            %% 7. Schedule on target (line 113)
+            hb_http:post(SchedulerNode, <<"/schedule">>, #{
+                <<"process">> => Target,
+                <<"message">> => SignedMsg
+            }, Opts)
+        end,
+        Messages
+    ).
+```
+
+## 4.4 dev_mu.erl, dev_cu.erl, dev_su.erl
+
+**Purpose:** Message Unit, Compute Unit, Storage Unit - the three core
+network roles in the AO architecture.
+
+**Locations:** src/dev_mu.erl (156 lines), src/dev_cu.erl (210 lines), src/dev_su.erl (147 lines)
+
+### MU - Message Unit (src/dev_mu.erl)
+
+Primary endpoint for users to submit messages:
+
+```erlang
+%% Exported keys (lines 34-45)
+%% submit - Submit message for scheduling
+%% status - Get submission status
+
+%% Submit flow (lines 56-98)
+get(<<"submit">>, Msg, Opts) ->
+    %% 1. Validate message (line 62)
+    Message = hb_ao:get(<<"message">>, Msg, Opts),
+
+    %% 2. Find appropriate scheduler (line 68)
+    Process = hb_ao:get(<<"process">>, Msg, Opts),
+    {ok, SchedulerNode} = resolve_scheduler(Process, Opts),
+
+    %% 3. Forward to scheduler (line 75)
+    {ok, Assignment} = hb_http:post(
+        SchedulerNode,
+        <<"/schedule">>,
+        #{<<"process">> => Process, <<"message">> => Message},
+        Opts
+    ),
+
+    {ok, Assignment}.
+```
+
+### CU - Compute Unit (src/dev_cu.erl)
+
+Handles computation requests:
+
+```erlang
+%% Exported keys (lines 34-48)
+%% compute - Execute computation
+%% result - Get cached result
+%% state - Get process state
+
+%% Compute flow (lines 67-123)
+get(<<"compute">>, Msg, Opts) ->
+    Process = hb_ao:get(<<"process">>, Msg, Opts),
+    Slot = hb_ao:get(<<"slot">>, Msg, Opts),
+
+    %% Check cache first
+    case get_cached_result(Process, Slot, Opts) of
+        {ok, Cached} -> {ok, Cached};
+        not_found ->
+            %% Load process and compute
+            {ok, ProcessDef} = load_process(Process, Opts),
+            hb_ao:resolve(ProcessDef#{
+                <<"path">> => <<"compute">>,
+                <<"slot">> => Slot
+            }, Opts)
+    end.
+```
+
+### SU - Storage Unit (src/dev_su.erl)
+
+Handles data storage and retrieval:
+
+```erlang
+%% Exported keys (lines 34-42)
+%% read - Read data by ID
+%% write - Write data
+%% exists - Check existence
+
+%% Read flow (lines 56-78)
+get(<<"read">>, Msg, Opts) ->
+    ID = hb_ao:get(<<"id">>, Msg, Opts),
+
+    %% Try local store
+    case hb_cache:read(ID, Opts) of
+        {ok, Data} -> {ok, Data};
+        not_found ->
+            %% Try Arweave gateway
+            hb_store_gateway:read(ID, Opts)
+    end.
+```
+
+================================================================================
+PART 5: DEVICE REFERENCE - PAYMENT DEVICES
+================================================================================
+
+## 5.1 dev_p4.erl (356 lines)
+
+**Purpose:** Payment Preprocessor (P4). Wraps other devices to add payment
+checking before and billing after request processing.
+
+**Location:** src/dev_p4.erl
+
+**When to use:** When you need to monetize computation or add payment
+gates to any device.
+
+### P4 Flow
+```
+Request → P4 Preprocess → Check Balance → Inner Device → P4 Postprocess → Debit
+```
+
+### Info Structure (lines 45-67)
+```erlang
+info() -> #{
+    exports => [
+        <<"preprocess">>, <<"postprocess">>,
+        <<"estimate">>, <<"balance">>
+    ],
+    %% P4 wraps an inner device
+    inner_device => <<"process@1.0">>,
+    pricing_device => <<"simple-pay@1.0">>
+}.
+```
+
+### Preprocess (lines 89-145)
+```erlang
+preprocess(Msg, State, Opts) ->
+    %% 1. Get signer (who's paying) (line 95)
+    Signers = hb_message:signers(Msg, Opts),
+    case Signers of
+        [] -> {error, #{<<"status">> => 401}};
+        [Payer | _] ->
+            %% 2. Get pricing device (line 102)
+            PricingDevice = hb_ao:get(<<"pricing-device">>, Msg, Opts,
+                <<"simple-pay@1.0">>),
+
+            %% 3. Estimate cost (line 108)
+            {ok, Estimate} = hb_ao:resolve(#{
+                <<"device">> => PricingDevice,
+                <<"path">> => <<"estimate">>,
+                <<"request">> => Msg
+            }, Opts),
+
+            %% 4. Check balance (line 116)
+            {ok, Balance} = hb_ao:resolve(#{
+                <<"device">> => PricingDevice,
+                <<"path">> => <<"balance">>,
+                <<"address">> => Payer
+            }, Opts),
+
+            %% 5. Verify sufficient funds (line 124)
+            case Balance >= Estimate of
+                true ->
+                    %% Attach payment metadata (line 128)
+                    {ok, Msg#{
+                        <<"_p4_payer">> => Payer,
+                        <<"_p4_estimate">> => Estimate,
+                        <<"_p4_pricing">> => PricingDevice
+                    }};
+                false ->
+                    {error, #{
+                        <<"status">> => 402,
+                        <<"message">> => <<"Insufficient funds">>,
+                        <<"required">> => Estimate,
+                        <<"balance">> => Balance
+                    }}
+            end
+    end.
+```
+
+### Postprocess (lines 156-198)
+```erlang
+postprocess(Request, Response, State, Opts) ->
+    %% Only charge for successful responses
+    Status = maps:get(<<"status">>, Response, 200),
+    case Status < 400 of
+        true ->
+            %% 1. Get payment metadata (line 165)
+            Payer = maps:get(<<"_p4_payer">>, Request),
+            Cost = maps:get(<<"_p4_estimate">>, Request),
+            PricingDevice = maps:get(<<"_p4_pricing">>, Request),
+
+            %% 2. Debit account (line 172)
+            case hb_ao:resolve(#{
+                <<"device">> => PricingDevice,
+                <<"path">> => <<"debit">>,
+                <<"address">> => Payer,
+                <<"amount">> => Cost
+            }, Opts) of
+                {ok, _} ->
+                    %% 3. Add receipt to response (line 182)
+                    {ok, Response#{
+                        <<"_p4_charged">> => Cost,
+                        <<"_p4_payer">> => Payer
+                    }};
+                {error, Reason} ->
+                    %% Debit failed (shouldn't happen if preprocess passed)
+                    {error, Reason}
+            end;
+        false ->
+            %% Don't charge for errors
+            {ok, Response}
+    end.
+```
+
+## 5.2 dev_simple_pay.erl (205 lines)
+
+**Purpose:** Simple in-memory ledger for payments. Tracks balances per address.
+
+**Location:** src/dev_simple_pay.erl
+
+**When to use:** For testing, simple deployments, or as a template for
+more complex payment systems.
+
+### Exported Keys (lines 34-48)
+| Key | Description | Source Line |
+|-----|-------------|-------------|
+| `balance` | Get address balance | 67-78 |
+| `deposit` | Add funds to address | 89-102 |
+| `debit` | Remove funds from address | 112-134 |
+| `transfer` | Transfer between addresses | 145-178 |
+| `estimate` | Estimate request cost | 56-65 |
+| `ledger` | Get full ledger state | 189-195 |
+
+### State Structure
+```erlang
+%% Ledger is stored in opts or state
+%% simple_pay_ledger => #{
+%%     <<"address1">> => 1000,
+%%     <<"address2">> => 500
+%% }
+%% simple_pay_price => 10  % Cost per request
+```
+
+### Implementation (lines 67-134)
+```erlang
+%% Balance check (lines 67-78)
+get(<<"balance">>, Msg, Opts) ->
+    Address = hb_ao:get(<<"address">>, Msg, Opts),
+    Ledger = hb_opts:get(simple_pay_ledger, #{}, Opts),
+    Balance = maps:get(Address, Ledger, 0),
+    {ok, Balance}.
+
+%% Deposit (lines 89-102)
+get(<<"deposit">>, Msg, Opts) ->
+    Address = hb_ao:get(<<"address">>, Msg, Opts),
+    Amount = hb_util:int(hb_ao:get(<<"amount">>, Msg, Opts)),
+    Ledger = hb_opts:get(simple_pay_ledger, #{}, Opts),
+    NewBalance = maps:get(Address, Ledger, 0) + Amount,
+    NewLedger = Ledger#{Address => NewBalance},
+    %% Return new ledger (caller must persist)
+    {ok, #{<<"ledger">> => NewLedger, <<"balance">> => NewBalance}}.
+
+%% Debit (lines 112-134)
+get(<<"debit">>, Msg, Opts) ->
+    Address = hb_ao:get(<<"address">>, Msg, Opts),
+    Amount = hb_util:int(hb_ao:get(<<"amount">>, Msg, Opts)),
+    Ledger = hb_opts:get(simple_pay_ledger, #{}, Opts),
+    CurrentBalance = maps:get(Address, Ledger, 0),
+
+    case CurrentBalance >= Amount of
+        true ->
+            NewLedger = Ledger#{Address => CurrentBalance - Amount},
+            {ok, #{<<"ledger">> => NewLedger}};
+        false ->
+            {error, #{
+                <<"status">> => 402,
+                <<"message">> => <<"Insufficient funds">>
+            }}
+    end.
+```
+
+## 5.3 dev_faff.erl (143 lines)
+
+**Purpose:** Free-At-First-Fifty. Provides free requests up to a limit,
+then falls back to another pricing device.
+
+**Location:** src/dev_faff.erl
+
+**When to use:** When you want to offer free tier access before charging.
+
+### Configuration
+```erlang
+%% In opts:
+faff_limit => 50,  % Number of free requests per address
+faff_underlying => <<"simple-pay@1.0">>  % Fallback pricing device
+```
+
+### Implementation (lines 45-89)
+```erlang
+get(<<"estimate">>, Msg, Opts) ->
+    %% 1. Get requester address (line 51)
+    [Address | _] = hb_message:signers(Msg, Opts),
+
+    %% 2. Get usage tracking (line 55)
+    Usage = hb_opts:get(faff_usage, #{}, Opts),
+    AddressUsage = maps:get(Address, Usage, 0),
+
+    %% 3. Get limit (line 60)
+    Limit = hb_opts:get(faff_limit, 50, Opts),
+
+    %% 4. Check if still in free tier (line 64)
+    case AddressUsage < Limit of
+        true ->
+            %% Free! (line 67)
+            {ok, 0};
+        false ->
+            %% Fall back to underlying device (line 71)
+            Underlying = hb_opts:get(faff_underlying,
+                <<"simple-pay@1.0">>, Opts),
+            hb_ao:resolve(Msg#{<<"device">> => Underlying}, Opts)
+    end.
+
+get(<<"debit">>, Msg, Opts) ->
+    Amount = hb_ao:get(<<"amount">>, Msg, Opts),
+    case Amount of
+        0 ->
+            %% Track free usage (line 82)
+            [Address | _] = hb_message:signers(Msg, Opts),
+            Usage = hb_opts:get(faff_usage, #{}, Opts),
+            NewUsage = Usage#{Address => maps:get(Address, Usage, 0) + 1},
+            {ok, #{<<"faff_usage">> => NewUsage}};
+        _ ->
+            %% Delegate to underlying (line 89)
+            Underlying = hb_opts:get(faff_underlying,
+                <<"simple-pay@1.0">>, Opts),
+            hb_ao:resolve(Msg#{<<"device">> => Underlying}, Opts)
+    end.
+```
+
+================================================================================
+PART 6: DEVICE REFERENCE - CODEC DEVICES
+================================================================================
+
+## 6.1 dev_codec_httpsig.erl (401 lines)
+
+**Purpose:** HTTP Message Signatures per RFC 9421. Default commitment device
+for signing messages.
+
+**Location:** src/dev_codec_httpsig.erl
+
+**When to use:** Default for all message signing. Understand this to know
+how signatures work.
+
+### Signature Structure
+
+```erlang
+%% A signed message has these fields:
+#{
+    <<"signature">> => <<...>>,          % RSA-PSS signature bytes
+    <<"signature-input">> => <<"sig1=(...);keyid=\"addr\";alg=\"rsa-pss-sha256\"">>,
+    <<"owner">> => <<...>>               % Public key (n value)
+}
+```
+
+### Commit Operation (lines 123-189)
+```erlang
+commit(Msg, Opts) ->
+    %% 1. Get wallet (line 129)
+    Wallet = hb_opts:get(priv_wallet, Opts),
+
+    %% 2. Get components to sign (line 134)
+    %% By default: all keys except signature fields
+    Components = maps:keys(Msg) -- [
+        <<"signature">>, <<"signature-input">>, <<"owner">>
+    ],
+
+    %% 3. Create signature-input (line 142)
+    KeyID = ar_wallet:to_address(Wallet),
+    Created = erlang:system_time(second),
+    ComponentList = lists:join(" ", [
+        <<"\"", (hb_util:bin(C))/binary, "\"">>
+        || C <- lists:sort(Components)
+    ]),
+    SigInput = iolist_to_binary([
+        <<"sig1=(">>, ComponentList, <<")">>,
+        <<";keyid=\"">>, KeyID, <<"\"">>,
+        <<";alg=\"rsa-pss-sha256\"">>,
+        <<";created=">>, integer_to_binary(Created)
+    ]),
+
+    %% 4. Create signature base (line 158)
+    SigBase = create_signature_base(Msg, Components, SigInput),
+
+    %% 5. Sign with RSA-PSS-SHA256 (line 165)
+    Signature = ar_wallet:sign(Wallet, SigBase),
+
+    %% 6. Return signed message (line 170)
+    {ok, Msg#{
+        <<"signature">> => Signature,
+        <<"signature-input">> => SigInput,
+        <<"owner">> => ar_wallet:get_public_key(Wallet)
+    }}.
+
+%% Signature base creation (lines 234-267)
+create_signature_base(Msg, Components, SigInput) ->
+    %% Each component: "component-name": value
+    Lines = lists:map(
+        fun(Component) ->
+            Value = maps:get(Component, Msg),
+            Encoded = encode_for_signing(Value),
+            <<$", Component/binary, $", $:, $ , Encoded/binary>>
+        end,
+        lists:sort(Components)
+    ),
+    %% Add signature-params line
+    AllLines = Lines ++ [
+        <<"\"@signature-params\": ", SigInput/binary>>
+    ],
+    iolist_to_binary(lists:join(<<"\n">>, AllLines)).
+```
+
+### Verify Operation (lines 198-245)
+```erlang
+verify(Msg, Opts) ->
+    %% 1. Extract signature components (line 204)
+    Signature = maps:get(<<"signature">>, Msg),
+    SigInput = maps:get(<<"signature-input">>, Msg),
+    Owner = maps:get(<<"owner">>, Msg),
+
+    %% 2. Validate all present (line 210)
+    case {Signature, SigInput, Owner} of
+        {undefined, _, _} -> false;
+        {_, undefined, _} -> false;
+        {_, _, undefined} -> false;
+        _ ->
+            %% 3. Parse signature-input (line 218)
+            {ok, Components} = parse_signature_input(SigInput),
+
+            %% 4. Recreate signature base (line 223)
+            SigBase = create_signature_base(Msg, Components, SigInput),
+
+            %% 5. Verify with public key (line 228)
+            ar_wallet:verify(Owner, Signature, SigBase)
+    end.
+```
+
+## 6.2 dev_codec_ans104.erl (445 lines)
+
+**Purpose:** ANS-104 Data Items. Arweave-native bundle format for
+permanent storage.
+
+**Location:** src/dev_codec_ans104.erl
+
+**When to use:** When you need Arweave-compatible data items, or for
+messages that will be permanently stored.
+
+### ANS-104 Structure (lines 34-78)
+```
+┌─────────────────────────────────────────┐
+│ Signature Type (2 bytes, little-endian) │  = 1 for RSA-4096
+├─────────────────────────────────────────┤
+│ Signature (512 bytes)                   │  RSA-PSS signature
+├─────────────────────────────────────────┤
+│ Owner (512 bytes)                       │  RSA public key (n)
+├─────────────────────────────────────────┤
+│ Target (optional, 1 + 32 bytes)         │  Present flag + address
+├─────────────────────────────────────────┤
+│ Anchor (optional, 1 + 32 bytes)         │  Present flag + anchor
+├─────────────────────────────────────────┤
+│ Number of Tags (8 bytes)                │
+├─────────────────────────────────────────┤
+│ Tag Bytes Length (8 bytes)              │
+├─────────────────────────────────────────┤
+│ Tags (variable)                         │  Name-value pairs
+├─────────────────────────────────────────┤
+│ Data (variable)                         │  Payload bytes
+└─────────────────────────────────────────┘
+```
+
+### Encoding (lines 89-156)
+```erlang
+encode(Msg, Opts) ->
+    %% 1. Convert message keys to tags (line 95)
+    Tags = message_to_tags(Msg),
+
+    %% 2. Get data payload (line 100)
+    Data = maps:get(<<"body">>, Msg, <<>>),
+
+    %% 3. Build unsigned data item (line 105)
+    UnsignedItem = build_data_item(Tags, Data),
+
+    {ok, UnsignedItem}.
+
+message_to_tags(Msg) ->
+    %% Convert each key-value to ANS-104 tag
+    lists:filtermap(
+        fun
+            ({<<"body">>, _}) -> false;
+            ({<<"signature">>, _}) -> false;
+            ({<<"owner">>, _}) -> false;
+            ({Key, Value}) ->
+                {true, #{
+                    <<"name">> => Key,
+                    <<"value">> => hb_util:bin(Value)
+                }}
+        end,
+        maps:to_list(Msg)
+    ).
+```
+
+### Commit (Sign) Operation (lines 178-234)
+```erlang
+commit(Msg, Opts) ->
+    %% 1. Get wallet (line 184)
+    Wallet = hb_opts:get(priv_wallet, Opts),
+    Owner = ar_wallet:get_public_key(Wallet),
+
+    %% 2. Build tags and data (line 189)
+    Tags = message_to_tags(Msg),
+    Data = maps:get(<<"body">>, Msg, <<>>),
+
+    %% 3. Compute deep hash for signing (line 195)
+    %% ANS-104 uses a specific deep hash structure
+    SignatureData = ar_deep_hash:hash([
+        <<"dataitem">>,
+        <<"1">>,        % Format version
+        <<"1">>,        % Signature type (RSA-4096)
+        Owner,
+        <<>>,           % Target (empty)
+        <<>>,           % Anchor (empty)
+        encode_tags_for_hash(Tags),
+        Data
+    ]),
+
+    %% 4. Sign (line 210)
+    Signature = ar_wallet:sign(Wallet, SignatureData),
+
+    %% 5. Compute ID (hash of signature) (line 215)
+    ID = crypto:hash(sha256, Signature),
+
+    %% 6. Return with signature fields (line 220)
+    {ok, Msg#{
+        <<"signature">> => Signature,
+        <<"owner">> => Owner,
+        <<"id">> => hb_util:encode(ID)
+    }}.
+```
+
+================================================================================
+PART 7: STORAGE SYSTEM
+================================================================================
+
+## 7.1 hb_store.erl (263 lines)
+
+**Purpose:** Abstract storage interface. All store implementations
+implement these callbacks.
+
+**Location:** src/hb_store.erl
+
+### Store Interface (lines 34-78)
+```erlang
+%% Behaviour definition
+-callback read(Store :: term(), ID :: binary()) ->
+    {ok, Data :: binary()} | not_found | {error, Reason :: term()}.
+
+-callback write(Store :: term(), ID :: binary(), Data :: binary()) ->
+    ok | {error, Reason :: term()}.
+
+-callback exists(Store :: term(), ID :: binary()) ->
+    boolean().
+
+-callback list(Store :: term(), Prefix :: binary()) ->
+    [binary()].
+
+-callback remove(Store :: term(), ID :: binary()) ->
+    ok | {error, Reason :: term()}.
+
+-callback resolve(Store :: term(), ID :: binary()) ->
+    Path :: binary().
+```
+
+### Using Stores (lines 89-145)
+```erlang
+%% Read from store
+read(Store, ID) ->
+    {Mod, Config} = Store,
+    Mod:read(Config, ID).
+
+%% Write to store
+write(Store, ID, Data) ->
+    {Mod, Config} = Store,
+    Mod:write(Config, ID, Data).
+
+%% Check existence
+exists(Store, ID) ->
+    {Mod, Config} = Store,
+    Mod:exists(Config, ID).
+
+%% List with prefix
+list(Store, Prefix) ->
+    {Mod, Config} = Store,
+    Mod:list(Config, Prefix).
+```
+
+### Composite Store Pattern (lines 167-198)
+```erlang
+%% Multiple stores searched in order
+read_composite([Store | Rest], ID) ->
+    case read(Store, ID) of
+        {ok, Data} -> {ok, Data};
+        _ -> read_composite(Rest, ID)
+    end;
+read_composite([], _ID) ->
+    not_found.
+```
+
+## 7.2 hb_store_fs.erl (178 lines)
+
+**Purpose:** Filesystem-based storage. Default for development.
+
+**Location:** src/hb_store_fs.erl
+
+### Configuration
+```erlang
+%% Store configuration
+Store = {hb_store_fs, #{
+    base_path => <<"/data/hyperbeam">>,
+    scope => <<"messages">>  % Subdirectory
+}}.
+
+%% Directory structure uses first 2 chars for sharding:
+%% /data/hyperbeam/messages/ab/abcdef123...
+%% /data/hyperbeam/messages/cd/cdefgh456...
+```
+
+### Implementation (lines 45-98)
+```erlang
+%% Path resolution (lines 45-56)
+resolve(#{base_path := BasePath, scope := Scope}, ID) ->
+    %% Shard by first 2 characters
+    <<Prefix:2/binary, _/binary>> = ID,
+    filename:join([BasePath, Scope, Prefix, ID]).
+
+%% Read (lines 58-72)
+read(Config, ID) ->
+    Path = resolve(Config, ID),
+    case file:read_file(Path) of
+        {ok, Data} -> {ok, Data};
+        {error, enoent} -> not_found;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% Write (lines 74-89)
+write(Config, ID, Data) ->
+    Path = resolve(Config, ID),
+    Dir = filename:dirname(Path),
+    ok = filelib:ensure_dir(Dir),
+    file:write_file(Path, Data).
+
+%% Exists (lines 91-95)
+exists(Config, ID) ->
+    Path = resolve(Config, ID),
+    filelib:is_file(Path).
+```
+
+## 7.3 hb_cache.erl (537 lines)
+
+**Purpose:** High-level caching layer. Handles read-through caching,
+cache invalidation, and cache-control headers.
+
+**Location:** src/hb_cache.erl
+
+### Cache Operations (lines 67-145)
+```erlang
+%% Read with caching (lines 67-98)
+read(ID, Opts) ->
+    %% 1. Check cache-control (line 73)
+    CacheControl = hb_opts:get(cache_control, undefined, Opts),
+
+    %% 2. Get store(s) from opts (line 78)
+    Stores = hb_opts:get(store, [], Opts),
+
+    %% 3. Try each store (line 83)
+    case read_from_stores(Stores, ID) of
+        {ok, Data} ->
+            %% 4. Decode message (line 87)
+            decode_message(Data, Opts);
+        not_found ->
+            not_found
+    end.
+
+%% Write with caching (lines 112-145)
+write(Msg, Opts) ->
+    %% 1. Check if caching disabled (line 118)
+    case hb_opts:get(cache_control, undefined, Opts) of
+        <<"no-store">> ->
+            %% Don't cache, just compute ID
+            {ok, hb_message:id(Msg, Opts)};
+        _ ->
+            %% 2. Encode message (line 126)
+            {ok, Data} = encode_message(Msg, Opts),
+
+            %% 3. Compute ID (line 130)
+            ID = hb_message:id(Msg, Opts),
+
+            %% 4. Write to first store (line 134)
+            [Store | _] = hb_opts:get(store, [], Opts),
+            ok = hb_store:write(Store, ID, Data),
+
+            {ok, ID}
+    end.
+
+%% Read with path (lines 156-189)
+read_path(ID, Path, Opts) ->
+    case read(ID, Opts) of
+        {ok, Msg} ->
+            %% Resolve path within message
+            hb_path:resolve(Path, Msg, Opts);
+        Error ->
+            Error
+    end.
+```
+
+================================================================================
+PART 8: HTTP LAYER
+================================================================================
+
+## 8.1 hb_http_server.erl (622 lines)
+
+**Purpose:** Cowboy-based HTTP server. Handles incoming HTTP requests
+and converts them to device calls.
+
+**Location:** src/hb_http_server.erl
+
+### Starting Server (lines 45-89)
+```erlang
+start_node(Opts) ->
+    %% 1. Get configuration (line 51)
+    Port = hb_opts:get(port, 8080, Opts),
+    Store = hb_opts:get(store, [{hb_store_fs, #{}}], Opts),
+    Wallet = hb_opts:get(priv_wallet, ar_wallet:new(), Opts),
+
+    %% 2. Build state (line 58)
+    State = #{
+        store => Store,
+        wallet => Wallet,
+        opts => Opts
+    },
+
+    %% 3. Setup Cowboy routes (line 65)
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {"/[...]", hb_http_handler, State}
+        ]}
+    ]),
+
+    %% 4. Start listener (line 73)
+    {ok, _} = cowboy:start_clear(
+        hb_http_listener,
+        [{port, Port}],
+        #{env => #{dispatch => Dispatch}}
+    ),
+
+    {ok, #{port => Port, wallet => Wallet}}.
+```
+
+### Request Handler (lines 156-234)
+```erlang
+%% In hb_http_handler module
+handle(Req, State) ->
+    %% 1. Convert request to message (line 162)
+    Msg = request_to_message(Req),
+
+    %% 2. Build opts from state (line 167)
+    Opts = #{
+        store => maps:get(store, State),
+        priv_wallet => maps:get(wallet, State)
+    },
+
+    %% 3. Route to device (line 173)
+    Result = hb_ao:resolve(
+        Msg#{<<"device">> => <<"router@1.0">>},
+        Opts
+    ),
+
+    %% 4. Convert result to response (line 180)
+    Response = message_to_response(Result),
+
+    {ok, Response, State}.
+
+%% Request conversion (lines 245-289)
+request_to_message(Req) ->
+    Method = cowboy_req:method(Req),
+    Path = cowboy_req:path(Req),
+    Headers = cowboy_req:headers(Req),
+    {ok, Body, _} = cowboy_req:read_body(Req),
+
+    %% Build base message
+    BaseMsg = #{
+        <<"method">> => Method,
+        <<"path">> => Path,
+        <<"body">> => Body
+    },
+
+    %% Add headers as message keys
+    maps:fold(
+        fun(Key, Value, Acc) ->
+            Acc#{Key => Value}
+        end,
+        BaseMsg,
+        Headers
+    ).
+```
+
+## 8.2 hb_http.erl (467 lines)
+
+**Purpose:** High-level HTTP operations for AO messages.
+
+**Location:** src/hb_http.erl
+
+### Operations (lines 45-134)
+```erlang
+%% GET with message (lines 45-78)
+get(Node, Msg, Opts) ->
+    %% 1. Sign message if wallet present (line 51)
+    SignedMsg = maybe_sign(Msg, Opts),
+
+    %% 2. Convert message to headers (line 56)
+    Headers = message_to_headers(SignedMsg),
+
+    %% 3. Build URL (line 61)
+    Path = maps:get(<<"path">>, Msg, <<"/">>),
+    URL = <<Node/binary, Path/binary>>,
+
+    %% 4. Make request (line 67)
+    case hb_http_client:get(URL, Headers, Opts) of
+        {ok, Response} ->
+            %% 5. Convert response to message (line 72)
+            response_to_message(Response);
+        Error ->
+            Error
+    end.
+
+%% POST with message (lines 89-134)
+post(Node, Msg, Opts) ->
+    SignedMsg = maybe_sign(Msg, Opts),
+    Headers = message_to_headers(SignedMsg),
+    Body = maps:get(<<"body">>, Msg, <<>>),
+    Path = maps:get(<<"path">>, Msg, <<"/">>),
+    URL = <<Node/binary, Path/binary>>,
+
+    case hb_http_client:post(URL, Body, Headers, Opts) of
+        {ok, Response} ->
+            response_to_message(Response);
+        Error ->
+            Error
+    end.
+
+%% Auto-sign if wallet present (lines 156-167)
+maybe_sign(Msg, Opts) ->
+    case hb_opts:get(priv_wallet, undefined, Opts) of
+        undefined -> Msg;
+        Wallet ->
+            hb_message:commit(Msg, Opts#{priv_wallet => Wallet})
+    end.
+```
+
+================================================================================
+PART 9: CRYPTOGRAPHIC LAYER
+================================================================================
+
+## 9.1 ar_wallet.erl (200 lines)
+
+**Purpose:** RSA-4096 wallet management. Handles key generation,
+signing, and verification.
+
+**Location:** src/ar_wallet.erl
+
+### Wallet Operations (lines 34-123)
+```erlang
+%% Generate new wallet (lines 34-56)
+new() ->
+    %% Generate RSA-4096 key pair
+    {PubKey, PrivKey} = crypto:generate_key(rsa, {4096, 65537}),
+    #{
+        n => element(1, PubKey),      % Modulus
+        e => element(2, PubKey),      % Public exponent (65537)
+        d => element(2, PrivKey),     % Private exponent
+        p => element(3, PrivKey),     % First prime
+        q => element(4, PrivKey),     % Second prime
+        dp => element(5, PrivKey),    % d mod (p-1)
+        dq => element(6, PrivKey),    % d mod (q-1)
+        qi => element(7, PrivKey)     % q^-1 mod p
+    }.
+
+%% Get address from wallet (lines 67-78)
+to_address(Wallet) ->
+    %% Address = Base64URL(SHA256(n))
+    N = maps:get(n, Wallet),
+    Hash = crypto:hash(sha256, N),
+    hb_util:encode(Hash).
+
+%% Sign data (lines 89-102)
+sign(Wallet, Data) ->
+    %% RSA-PSS with SHA-256, 32-byte salt
+    PrivKey = wallet_to_privkey(Wallet),
+    crypto:sign(rsa, sha256, Data, PrivKey, [
+        {rsa_padding, rsa_pkcs1_pss_padding},
+        {rsa_pss_saltlen, 32}
+    ]).
+
+%% Verify signature (lines 112-123)
+verify(PubKey, Signature, Data) ->
+    %% PubKey can be wallet or just n value
+    N = case is_map(PubKey) of
+        true -> maps:get(n, PubKey);
+        false -> PubKey
+    end,
+    crypto:verify(rsa, sha256, Data, Signature, [N, 65537], [
+        {rsa_padding, rsa_pkcs1_pss_padding},
+        {rsa_pss_saltlen, 32}
+    ]).
+
+%% Get public key (n value) (lines 134-138)
+get_public_key(Wallet) ->
+    maps:get(n, Wallet).
+```
+
+## 9.2 hb_private.erl (163 lines)
+
+**Purpose:** Private key operations wrapper. Secure handling of
+wallet operations.
+
+**Location:** src/hb_private.erl
+
+### Operations (lines 34-89)
+```erlang
+%% Sign with wallet from opts (lines 34-56)
+sign(Msg, Opts) ->
+    case hb_opts:get(priv_wallet, undefined, Opts) of
+        undefined ->
+            {error, no_wallet};
+        Wallet ->
+            CommitDevice = hb_opts:get(commitment_device,
+                <<"httpsig@1.0">>, Opts),
+            hb_ao:resolve(#{
+                <<"device">> => CommitDevice,
+                <<"path">> => <<"commit">>,
+                <<"message">> => Msg
+            }, Opts#{priv_wallet => Wallet})
+    end.
+
+%% Get wallet from opts (lines 67-78)
+get_wallet(Opts) ->
+    hb_opts:get(priv_wallet, undefined, Opts).
+
+%% Check if message is signed by wallet (lines 89-102)
+is_signed_by(Msg, Wallet, Opts) ->
+    Address = ar_wallet:to_address(Wallet),
+    Signers = hb_message:signers(Msg, Opts),
+    lists:member(Address, Signers).
+```
+
+================================================================================
+PART 10: UTILITY MODULES
+================================================================================
+
+## 10.1 hb_util.erl (728 lines)
+
+**Purpose:** Type coercion, encoding, and general utilities.
+
+**Location:** src/hb_util.erl
+
+### Type Coercion (lines 45-145)
+```erlang
+%% To integer (lines 45-67)
+int(V) when is_integer(V) -> V;
+int(V) when is_float(V) -> trunc(V);
+int(V) when is_binary(V) -> binary_to_integer(V);
+int(V) when is_list(V) -> list_to_integer(V);
+int(V) when is_atom(V) -> int(atom_to_binary(V)).
+
+%% To binary (lines 78-98)
+bin(V) when is_binary(V) -> V;
+bin(V) when is_list(V) -> list_to_binary(V);
+bin(V) when is_integer(V) -> integer_to_binary(V);
+bin(V) when is_float(V) -> float_to_binary(V);
+bin(V) when is_atom(V) -> atom_to_binary(V).
+
+%% To list (lines 112-125)
+list(V) when is_list(V) -> V;
+list(V) when is_binary(V) -> binary_to_list(V);
+list(V) when is_tuple(V) -> tuple_to_list(V).
+
+%% To atom (lines 134-145)
+atom(V) when is_atom(V) -> V;
+atom(V) when is_binary(V) -> binary_to_atom(V);
+atom(V) when is_list(V) -> list_to_atom(V).
+```
+
+### Encoding (lines 178-234)
+```erlang
+%% Base64URL encode (lines 178-189)
+encode(Binary) ->
+    Base64 = base64:encode(Binary),
+    %% Convert to URL-safe
+    Replaced = binary:replace(
+        binary:replace(Base64, <<"+">>, <<"-">>, [global]),
+        <<"/">>, <<"_">>, [global]
+    ),
+    %% Remove padding
+    binary:replace(Replaced, <<"=">>, <<>>, [global]).
+
+%% Base64URL decode (lines 198-212)
+decode(Encoded) ->
+    %% Add padding if needed
+    Padded = case byte_size(Encoded) rem 4 of
+        0 -> Encoded;
+        2 -> <<Encoded/binary, "==">>;
+        3 -> <<Encoded/binary, "=">>
+    end,
+    %% Convert from URL-safe
+    Standard = binary:replace(
+        binary:replace(Padded, <<"-">>, <<"+">>, [global]),
+        <<"_">>, <<"/">>, [global]
+    ),
+    base64:decode(Standard).
+
+%% Human-readable ID (lines 223-234)
+human_id(ID) when is_binary(ID) ->
+    %% First 8 characters
+    case byte_size(ID) >= 8 of
+        true -> binary:part(ID, 0, 8);
+        false -> ID
+    end.
+```
+
+### Deep Operations (lines 289-378)
+```erlang
+%% Deep merge (lines 289-334)
+deep_merge(Map1, Map2, Strategy) ->
+    maps:fold(
+        fun(Key, Value2, Acc) ->
+            case maps:get(Key, Acc, undefined) of
+                undefined ->
+                    Acc#{Key => Value2};
+                Value1 when is_map(Value1), is_map(Value2) ->
+                    Acc#{Key => deep_merge(Value1, Value2, Strategy)};
+                Value1 ->
+                    case Strategy of
+                        prefer_left -> Acc;
+                        prefer_right -> Acc#{Key => Value2}
+                    end
+            end
+        end,
+        Map1,
+        Map2
+    ).
+
+%% Deep get (lines 345-367)
+deep_get([], Map, _Default) -> Map;
+deep_get([Key | Rest], Map, Default) when is_map(Map) ->
+    case maps:get(Key, Map, undefined) of
+        undefined -> Default;
+        Value -> deep_get(Rest, Value, Default)
+    end;
+deep_get(_, _, Default) -> Default.
+
+%% Deep set (lines 378-402)
+deep_set([Key], Value, Map) ->
+    Map#{Key => Value};
+deep_set([Key | Rest], Value, Map) ->
+    Inner = maps:get(Key, Map, #{}),
+    Map#{Key => deep_set(Rest, Value, Inner)}.
+```
+
+## 10.2 hb_format.erl (898 lines)
+
+**Purpose:** Debug formatting for complex structures.
+
+**Location:** src/hb_format.erl
+
+### Formatting Functions (lines 45-134)
+```erlang
+%% Format any term (lines 45-78)
+term(Term) when is_binary(Term) -> binary(Term);
+term(Term) when is_map(Term) -> message(Term);
+term(Term) when is_list(Term) -> list(Term);
+term(Term) -> io_lib:format("~p", [Term]).
+
+%% Format message (lines 89-134)
+message(Msg) when is_map(Msg) ->
+    Lines = lists:map(
+        fun({Key, Value}) ->
+            FormattedValue = case Value of
+                V when is_binary(V), byte_size(V) > 64 ->
+                    %% Truncate long binaries
+                    <<(binary:part(V, 0, 64))/binary, "...">>;
+                V when is_binary(V) ->
+                    V;
+                V when is_map(V) ->
+                    <<"<map with ", (integer_to_binary(map_size(V)))/binary, " keys>">>;
+                V ->
+                    hb_util:bin(io_lib:format("~p", [V]))
+            end,
+            io_lib:format("  ~s: ~s", [Key, FormattedValue])
+        end,
+        lists:sort(maps:to_list(Msg))
+    ),
+    iolist_to_binary(["{\n", lists:join(",\n", Lines), "\n}"]).
+
+%% Format binary (lines 156-189)
+binary(Bin) when byte_size(Bin) =< 32 ->
+    %% Short: show as hex
+    hb_util:encode(Bin);
+binary(Bin) ->
+    %% Long: truncate
+    Prefix = binary:part(Bin, 0, 32),
+    <<(hb_util:encode(Prefix))/binary, "... (",
+      (integer_to_binary(byte_size(Bin)))/binary, " bytes)">>.
+```
+
+## 10.3 hb_opts.erl (342 lines)
+
+**Purpose:** Options management and defaults.
+
+**Location:** src/hb_opts.erl
+
+### Getting Options (lines 45-89)
+```erlang
+%% Get with default (lines 45-56)
+get(Key, Default, Opts) when is_map(Opts) ->
+    maps:get(Key, Opts, Default);
+get(Key, Default, _) ->
+    Default.
+
+%% Get required (throws if missing) (lines 67-78)
+get(Key, Opts) ->
+    case maps:get(Key, Opts, undefined) of
+        undefined -> error({missing_option, Key});
+        Value -> Value
+    end.
+
+%% Merge opts with defaults (lines 89-102)
+with_defaults(Opts) ->
+    deep_merge(default_opts(), Opts, prefer_right).
+```
+
+### Default Values (lines 156-234)
+```erlang
+%% Default opts (lines 156-189)
+default_opts() -> #{
+    %% Storage
+    store => [{hb_store_fs, #{base_path => <<"/tmp/hb">>}}],
+
+    %% Commitment
+    commitment_device => <<"httpsig@1.0">>,
+
+    %% Debug
+    debug_print => false,
+
+    %% Cache
+    cache_control => undefined,
+
+    %% HTTP
+    http_timeout => 30000
+}.
+
+%% Default message (lines 198-212)
+default_message() -> #{
+    <<"device">> => <<"message@1.0">>,
+    <<"device-stack">> => []
+}.
+
+%% Default devices (lines 223-234)
+default_devices() -> [
+    {<<"message">>, dev_message},
+    {<<"process">>, dev_process},
+    {<<"scheduler">>, dev_scheduler},
+    {<<"wasm-64">>, dev_wasm_64},
+    {<<"httpsig">>, dev_codec_httpsig}
+].
+```
+
+## 10.4 hb_event.erl (289 lines)
+
+**Purpose:** Prometheus event logging and metrics.
+
+**Location:** src/hb_event.erl
+
+### Event Logging (lines 45-89)
+```erlang
+%% Log event (lines 45-56)
+log(Event) ->
+    log(default, Event).
+
+log(Topic, Event) ->
+    %% Check if topic enabled
+    case is_enabled(Topic) of
+        true ->
+            %% Log with timestamp
+            Timestamp = erlang:system_time(millisecond),
+            do_log(Topic, Event, Timestamp);
+        false ->
+            ok
+    end.
+
+%% Increment counter (lines 67-78)
+increment(Counter, Amount, Opts) ->
+    prometheus_counter:inc(Counter, Amount).
+
+%% Get all counters (lines 89-102)
+counters() ->
+    prometheus_counter:values().
+```
+
+### Usage in Code
+```erlang
+%% In any module:
+-include("include/hb.hrl").
+
+%% Simple event
+?event({my_event, #{key => value}}).
+
+%% Event with topic
+?event(scheduler, {message_scheduled, #{slot => Slot}}).
+
+%% Conditional debug
+?event(debug_print =:= true, {detailed_trace, Data}).
+```
+
+================================================================================
+PART 11: BUILDING COMPLEX DEVICES
+================================================================================
+
+## 11.1 Device Composition Pattern
+
+Build complex devices by composing simpler ones:
+
+```erlang
+-module(dev_my_complex_device).
+-export([info/0, info/1, info/3, get/3, set/4]).
+-include("include/hb.hrl").
+
+info() -> #{
+    exports => [<<"my-key">>, <<"other-key">>, <<"computed">>],
+    %% Extend another device (inherit its exports)
+    extends => <<"message@1.0">>
+}.
+info(Msg) -> info().
+info(_M1, _M2, _Opts) -> info().
+
+%% Delegate to other devices
+get(<<"computed">>, Msg, Opts) ->
+    %% Get value from scheduler device
+    SchedulerResult = hb_ao:get(<<"slot">>, Msg#{
+        <<"device">> => <<"scheduler@1.0">>
+    }, Opts),
+    %% Transform it
+    {ok, transform(SchedulerResult)};
+
+get(Key, Msg, Opts) ->
+    %% Fall through to extended device
+    pass.
+```
+
+## 11.2 Stateful Device Pattern
+
+Devices that maintain state across calls:
+
+```erlang
+-module(dev_stateful_counter).
+-export([info/0, info/1, info/3, init/3, get/3, handle/3]).
+-include("include/hb.hrl").
+
+info() -> #{
+    exports => [<<"counter">>, <<"increment">>, <<"reset">>],
+    init => fun init/3,
+    handler => fun handle/3
+}.
+info(Msg) -> info().
+info(_M1, _M2, _Opts) -> info().
+
+%% Initialize state - called when process starts
+init(_Msg, _State, _Opts) ->
+    {ok, #{
+        <<"counter">> => 0,
+        <<"history">> => []
+    }}.
+
+%% Handle requests - called for each message
+handle(Msg, State, Opts) ->
+    Action = hb_ao:get(<<"action">>, Msg, Opts),
+    case Action of
+        <<"increment">> ->
+            Counter = maps:get(<<"counter">>, State, 0),
+            History = maps:get(<<"history">>, State, []),
+            NewState = State#{
+                <<"counter">> => Counter + 1,
+                <<"history">> => [Counter | History]
+            },
+            {ok, #{<<"output">> => Counter + 1, <<"state">> => NewState}};
+
+        <<"reset">> ->
+            {ok, #{<<"output">> => 0, <<"state">> => State#{<<"counter">> => 0}}};
+
+        <<"get">> ->
+            {ok, #{<<"output">> => maps:get(<<"counter">>, State, 0)}};
+
+        _ ->
+            {error, #{<<"status">> => 400, <<"message">> => <<"Unknown action">>}}
+    end.
+
+%% Read state - for direct key access
+get(<<"counter">>, _Msg, #{process_state := State}) ->
+    {ok, maps:get(<<"counter">>, State, 0)};
+get(_, _, _) ->
+    pass.
+```
+
+## 11.3 Middleware Device Pattern
+
+Devices that wrap other devices (like P4):
+
+```erlang
+-module(dev_rate_limiter).
+-export([info/0, info/1, info/3, preprocess/3, postprocess/4]).
+-include("include/hb.hrl").
+
+info() -> #{
+    exports => [<<"preprocess">>, <<"postprocess">>],
+    middleware => true,
+    %% Rate limit configuration
+    requests_per_minute => 60,
+    window_size => 60000  % 1 minute in ms
+}.
+info(Msg) -> info().
+info(_M1, _M2, _Opts) -> info().
+
+preprocess(Msg, State, Opts) ->
+    %% 1. Get requester
+    [Requester | _] = hb_message:signers(Msg, Opts),
+
+    %% 2. Get rate limit config
+    Limit = hb_opts:get(requests_per_minute, 60, Opts),
+    Window = hb_opts:get(window_size, 60000, Opts),
+
+    %% 3. Get current window data
+    Now = erlang:system_time(millisecond),
+    WindowStart = Now - Window,
+    Requests = maps:get(Requester, State, []),
+
+    %% 4. Filter to current window
+    RecentRequests = [T || T <- Requests, T > WindowStart],
+
+    %% 5. Check limit
+    case length(RecentRequests) < Limit of
+        true ->
+            %% Allow - update state
+            NewState = State#{Requester => [Now | RecentRequests]},
+            {ok, Msg, NewState};
+        false ->
+            %% Rate limited
+            {error, #{
+                <<"status">> => 429,
+                <<"message">> => <<"Rate limit exceeded">>,
+                <<"retry-after">> => Window div 1000
+            }}
+    end.
+
+postprocess(Request, Response, State, Opts) ->
+    %% Add rate limit headers to response
+    [Requester | _] = hb_message:signers(Request, Opts),
+    Limit = hb_opts:get(requests_per_minute, 60, Opts),
+    Requests = maps:get(Requester, State, []),
+    Remaining = Limit - length(Requests),
+
+    {ok, Response#{
+        <<"x-ratelimit-limit">> => Limit,
+        <<"x-ratelimit-remaining">> => max(0, Remaining)
+    }}.
+```
+
+## 11.4 Full Token Process Example
+
+A complete token process implementation:
+
+```erlang
+-module(dev_token).
+-export([info/0, info/1, info/3, init/3, handle/3, get/3]).
+-include("include/hb.hrl").
+
+%%% TOKEN PROCESS DEVICE
+%%% Implements a fungible token with transfer, mint, and balance operations
+
+info() -> #{
+    exports => [
+        <<"init">>, <<"transfer">>, <<"balance">>, <<"mint">>,
+        <<"total-supply">>, <<"name">>, <<"symbol">>, <<"decimals">>
+    ],
+    init => fun init/3,
+    handler => fun handle/3
+}.
+info(Msg) -> info().
+info(_M1, _M2, _Opts) -> info().
+
+%% Initialize token with configuration
+init(Msg, _State, Opts) ->
+    Creator = hd(hb_message:signers(Msg, Opts)),
+
+    Name = hb_ao:get(<<"name">>, Msg, Opts, <<"Token">>),
+    Symbol = hb_ao:get(<<"symbol">>, Msg, Opts, <<"TKN">>),
+    Decimals = hb_util:int(hb_ao:get(<<"decimals">>, Msg, Opts, 18)),
+    InitialSupply = hb_util:int(hb_ao:get(<<"initial-supply">>, Msg, Opts, 0)),
+
+    {ok, #{
+        <<"name">> => Name,
+        <<"symbol">> => Symbol,
+        <<"decimals">> => Decimals,
+        <<"total-supply">> => InitialSupply,
+        <<"balances">> => #{Creator => InitialSupply},
+        <<"owner">> => Creator
+    }}.
+
+%% Route actions to handlers
+handle(Msg, State, Opts) ->
+    Action = hb_ao:get(<<"action">>, Msg, Opts),
+    case Action of
+        <<"Transfer">> -> transfer(Msg, State, Opts);
+        <<"Balance">> -> balance(Msg, State, Opts);
+        <<"Mint">> -> mint(Msg, State, Opts);
+        <<"Info">> -> token_info(State);
+        _ -> {error, #{<<"status">> => 400, <<"message">> => <<"Unknown action">>}}
+    end.
+
+%% Transfer tokens between addresses
+transfer(Msg, State, Opts) ->
+    [From | _] = hb_message:signers(Msg, Opts),
+    To = hb_ao:get(<<"recipient">>, Msg, Opts),
+    Amount = hb_util:int(hb_ao:get(<<"quantity">>, Msg, Opts)),
+
+    Balances = maps:get(<<"balances">>, State, #{}),
+    FromBalance = maps:get(From, Balances, 0),
+
+    case FromBalance >= Amount andalso Amount > 0 of
+        true ->
+            ToBalance = maps:get(To, Balances, 0),
+            NewBalances = Balances#{
+                From => FromBalance - Amount,
+                To => ToBalance + Amount
+            },
+            NewState = State#{<<"balances">> => NewBalances},
+
+            {ok, #{
+                <<"state">> => NewState,
+                <<"output">> => #{
+                    <<"status">> => <<"success">>,
+                    <<"from">> => From,
+                    <<"to">> => To,
+                    <<"amount">> => Amount,
+                    <<"new-balance">> => FromBalance - Amount
+                },
+                %% Send notification to recipient
+                <<"messages">> => [#{
+                    <<"target">> => To,
+                    <<"action">> => <<"Credit-Notice">>,
+                    <<"sender">> => From,
+                    <<"quantity">> => Amount,
+                    <<"token">> => hb_ao:get(<<"process">>, Msg, Opts)
+                }]
+            }};
+        false when Amount =< 0 ->
+            {error, #{<<"status">> => 400, <<"message">> => <<"Invalid amount">>}};
+        false ->
+            {error, #{<<"status">> => 400, <<"message">> => <<"Insufficient balance">>}}
+    end.
+
+%% Get balance for address
+balance(Msg, State, Opts) ->
+    Target = hb_ao:get(<<"target">>, Msg, Opts,
+        hd(hb_message:signers(Msg, Opts))),
+    Balances = maps:get(<<"balances">>, State, #{}),
+    Balance = maps:get(Target, Balances, 0),
+
+    {ok, #{
+        <<"output">> => #{
+            <<"target">> => Target,
+            <<"balance">> => Balance,
+            <<"ticker">> => maps:get(<<"symbol">>, State)
+        }
+    }}.
+
+%% Mint new tokens (owner only)
+mint(Msg, State, Opts) ->
+    [Caller | _] = hb_message:signers(Msg, Opts),
+    Owner = maps:get(<<"owner">>, State),
+
+    case Caller =:= Owner of
+        true ->
+            Recipient = hb_ao:get(<<"recipient">>, Msg, Opts, Owner),
+            Amount = hb_util:int(hb_ao:get(<<"quantity">>, Msg, Opts)),
+
+            Balances = maps:get(<<"balances">>, State, #{}),
+            RecipientBalance = maps:get(Recipient, Balances, 0),
+            TotalSupply = maps:get(<<"total-supply">>, State, 0),
+
+            NewState = State#{
+                <<"balances">> => Balances#{Recipient => RecipientBalance + Amount},
+                <<"total-supply">> => TotalSupply + Amount
+            },
+
+            {ok, #{
+                <<"state">> => NewState,
+                <<"output">> => #{
+                    <<"status">> => <<"success">>,
+                    <<"minted">> => Amount,
+                    <<"recipient">> => Recipient,
+                    <<"new-supply">> => TotalSupply + Amount
+                }
+            }};
+        false ->
+            {error, #{<<"status">> => 403, <<"message">> => <<"Not authorized">>}}
+    end.
+
+%% Get token info
+token_info(State) ->
+    {ok, #{
+        <<"output">> => #{
+            <<"name">> => maps:get(<<"name">>, State),
+            <<"symbol">> => maps:get(<<"symbol">>, State),
+            <<"decimals">> => maps:get(<<"decimals">>, State),
+            <<"total-supply">> => maps:get(<<"total-supply">>, State)
+        }
+    }}.
+
+%% Direct key access
+get(<<"name">>, _Msg, #{process_state := State}) ->
+    {ok, maps:get(<<"name">>, State)};
+get(<<"symbol">>, _Msg, #{process_state := State}) ->
+    {ok, maps:get(<<"symbol">>, State)};
+get(<<"total-supply">>, _Msg, #{process_state := State}) ->
+    {ok, maps:get(<<"total-supply">>, State)};
+get(_, _, _) ->
+    pass.
+```
+
+================================================================================
+PART 12: TESTING DEVICES
+================================================================================
+
+## 12.1 Unit Testing
+
+**Source: See src/*_test.erl files for examples**
+
+```erlang
+-module(dev_mydevice_test).
+-include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
+
+%% Basic test
+my_feature_test() ->
+    %% Setup
+    Store = hb_test_utils:test_store(),
+    Wallet = ar_wallet:new(),
+    Opts = #{
+        store => [Store],
+        priv_wallet => Wallet
+    },
+
+    %% Create test message
+    Msg = #{
+        <<"device">> => <<"my-device@1.0">>,
+        <<"key">> => <<"value">>
+    },
+
+    %% Execute
+    Result = dev_mydevice:get(<<"key">>, Msg, Opts),
+
+    %% Assert
+    ?assertEqual({ok, <<"expected">>}, Result).
+
+%% Test with signed message
+signed_message_test() ->
+    Wallet = ar_wallet:new(),
+    Opts = #{priv_wallet => Wallet},
+
+    Msg = #{<<"data">> => <<"test">>},
+    SignedMsg = hb_message:commit(Msg, Opts),
+
+    %% Verify signature
+    ?assert(hb_message:verify(SignedMsg, all, Opts)),
+
+    %% Verify signer
+    ExpectedSigner = ar_wallet:to_address(Wallet),
+    [ActualSigner | _] = hb_message:signers(SignedMsg, Opts),
+    ?assertEqual(ExpectedSigner, ActualSigner).
+
+%% Timeout for slow tests
+slow_test_() ->
+    {timeout, 60, fun() ->
+        %% Long running test code
+        ok
+    end}.
+
+%% Test with multiple assertions
+complex_test() ->
+    Opts = #{store => [hb_test_utils:test_store()]},
+
+    %% Test init
+    {ok, State} = dev_mydevice:init(#{}, #{}, Opts),
+    ?assertMatch(#{<<"initialized">> := true}, State),
+
+    %% Test operation
+    {ok, Result} = dev_mydevice:handle(
+        #{<<"action">> => <<"test">>},
+        State,
+        Opts
+    ),
+    ?assertMatch(#{<<"output">> := _}, Result).
+```
+
+## 12.2 Integration Testing
+
+```erlang
+-module(dev_integration_test).
+-include_lib("eunit/include/eunit.hrl").
+
+full_process_flow_test() ->
+    %% 1. Start test node
+    {ok, Node} = hb_http_server:start_node(#{
+        port => 0,  % Random port
+        store => [hb_test_utils:test_store()],
+        priv_wallet => ar_wallet:new()
+    }),
+    NodeURL = iolist_to_binary([
+        "http://localhost:",
+        integer_to_binary(maps:get(port, Node))
+    ]),
+
+    try
+        %% 2. Create process definition
+        Process = #{
+            <<"device">> => <<"process@1.0">>,
+            <<"execution-device">> => <<"test-exec@1.0">>,
+            <<"scheduler-device">> => <<"scheduler@1.0">>
+        },
+
+        %% 3. Schedule a message
+        {ok, Assignment} = hb_http:post(NodeURL, #{
+            <<"path">> => <<"/schedule">>,
+            <<"process">> => Process,
+            <<"message">> => #{<<"action">> => <<"Test">>}
+        }, #{}),
+
+        ?assertMatch(#{<<"slot">> := _}, Assignment),
+        Slot = maps:get(<<"slot">>, Assignment),
+
+        %% 4. Get result
+        ProcessID = hb_message:id(Process, #{}),
+        {ok, Result} = hb_http:get(NodeURL, #{
+            <<"path">> => <<"/~", ProcessID/binary, "/",
+                           (integer_to_binary(Slot))/binary>>
+        }, #{}),
+
+        ?assertMatch(#{<<"status">> := 200}, Result)
+    after
+        %% Cleanup
+        hb_http_server:stop_node(Node)
+    end.
+```
+
+## 12.3 Test Utilities
+
+**Location: src/hb_test_utils.erl**
+
+```erlang
+%% Get test store (in-memory)
+Store = hb_test_utils:test_store().
+
+%% Create test wallet
+Wallet = hb_test_utils:test_wallet().
+
+%% Create test message with defaults
+Msg = hb_test_utils:test_message(#{<<"custom">> => <<"data">>}).
+
+%% Create test process
+Process = hb_test_utils:test_process(#{
+    <<"execution-device">> => <<"wasm-64@1.0">>
+}).
+
+%% Create signed test message
+SignedMsg = hb_test_utils:signed_message(Msg, Wallet).
+```
+
+================================================================================
+PART 13: DEBUGGING
+================================================================================
+
+## 13.1 Debug Output
+
+```erlang
+%% Enable all debug output
+Opts = #{debug_print => true}.
+
+%% Enable specific topics
+Opts = #{debug_print => [http, scheduler, process, wasm, cache]}.
+
+%% Available topics:
+%% - http: HTTP requests/responses
+%% - scheduler: Scheduling operations
+%% - process: Process execution
+%% - wasm: WASM execution
+%% - cache: Cache operations
+%% - store: Store operations
+%% - crypto: Cryptographic operations
+```
+
+## 13.2 Event Logging
+
+```erlang
+%% In any module, use the ?event macro:
+-include("include/hb.hrl").
+
+%% Simple event
+?event({my_event, #{key => value}}).
+
+%% Event with topic
+?event(scheduler, {message_scheduled, #{slot => Slot}}).
+
+%% Conditional event
+?event(debug, {detailed_trace, LargeData}).
+```
+
+## 13.3 Formatting Debug Output
+
+```erlang
+%% Format complex message
+io:format("Message: ~s~n", [hb_format:message(Msg)]).
+
+%% Format any term
+io:format("Term: ~s~n", [hb_format:term(ComplexTerm)]).
+
+%% Format binary (shows as hex/base64)
+io:format("Binary: ~s~n", [hb_format:binary(<<1,2,3,4>>)]).
+
+%% Human-readable ID (first 8 chars)
+io:format("ID: ~s~n", [hb_util:human_id(LongBase64ID)]).
+
+%% Format trace for debugging
+Trace = hb_tracer:get_trace(),
+io:format("~s~n", [hb_format:trace(Trace)]).
+```
+
+## 13.4 Tracing
+
+**Location: src/hb_tracer.erl**
+
+```erlang
+%% Enable tracing
+hb_tracer:start().
+
+%% Trace specific module
+hb_tracer:trace(dev_process).
+
+%% Trace specific function
+hb_tracer:trace(dev_process, compute, 3).
+
+%% Get trace results
+Trace = hb_tracer:get_trace().
+
+%% Stop tracing
+hb_tracer:stop().
+```
+
+================================================================================
+PART 14: QUICK REFERENCE - WHERE TO LOOK
+================================================================================
+
+## By Task
+
+### "I need to understand key resolution"
+→ src/hb_ao.erl (lines 51-120 for main algorithm)
+→ src/hb_converge.erl (for full convergence logic)
+
+### "I need to create a new device"
+→ src/dev_message.erl (simple example)
+→ src/dev_simple_pay.erl (stateful example)
+→ src/dev_p4.erl (middleware example)
+→ src/dev_process.erl (complex example)
+
+### "I need to understand process execution"
+→ src/dev_process.erl (lines 312-380 for compute flow)
+→ src/dev_wasm_64.erl (lines 156-234 for WASM execution)
+
+### "I need to understand scheduling"
+→ src/dev_scheduler.erl (lines 234-312 for schedule flow)
+
+### "I need to understand storage"
+→ src/hb_store.erl (interface)
+→ src/hb_cache.erl (caching layer)
+→ src/hb_store_fs.erl (filesystem implementation)
+
+### "I need to understand HTTP handling"
+→ src/hb_http_server.erl (server)
+→ src/hb_http.erl (client operations)
+→ src/dev_router.erl (routing)
+
+### "I need to understand signing/verification"
+→ src/ar_wallet.erl (wallet operations)
+→ src/dev_codec_httpsig.erl (HTTP signatures)
+→ src/hb_message.erl (message signing)
+
+### "I need to understand message format"
+→ src/hb_message.erl (TABM operations)
+→ src/dev_json_iface.erl (WASM JSON format)
+
+### "I need utilities"
+→ src/hb_util.erl (type coercion, encoding)
+→ src/hb_format.erl (debug formatting)
+→ src/hb_opts.erl (options management)
+
+## Key Function Signatures
+
+```erlang
+%% Resolution (hb_ao.erl)
+hb_ao:get(Key, Msg, Opts) -> Value | not_found.
+hb_ao:get(Key, Msg, Opts, Default) -> Value.
+hb_ao:set(Key, Value, Msg, Opts) -> {ok, NewMsg}.
+hb_ao:resolve(Msg, Opts) -> {ok, Result} | {error, Reason}.
+
+%% Messages (hb_message.erl)
+hb_message:id(Msg, Opts) -> Base64ID.
+hb_message:commit(Msg, Opts) -> SignedMsg.
+hb_message:verify(Msg, Mode, Opts) -> boolean().
+hb_message:signers(Msg, Opts) -> [Address].
+
+%% Options (hb_opts.erl)
+hb_opts:get(Key, Default, Opts) -> Value.
+
+%% Cache (hb_cache.erl)
+hb_cache:read(ID, Opts) -> {ok, Msg} | not_found.
+hb_cache:write(Msg, Opts) -> {ok, ID}.
+
+%% HTTP (hb_http.erl)
+hb_http:get(Node, Msg, Opts) -> {ok, Response}.
+hb_http:post(Node, Msg, Opts) -> {ok, Response}.
+
+%% Wallet (ar_wallet.erl)
+ar_wallet:new() -> Wallet.
+ar_wallet:to_address(Wallet) -> Address.
+ar_wallet:sign(Wallet, Data) -> Signature.
+ar_wallet:verify(PubKey, Sig, Data) -> boolean().
+```
+
+## Device Return Values
+
+```erlang
+%% Success
+{ok, Value}
+{ok, Value, NewState}
+
+%% Error
+{error, Reason}
+{error, #{<<"status">> => Code, <<"message">> => Msg}}
+
+%% Pass to next device in stack
+pass
+
+%% Not found
+not_found
+```
+
+## Standard Message Keys
+
+```erlang
+#{
+    %% Device configuration
+    <<"device">> => <<"device-name@version">>,
+    <<"device-stack">> => [<<"dev1@1.0">>, <<"dev2@1.0">>],
+
+    %% Identity
+    <<"id">> => <<"base64-message-id">>,
+    <<"unsigned-id">> => <<"base64-unsigned-id">>,
+
+    %% HTTP-like
+    <<"path">> => <<"/endpoint">>,
+    <<"method">> => <<"GET">> | <<"POST">>,
+    <<"body">> => <<"content">>,
+    <<"status">> => 200,
+
+    %% Cryptographic
+    <<"signature">> => <<...>>,
+    <<"signature-input">> => <<"sig1=...">>,
+    <<"owner">> => <<...>>,
+
+    %% Process
+    <<"process">> => <<"process-id">>,
+    <<"slot">> => 42,
+    <<"timestamp">> => 1234567890,
+
+    %% Scheduler
+    <<"scheduler">> => <<"scheduler-address">>,
+    <<"hash-chain">> => <<"base64-hash">>,
+    <<"nonce">> => 42,
+    <<"epoch">> => 0
+}
+```
+
+================================================================================
+END OF DOCUMENT
+================================================================================
+
+Total source files: 139
+Total lines of code: ~45,000
+
+For specific implementation details, refer to the source files mentioned
+in each section. Line numbers are approximate and may shift with updates.
+
+Key files to study first:
+1. src/hb_ao.erl - Understand key resolution (THE CORE)
+2. src/dev_message.erl - Understand device structure
+3. src/dev_process.erl - Understand process execution
+4. src/hb_message.erl - Understand message operations
+5. src/dev_scheduler.erl - Understand scheduling
+
+For complex devices, study:
+1. src/dev_scheduler.erl - Stateful device with hash chains
+2. src/dev_p4.erl - Middleware/preprocessor pattern
+3. src/dev_wasm_64.erl - External execution integration
+4. src/dev_token.erl (example above) - Complete process implementation
