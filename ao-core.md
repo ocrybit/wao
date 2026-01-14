@@ -182,7 +182,68 @@ Supported types:
 | `list` | Structured fields format | `list:"a", "b", "c"` |
 | `term` | Erlang term format | `term:{ok, value}` |
 
-### 3.5 Message ID Calculation
+### 3.5 Type Suffix System
+
+Keys can have type suffixes that indicate the expected type of the value. When looking up a key, the system checks for typed variants:
+
+| Suffix | Type | Description |
+|--------|------|-------------|
+| `+integer` | Integer | Value should be an integer |
+| `+float` | Float | Value should be a floating point number |
+| `+binary` | Binary | Value should be binary data |
+| `+list` | List | Value should be an array/list |
+| `+map` | Map | Value should be a nested message/map |
+
+Example:
+```erlang
+#{
+  <<"count+integer">> => 42,
+  <<"price+float">> => 19.99,
+  <<"data+binary">> => <<1,2,3,4>>,
+  <<"tags+list">> => [<<"a">>, <<"b">>, <<"c">>],
+  <<"metadata+map">> => #{<<"key">> => <<"value">>}
+}
+```
+
+When looking up a key, check for typed variants:
+
+```erlang
+find_typed_key(Msg, Key) ->
+    Suffixes = [<<"">>, <<"+integer">>, <<"+float">>,
+                <<"+binary">>, <<"+list">>, <<"+map">>],
+    find_with_suffix(Msg, Key, Suffixes).
+
+find_with_suffix(_Msg, _Key, []) -> not_found;
+find_with_suffix(Msg, Key, [Suffix | Rest]) ->
+    TypedKey = <<Key/binary, Suffix/binary>>,
+    case maps:find(TypedKey, Msg) of
+        {ok, Value} -> {ok, TypedKey, Value};
+        error -> find_with_suffix(Msg, Key, Rest)
+    end.
+```
+
+Type coercion rules:
+```erlang
+coerce_to_type(Key, Value) ->
+    case extract_type_suffix(Key) of
+        <<"+integer">> -> to_integer(Value);
+        <<"+float">> -> to_float(Value);
+        <<"+binary">> -> to_binary(Value);
+        <<"+list">> -> to_list(Value);
+        <<"+map">> -> to_map(Value);
+        _ -> Value
+    end.
+
+to_integer(V) when is_integer(V) -> V;
+to_integer(V) when is_float(V) -> trunc(V);
+to_integer(V) when is_binary(V) -> binary_to_integer(V).
+
+to_float(V) when is_float(V) -> V;
+to_float(V) when is_integer(V) -> float(V);
+to_float(V) when is_binary(V) -> binary_to_float(V).
+```
+
+### 3.6 Message ID Calculation
 
 ```
 Unsigned ID = SHA-256(
@@ -373,6 +434,65 @@ handle(Message, Request, Opts) ->
         <<"GET">> -> handle_get(Message, Request, Opts);
         <<"POST">> -> handle_post(Message, Request, Opts);
         _ -> {error, method_not_allowed}
+    end.
+```
+
+### 5.7 Device Stack
+
+Messages can specify multiple devices using the `device-stack` key for fallback resolution:
+
+```erlang
+#{
+  <<"device">> => <<"primary@1.0">>,
+  <<"device-stack">> => [<<"fallback1@1.0">>, <<"fallback2@1.0">>],
+  ...
+}
+```
+
+Resolution order:
+1. Try primary device specified in `device` key
+2. If result is `{pass, true}`, try each device in `device-stack` in order
+3. Stop at first device that returns a definite result
+
+```erlang
+resolve_with_stack(Key, Msg, Opts) ->
+    PrimaryDevice = maps:get(<<"device">>, Msg),
+    case call_device(PrimaryDevice, get, [Key, Msg, Opts]) of
+        {ok, Value} -> {ok, Value};
+        {pass, true} ->
+            Stack = maps:get(<<"device-stack">>, Msg, []),
+            try_stack(Key, Msg, Stack, Opts);
+        {error, Reason} -> {error, Reason}
+    end.
+
+try_stack(_Key, _Msg, [], _Opts) -> not_found;
+try_stack(Key, Msg, [Device | Rest], Opts) ->
+    case call_device(Device, get, [Key, Msg, Opts]) of
+        {ok, Value} -> {ok, Value};
+        {pass, true} -> try_stack(Key, Msg, Rest, Opts);
+        {error, _} -> try_stack(Key, Msg, Rest, Opts)
+    end.
+```
+
+### 5.8 Pass-Through Results
+
+Device functions can return three types of results:
+
+| Result Type | Format | Meaning |
+|------------|--------|---------|
+| Success | `{ok, Value}` | Key resolved to Value |
+| Pass | `{pass, true}` | Delegate to next device in stack |
+| Error | `{error, Reason}` | Resolution failed |
+
+The pass-through pattern allows devices to handle only keys they know about:
+
+```erlang
+% Example device that handles specific keys
+get(Key, Msg, Opts) ->
+    case Key of
+        <<"id">> -> {ok, compute_id(Msg)};
+        <<"keys">> -> {ok, maps:keys(Msg)};
+        _ -> {pass, true}  % Let another device handle it
     end.
 ```
 
@@ -800,6 +920,100 @@ signing_base(Request, Components) ->
     ).
 ```
 
+### 9.8 Deep Hash Algorithm (Arweave-Specific)
+
+Deep Hash is Arweave's recursive hashing algorithm for creating content-addressed identifiers. It uses SHA-384 and handles nested data structures.
+
+```erlang
+% Deep hash for binary data (blob)
+deep_hash(Data) when is_binary(Data) ->
+    Tag = <<"blob", (integer_to_binary(byte_size(Data)))/binary>>,
+    sha384(<<(sha384(Tag))/binary, (sha384(Data))/binary>>);
+
+% Deep hash for list of items
+deep_hash(Items) when is_list(Items) ->
+    Tag = <<"list", (integer_to_binary(length(Items)))/binary>>,
+    TagHash = sha384(Tag),
+    lists:foldl(
+        fun(Item, Acc) ->
+            ItemHash = deep_hash(Item),
+            sha384(<<Acc/binary, ItemHash/binary>>)
+        end,
+        TagHash,
+        Items
+    ).
+
+sha384(Data) -> crypto:hash(sha384, Data).
+```
+
+Deep Hash is used for:
+- ANS-104 data item signing
+- Bundle item identification
+- Content-addressed storage
+
+For ANS-104 data items, the deep hash input is:
+```erlang
+deep_hash_data_item(DataItem) ->
+    deep_hash([
+        <<"dataitem">>,
+        <<"1">>,                        % Format version
+        SignatureType,                  % "1" for RSA-PSS
+        Owner,                          % Public key
+        Target,                         % Target address (or empty)
+        Anchor,                         % Anchor (or empty)
+        [[TagName, TagValue] || {TagName, TagValue} <- Tags],
+        Data
+    ]).
+```
+
+### 9.9 Structured Fields (RFC-8941)
+
+HTTP Structured Fields provide a consistent serialization format for HTTP header values.
+
+**Encoding Rules:**
+
+| Type | Encoding |
+|------|----------|
+| String | `"value"` (double-quoted, escaped) |
+| Integer | Decimal digits |
+| Boolean | `?1` (true) or `?0` (false) |
+| Binary | `:base64data:` (colon-delimited base64) |
+| List | `(item1 item2 item3)` (space-separated) |
+| Dictionary | `key1=value1, key2=value2` |
+
+```erlang
+encode_structured_field(Value) when is_binary(Value) ->
+    Escaped = binary:replace(Value, <<"\"">>, <<"\\\"">>, [global]),
+    <<"\"", Escaped/binary, "\"">>;
+encode_structured_field(Value) when is_integer(Value) ->
+    integer_to_binary(Value);
+encode_structured_field(true) -> <<"?1">>;
+encode_structured_field(false) -> <<"?0">>;
+encode_structured_field({binary, Data}) ->
+    <<":", (base64url_encode(Data))/binary, ":">>;
+encode_structured_field(List) when is_list(List) ->
+    Items = [encode_structured_field(I) || I <- List],
+    <<"(", (iolist_to_binary(lists:join(<<" ">>, Items)))/binary, ")">>;
+encode_structured_field(Map) when is_map(Map) ->
+    Items = [[K, <<"=">>, encode_structured_field(V)]
+             || {K, V} <- maps:to_list(Map)],
+    iolist_to_binary(lists:join(<<", ">>, Items)).
+```
+
+**Decoding:**
+```erlang
+decode_structured_field(Str) ->
+    Trimmed = string:trim(Str),
+    case Trimmed of
+        <<"\"", Rest/binary>> -> decode_string(Rest);
+        <<":", Rest/binary>> -> decode_binary(Rest);
+        <<"?1">> -> true;
+        <<"?0">> -> false;
+        <<"(", Rest/binary>> -> decode_list(Rest);
+        _ -> decode_number_or_token(Trimmed)
+    end.
+```
+
 ---
 
 ## 10. Scheduler and Process Management
@@ -899,6 +1113,121 @@ execute_slot(Process, Slot, Opts) ->
 4. Execute message against state
 5. Store resulting state at slot N
 6. Return results to caller
+
+### 10.8 Epoch-Based Scheduling
+
+Slots are organized into epochs for efficient batching and archival:
+
+```erlang
+% Epoch configuration
+-define(SLOTS_PER_EPOCH, 1000).
+
+% Calculate epoch from slot
+epoch_from_slot(Slot) -> Slot div ?SLOTS_PER_EPOCH.
+
+% Calculate nonce (position within epoch)
+nonce_from_slot(Slot) -> Slot rem ?SLOTS_PER_EPOCH.
+
+% Full slot from epoch and nonce
+slot_from_epoch_nonce(Epoch, Nonce) ->
+    (Epoch * ?SLOTS_PER_EPOCH) + Nonce.
+```
+
+**Schedule Location Format:**
+
+A schedule location encodes the current position as `address/epoch/nonce/hash-chain`:
+
+```erlang
+format_schedule_location(Address, Epoch, Nonce, HashChain) ->
+    <<Address/binary, "/",
+      (integer_to_binary(Epoch))/binary, "/",
+      (integer_to_binary(Nonce))/binary, "/",
+      HashChain/binary>>.
+
+parse_schedule_location(Location) ->
+    [Address, EpochStr, NonceStr, HashChain] =
+        binary:split(Location, <<"/">>, [global]),
+    #{
+        address => Address,
+        epoch => binary_to_integer(EpochStr),
+        nonce => binary_to_integer(NonceStr),
+        hash_chain => HashChain
+    }.
+```
+
+**Epoch Benefits:**
+- Efficient range queries for slots within an epoch
+- Enables batch archival of completed epochs to Arweave
+- Allows epoch-based payment settlements
+- Supports parallel processing of independent epochs
+
+### 10.9 Hash Chain Computation
+
+The hash chain provides cryptographic ordering proof for slots:
+
+```erlang
+compute_hash_chain(ProcessId, Slot, Message, PreviousHashChain) ->
+    Input = <<
+        ProcessId/binary,
+        (integer_to_binary(Slot))/binary,
+        (message_id(Message))/binary,
+        PreviousHashChain/binary
+    >>,
+    sha256(Input).
+```
+
+**Hash Chain Properties:**
+- Each slot's hash chain value depends on all previous slots
+- Provides total ordering proof without full history replay
+- Enables efficient verification of scheduler honesty
+- Genesis hash chain (slot 0) is the process ID itself
+
+```erlang
+% Genesis slot
+initial_hash_chain(ProcessId) -> sha256(ProcessId).
+
+% Assignment with hash chain
+create_assignment(Process, Slot, Message, Opts) ->
+    PreviousSlot = Slot - 1,
+    PreviousHashChain = case Slot of
+        1 -> initial_hash_chain(Process);
+        _ -> get_hash_chain(Process, PreviousSlot)
+    end,
+
+    HashChain = compute_hash_chain(Process, Slot, Message, PreviousHashChain),
+
+    Assignment = #{
+        <<"slot">> => Slot,
+        <<"timestamp">> => erlang:system_time(millisecond),
+        <<"process">> => Process,
+        <<"message">> => message_id(Message),
+        <<"epoch">> => epoch_from_slot(Slot),
+        <<"nonce">> => nonce_from_slot(Slot),
+        <<"hash-chain">> => HashChain
+    },
+
+    sign_assignment(Assignment, Opts).
+```
+
+**Verification:**
+```erlang
+verify_hash_chain(Process, Assignments) ->
+    lists:foldl(
+        fun(Assignment, {true, PrevHash}) ->
+            Slot = maps:get(<<"slot">>, Assignment),
+            MsgId = maps:get(<<"message">>, Assignment),
+            ExpectedHash = compute_hash_chain(Process, Slot, MsgId, PrevHash),
+            ActualHash = maps:get(<<"hash-chain">>, Assignment),
+            {ExpectedHash =:= ActualHash, ActualHash};
+        (_, {false, _}) ->
+            {false, invalid}
+        end,
+        {true, initial_hash_chain(Process)},
+        lists:sort(fun(A, B) ->
+            maps:get(<<"slot">>, A) < maps:get(<<"slot">>, B)
+        end, Assignments)
+    ).
+```
 
 ---
 
@@ -1158,6 +1487,100 @@ parse_list(<<"\"a\", \"b\", \"c\"">>) -> [<<"a">>, <<"b">>, <<"c">>].
 
 % Item with parameters: value;param1=x;param2=y
 parse_item(<<"token;q=0.5">>) -> {<<"token">>, #{<<"q">> => 0.5}}.
+```
+
+### 12.6 Commitment Device Interface
+
+A Commitment Device handles cryptographic signing and verification of messages. It is separate from codec encoding/decoding.
+
+```erlang
+% Commitment device behavior
+-callback commit(Message, Opts) -> {ok, SignedMessage} | {error, Reason}.
+-callback verify(Message, Mode, Opts) -> boolean().
+-callback signers(Message, Opts) -> [Address].
+-callback unsigned_id(Message, Opts) -> ID.
+```
+
+**Interface Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `commit/2` | Sign the message with wallet from Opts |
+| `verify/3` | Verify signature(s), Mode: `all` or `any` |
+| `signers/2` | Get list of signer addresses |
+| `unsigned_id/2` | Get message ID without signature |
+
+**HTTPSig Commitment (Default):**
+
+```erlang
+% dev_codec_httpsig as commitment device
+commit_httpsig(Msg, Opts) ->
+    Wallet = maps:get(priv_wallet, Opts),
+    HeadersToSign = maps:keys(maps:without([<<"body">>, <<"signature">>,
+                                            <<"signature-input">>], Msg)),
+    SigInput = create_signature_input(HeadersToSign),
+    SigBase = create_signature_base(Msg, SigInput),
+    Signature = rsa_pss_sign(Wallet, SigBase),
+    {ok, Msg#{
+        <<"signature">> => Signature,
+        <<"signature-input">> => SigInput,
+        <<"owner">> => wallet_address(Wallet)
+    }}.
+
+verify_httpsig(Msg, _Mode, _Opts) ->
+    Signature = maps:get(<<"signature">>, Msg),
+    SigInput = maps:get(<<"signature-input">>, Msg),
+    Owner = maps:get(<<"owner">>, Msg),
+    SigBase = create_signature_base(Msg, SigInput),
+    rsa_pss_verify({n => Owner, e => 65537}, Signature, SigBase).
+```
+
+**ANS-104 Commitment:**
+
+```erlang
+commit_ans104(Msg, Opts) ->
+    Wallet = maps:get(priv_wallet, Opts),
+    Tags = message_to_tags(Msg),
+    Data = maps:get(<<"body">>, Msg, <<>>),
+
+    % Deep hash signature data
+    SigData = deep_hash([
+        <<"dataitem">>, <<"1">>, <<"1">>,
+        wallet_pubkey(Wallet),
+        <<>>, <<>>,  % target, anchor
+        [[N, V] || {N, V} <- Tags],
+        Data
+    ]),
+
+    Signature = rsa_pss_sign(Wallet, SigData),
+    ID = sha256(Signature),
+
+    {ok, Msg#{
+        <<"signature">> => Signature,
+        <<"owner">> => wallet_pubkey(Wallet),
+        <<"id">> => ID
+    }}.
+```
+
+**Multi-Signature Support:**
+
+Messages can have multiple signatures (e.g., from different authorities):
+
+```erlang
+signers(Msg, _Opts) ->
+    case maps:get(<<"attestations">>, Msg, undefined) of
+        undefined ->
+            [maps:get(<<"owner">>, Msg)];
+        Attestations when is_list(Attestations) ->
+            [maps:get(<<"owner">>, A) || A <- Attestations]
+    end.
+
+verify(Msg, all, Opts) ->
+    Signers = signers(Msg, Opts),
+    lists:all(fun(S) -> verify_signer(Msg, S, Opts) end, Signers);
+verify(Msg, any, Opts) ->
+    Signers = signers(Msg, Opts),
+    lists:any(fun(S) -> verify_signer(Msg, S, Opts) end, Signers).
 ```
 
 ---
@@ -2714,6 +3137,92 @@ settle_channel(ChannelID, FinalState, Opts) ->
     transfer(maps:get(<<"payer">>, Channel), PayerRefund),
     transfer(maps:get(<<"payee">>, Channel), PayeeAmount).
 ```
+
+### Q.5 FAFF (Free at First) Payment Model
+
+FAFF allows new users to access services without upfront payment, with free requests gradually transitioning to paid:
+
+```erlang
+-record(faff_state, {
+    underlying :: payment_device(),
+    free_requests :: map(),       % Address -> Count
+    free_limit :: integer()       % Default: 100
+}).
+
+%% Initialize FAFF device wrapping another payment device
+init_faff(UnderlyingDevice, FreeLimit) ->
+    #faff_state{
+        underlying = UnderlyingDevice,
+        free_requests = #{},
+        free_limit = FreeLimit
+    }.
+
+%% Check if request is free
+is_free_request(Address, State) ->
+    Count = maps:get(Address, State#faff_state.free_requests, 0),
+    Count < State#faff_state.free_limit.
+
+%% Process payment with FAFF logic
+faff_payment(Address, Amount, State) ->
+    case is_free_request(Address, State) of
+        true ->
+            % Increment free request counter
+            NewCount = maps:get(Address, State#faff_state.free_requests, 0) + 1,
+            NewState = State#faff_state{
+                free_requests = maps:put(Address, NewCount, State#faff_state.free_requests)
+            },
+            {ok, free, NewState};
+        false ->
+            % Delegate to underlying payment device
+            case apply_payment(State#faff_state.underlying, Address, Amount) of
+                {ok, Receipt} -> {ok, {paid, Receipt}, State};
+                {error, Reason} -> {error, Reason, State}
+            end
+    end.
+```
+
+**FAFF Device Integration:**
+
+```erlang
+% P4 preprocessor with FAFF
+preprocess_p4_faff(Request, Opts) ->
+    Sender = maps:get(<<"owner">>, Request, undefined),
+    case Sender of
+        undefined ->
+            {ok, Request};  % Anonymous, no payment
+        _ ->
+            Estimate = estimate_cost(Request, Opts),
+            FAFFState = get_faff_state(Opts),
+            case faff_payment(Sender, Estimate, FAFFState) of
+                {ok, free, NewState} ->
+                    put_faff_state(NewState, Opts),
+                    {ok, Request};
+                {ok, {paid, Receipt}, NewState} ->
+                    put_faff_state(NewState, Opts),
+                    {ok, Request#{<<"payment-receipt">> => Receipt}};
+                {error, insufficient_funds, _} ->
+                    {error, {402, <<"Payment required">>}}
+            end
+    end.
+```
+
+**Configuration:**
+
+```erlang
+#{
+    <<"device">> => <<"p4@1.0">>,
+    <<"faff-enabled">> => true,
+    <<"faff-limit">> => 100,         % Free requests per address
+    <<"faff-reset-period">> => 86400, % Reset daily (seconds)
+    <<"underlying-payment">> => <<"ao-token">>
+}
+```
+
+**Benefits of FAFF:**
+- Reduces barrier to entry for new users
+- Allows users to try services before committing
+- Gradual transition from free to paid tier
+- Customizable free limits per service
 
 ---
 
