@@ -1,5 +1,4 @@
-import { spawn } from "child_process"
-import { resolve } from "path"
+import { spawn, execSync } from "child_process"
 
 const CWD = process.env.HYPERBEAM_DIR || `${process.env.HOME}/HyperBEAM-beta1`
 const PORT = process.env.PORT || 10001
@@ -22,14 +21,17 @@ class HyperBEAMTest {
     console.log(`Starting HyperBEAM on port ${this.port}...`)
     console.log(`Working directory: ${this.cwd}`)
 
-    this._shell = spawn(
-      "rebar3",
-      ["shell", "--eval", this.genEval()],
-      {
-        env: { ...process.env },
-        cwd: this.cwd,
-      }
-    )
+    // Use bash to source asdf and run rebar3
+    const cmd = `. ~/.asdf/asdf.sh && rebar3 shell --eval '${this.genEval()}'`
+
+    this._shell = spawn("bash", ["-c", cmd], {
+      env: { ...process.env },
+      cwd: this.cwd,
+      detached: true,  // Create new process group
+    })
+
+    this._pid = this._shell.pid
+    console.log(`Spawned process PID: ${this._pid}`)
 
     if (this.logs) {
       this._shell.stdout.on("data", chunk => {
@@ -97,14 +99,28 @@ class HyperBEAMTest {
   }
 
   stop() {
-    if (this._shell) {
-      console.log("Stopping HyperBEAM...")
-      this._shell.kill("SIGKILL")
-      this._shell = null
-      console.log("HyperBEAM stopped")
-      return true
+    console.log("Stopping HyperBEAM...")
+
+    // Kill the process group (including all children like beam.smp)
+    if (this._shell && this._pid) {
+      try {
+        process.kill(-this._pid, "SIGKILL")  // Negative PID kills process group
+      } catch (e) {
+        // Process may already be gone
+      }
     }
-    return false
+
+    // Also kill any remaining beam.smp and epmd processes
+    try {
+      execSync("pkill -9 -f 'beam.smp' 2>/dev/null || true", { stdio: "ignore" })
+      execSync("pkill -9 -f 'epmd' 2>/dev/null || true", { stdio: "ignore" })
+    } catch (e) {
+      // Ignore errors
+    }
+
+    this._shell = null
+    console.log("HyperBEAM stopped")
+    return true
   }
 }
 
