@@ -1,6 +1,37 @@
-# HyperBEAM Quick Install (v0.9-milestone-3-beta-3)
+# HyperBEAM Quick Install
 
-## Option 1: Pre-compiled (Fastest - ~5 seconds)
+## v0.9-milestone-3-beta-1 (Pre-compiled, ~5 seconds)
+
+```bash
+cd ~
+tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
+tar -xJf /path/to/wao/installation/hyperbeam-v0.9-m3-b1-compiled.tar.xz
+. ~/.asdf/asdf.sh
+asdf global erlang 27.3.4.6
+asdf global rebar 3.26.0
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+```
+
+Validate rebar3 is available:
+```bash
+rebar3 --version
+# Expected: rebar 3.26.0 on Erlang/OTP 27 Erts 15.x
+```
+
+Validate HyperBEAM (11 tests):
+```bash
+cd ~/HyperBEAM-beta1 && rebar3 eunit --module=hb_path --sname test
+```
+
+### Files for beta-1
+- `hyperbeam-v0.9-m3-b1-compiled.tar.xz` - Pre-compiled HyperBEAM beta-1 + WAMR + deps (38MB)
+- `hyperbeam_rebar_beta1.config` - Patched rebar config for beta-1
+
+---
+
+## v0.9-milestone-3-beta-3
+
+### Option 1: Pre-compiled (Fastest - ~5 seconds)
 
 No system dependencies required - everything is pre-compiled including WAMR and dependencies.
 
