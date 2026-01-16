@@ -109,3 +109,82 @@ Failures are HTTP server initialization, cron timing, and external integration i
 - `hyperbeam_rebar.config` - Patched config with git-only deps (bypasses hex.pm)
 - `hyperbeam-v0.9-m3-b3-compiled.tar.xz` - Pre-compiled HyperBEAM + WAMR + deps (26MB)
 - `asdf-erlang-rebar.tar.xz` - Pre-compiled Erlang 27.3.4.6 + rebar3 (23MB)
+
+---
+
+## Running hbsig Tests (with wao devices)
+
+The hbsig tests require the HyperBEAM **wao branch** which includes additional devices like `dev_hbsig.erl`.
+
+### Setup HyperBEAM with wao devices
+
+1. **Initialize the HyperBEAM submodule** (wao branch):
+```bash
+cd /path/to/wao
+git submodule update --init --recursive
+```
+
+2. **Copy the patched rebar config** (for offline compilation):
+```bash
+cd HyperBEAM
+cp ../installation/hyperbeam_rebar.config rebar.config
+rm -f rebar.lock
+```
+
+3. **Create or copy a wallet file**:
+```bash
+# Option A: Copy from beta-1 installation
+cp ~/HyperBEAM-beta1/.wallet.json .wallet.json
+
+# Option B: Generate new wallet (requires arweave tools)
+# The wallet file should be a JSON JWK format
+```
+
+4. **Compile HyperBEAM**:
+```bash
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+### Running hbsig Tests
+
+```bash
+cd /path/to/wao/hbsig
+npm install
+npm link wao  # Link the parent wao package
+
+# Run tests with CWD pointing to HyperBEAM
+CWD=/path/to/wao/HyperBEAM npm run test
+```
+
+### Starting HyperBEAM (Non-blocking)
+
+The `src/hyperbeam.js` uses `erl -detached` for non-blocking operation:
+
+```bash
+# Start HyperBEAM in detached mode (returns immediately)
+cd /path/to/HyperBEAM
+. ~/.asdf/asdf.sh
+erl -pa _build/default/lib/*/ebin -detached -eval "hb:start_mainnet(#{port => 10001, priv_key_location => <<\".wallet.json\">>})."
+
+# Verify it's running
+curl http://localhost:10001/~meta@1.0/info/address
+
+# Kill HyperBEAM
+pkill -9 -f beam.smp
+pkill -9 -f epmd
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CWD` | Path to HyperBEAM directory | `./HyperBEAM` |
+
+### Troubleshooting
+
+**Tests hang forever**: The old `rebar3 shell` approach blocks. Use `erl -detached` instead.
+
+**Socket errors during tests**: HyperBEAM may not be fully initialized. The `ready()` function waits up to 60s with polling.
+
+**Missing devices (hbsig@1.0 not found)**: Use the HyperBEAM submodule (wao branch), not the standard release.
