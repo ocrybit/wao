@@ -85,9 +85,12 @@ export default class HyperBEAM {
     if (shell) this.shell()
   }
   shell() {
-    // Use erl -detached instead of rebar3 shell to avoid blocking
+    // Use erl -noshell instead of rebar3 shell to avoid blocking
+    // Add timer:sleep(infinity) to keep the VM running
     const evalCmd = this.genEval({ gateway: this.gateway, wallet: this.wallet })
-    const cmd = `. ~/.asdf/asdf.sh && erl -pa _build/default/lib/*/ebin -detached -eval "${evalCmd.replace(/"/g, '\\"')}"`
+    // Remove trailing period and add timer:sleep(infinity) to keep VM alive
+    const evalWithSleep = evalCmd.replace(/\.$/, ", timer:sleep(infinity).")
+    const cmd = `. ~/.asdf/asdf.sh && nohup erl -pa _build/default/lib/*/ebin -noshell -eval "${evalWithSleep.replace(/"/g, '\\"')}" > /dev/null 2>&1 &`
 
     spawnSync("bash", ["-c", cmd], {
       env: { ...process.env, ...this.genEnv() },
