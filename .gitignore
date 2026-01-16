@@ -137,3 +137,4 @@ dist
 # Large compiled packages
 *.tar.xz
 *.tar.gz
+tinyllama.gguf
