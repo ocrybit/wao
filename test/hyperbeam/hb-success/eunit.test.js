@@ -1,6 +1,6 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import HyperBEAM from "../../src/hyperbeam.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 
 describe("Hyperbeam Eunit", function () {
   let hb, hbeam

@@ -1,7 +1,7 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import Server from "../../src/server.js"
-import HyperBEAM from "../../src/hyperbeam.js"
+import Server from "../../../src/server.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 const URL = "http://localhost:10001"
 
 describe("Hyperbeam Device", function () {

@@ -1,9 +1,9 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
 import { pick } from "ramda"
-import HyperBEAM from "../../src/hyperbeam.js"
-import { HB } from "../../src/index.js"
-import { wait } from "../../src/test.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
+import { HB } from "../../../src/index.js"
+import { wait } from "../../../src/test.js"
 
 describe("Hyperbeam Device", function () {
   let hb, hbeam

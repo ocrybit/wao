@@ -1,6 +1,6 @@
 import assert from "assert"
 import { after, describe, it, before } from "node:test"
-import HyperBEAM from "../../src/hyperbeam.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 
 /**
  * L3 API Gateway Device Tests

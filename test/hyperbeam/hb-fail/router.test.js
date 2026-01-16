@@ -1,8 +1,8 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import HyperBEAM from "../../src/hyperbeam.js"
-import HB from "../../src/hb.js"
-import { acc, toAddr } from "../../src/test.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
+import HB from "../../../src/hb.js"
+import { acc, toAddr } from "../../../src/test.js"
 
 describe("Router Device Comprehensive Test Suite", function () {
   let hb, hbeam

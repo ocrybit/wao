@@ -2,7 +2,7 @@ import assert from "assert"
 import { after, describe, it, before } from "node:test"
 import { readFileSync } from "fs"
 import { resolve } from "path"
-import HyperBEAM from "../../src/hyperbeam.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 
 /**
  * L5 JavaScript Smart Contract Platform Tests

@@ -3,11 +3,11 @@ import { httpsig_from, structured_to } from "hbsig"
 import { ArweaveSigner } from "@ar.io/sdk"
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import HyperBEAM from "../../src/hyperbeam.js"
-import { wait } from "../../src/utils.js"
-import { acc } from "../../src/test.js"
-import bundler from "../../src/bundler.js"
-import HB from "../../src/hb.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
+import { wait } from "../../../src/utils.js"
+import { acc } from "../../../src/test.js"
+import bundler from "../../../src/bundler.js"
+import HB from "../../../src/hb.js"
 
 const toMsg = async req => {
   let msg = {}

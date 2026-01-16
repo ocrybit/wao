@@ -1,18 +1,18 @@
 import assert from "assert"
 import base64url from "base64url"
 import { after, describe, it, before, beforeEach } from "node:test"
-import { acc, mu, AO, toAddr } from "../../src/test.js"
-import HB from "../../src/hb.js"
-import AOHB from "../../src/ao.js"
+import { acc, mu, AO, toAddr } from "../../../src/test.js"
+import HB from "../../../src/hb.js"
+import AOHB from "../../../src/ao.js"
 import { isNotNil, filter, isNil } from "ramda"
 import { randomBytes } from "node:crypto"
-import { wait } from "../../src/utils.js"
-import Server from "../../src/server.js"
-import HyperBEAM from "../../src/hyperbeam.js"
+import { wait } from "../../../src/utils.js"
+import Server from "../../../src/server.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 import { readFileSync } from "fs"
 import { resolve } from "path"
 
-import AO2 from "../../src/ao.js"
+import AO2 from "../../../src/ao.js"
 
 const src_data = `
 local count = 0

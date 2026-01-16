@@ -1,8 +1,8 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import HyperBEAM from "../../src/hyperbeam.js"
-import AO from "../../src/ao.js"
-import TAO from "../../src/tao.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
+import AO from "../../../src/ao.js"
+import TAO from "../../../src/tao.js"
 
 const src_data = `
 local count = 0

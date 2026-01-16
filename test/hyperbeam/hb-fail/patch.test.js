@@ -1,7 +1,7 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import HB from "../../src/hb.js"
-import HyperBEAM from "../../src/hyperbeam.js"
+import HB from "../../../src/hb.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 
 const data = `
 local count = 0

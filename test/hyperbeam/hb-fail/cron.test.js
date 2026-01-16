@@ -1,7 +1,7 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import { wait } from "../../src/utils.js"
-import HyperBEAM from "../../src/hyperbeam.js"
+import { wait } from "../../../src/utils.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 
 const URL = "http://localhost:10001"
 

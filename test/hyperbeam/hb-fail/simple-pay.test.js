@@ -1,8 +1,8 @@
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
-import { acc } from "../../src/test.js"
-import HB from "../../src/hb.js"
-import HyperBEAM from "../../src/hyperbeam.js"
+import { acc } from "../../../src/test.js"
+import HB from "../../../src/hb.js"
+import HyperBEAM from "../../../src/hyperbeam.js"
 let operator = null
 let user = acc[0]
 
