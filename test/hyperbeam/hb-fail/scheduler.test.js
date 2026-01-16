@@ -14,13 +14,16 @@ describe("Hyperbeam Device", function () {
         device: "process@1.0",
         type: "Process",
         scheduler: hb.addr,
-        "execution-device": "test-device@1.0",
+        // Use stack@1.0 with device-stack for proper test-device execution
+        "execution-device": "stack@1.0",
+        "device-stack": ["test-device@1.0", "test-device@1.0"],
       },
     })
     const { processes } = await hb.g("/~scheduler@1.0/status")
     assert.deepEqual(processes, [pid])
     const { slot } = await hb.p("/~scheduler@1.0/schedule", {
-      body: { target: pid },
+      // Must include type: Message for proper scheduling
+      body: { target: pid, type: "Message" },
     })
 
     // todo: get doesn't work
