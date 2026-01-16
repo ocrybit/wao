@@ -24,7 +24,10 @@ describe("Hyperbeam Device", function () {
     const val2 = await hb.g("/~local-name@1.0/lookup", { key: "map" })
     assert.equal(val2.a, 123)
 
-    const val3 = await hb.g("/~local-name@1.0/lookup", { key: "random" })
-    assert.equal(val3, '"not_found"')
+    // Use raw fetch for not_found check since hbsig has a bug parsing atom types
+    const res = await fetch(`${hbeam.url}/~local-name@1.0/lookup?key=random`)
+    assert.equal(res.status, 404)
+    const body = await res.text()
+    assert.equal(body, '"not_found"')
   })
 })
