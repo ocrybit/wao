@@ -1,4 +1,4 @@
-import { spawn } from "child_process"
+import { spawn, spawnSync } from "child_process"
 import { resolve } from "path"
 import { isNil, map } from "ramda"
 import { toAddr } from "./test.js"
@@ -85,30 +85,18 @@ export default class HyperBEAM {
     if (shell) this.shell()
   }
   shell() {
-    const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
-    this._shell = spawn(
-      "rebar3",
-      [
-        ..._as,
-        "shell",
-        "--eval",
-        this.genEval({ gateway: this.gateway, wallet: this.wallet }),
-      ],
-      {
-        env: { ...process.env, ...this.genEnv() },
-        cwd: resolve(process.cwd(), this.cwd),
-      }
-    )
+    // Use erl -detached instead of rebar3 shell to avoid blocking
+    const evalCmd = this.genEval({ gateway: this.gateway, wallet: this.wallet })
+    const cmd = `. ~/.asdf/asdf.sh && erl -pa _build/default/lib/*/ebin -detached -eval "${evalCmd.replace(/"/g, '\\"')}"`
+
+    spawnSync("bash", ["-c", cmd], {
+      env: { ...process.env, ...this.genEnv() },
+      cwd: resolve(process.cwd(), this.cwd),
+      encoding: "utf8"
+    })
+
     if (this.logs) {
-      this._shell.stdout.on("data", chunk => console.log(chunk.toString()))
-      this._shell.stderr.on("data", err => console.error(err.toString()))
-      this._shell.on("error", err =>
-        console.error(`failed to start process: ${err}`)
-      )
-      this._shell.on("close", code => {
-        console.log(`child process exited with code ${code}`)
-        delete this._shell
-      })
+      console.log(`HyperBEAM started in detached mode on port ${this.port}`)
     }
   }
   file(path, type = "utf8") {
@@ -275,6 +263,8 @@ export default class HyperBEAM {
   }
 
   kill() {
-    this._shell.kill("SIGKILL")
+    // Kill beam.smp and epmd processes directly
+    spawnSync("pkill", ["-9", "-f", "beam.smp"])
+    spawnSync("pkill", ["-9", "-f", "epmd"])
   }
 }
