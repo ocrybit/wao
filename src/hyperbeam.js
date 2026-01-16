@@ -3,7 +3,7 @@ import { resolve } from "path"
 import { isNil, map } from "ramda"
 import { toAddr } from "./test.js"
 import HB from "./hb.js"
-import { rmSync, readFileSync, readdirSync } from "fs"
+import { rmSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import devs from "./devs.js"
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.hyperbeam" })
@@ -44,10 +44,17 @@ export default class HyperBEAM {
     this.jwk = JSON.parse(this.file(this.wallet_location))
     this.addr = toAddr(this.jwk.n)
     if (reset) {
+      // Kill any existing HyperBEAM processes first
+      spawnSync("pkill", ["-9", "-f", "beam.smp"], { stdio: "ignore" })
+      spawnSync("pkill", ["-9", "-f", "epmd"], { stdio: "ignore" })
+      // Wait for port to be freed
+      spawnSync("sleep", ["1"])
+
+      // Use bash rm -rf for more reliable cache clearing
       for (let v of readdirSync(this.dirname)) {
         if (/^cache-/.test(v)) {
           try {
-            rmSync(resolve(this.dirname, v), { recursive: true, force: true })
+            spawnSync("rm", ["-rf", resolve(this.dirname, v)], { stdio: "ignore" })
           } catch (e) {
             console.log(e)
           }
@@ -85,21 +92,37 @@ export default class HyperBEAM {
     if (shell) this.shell()
   }
   shell() {
-    // Use erl -noshell instead of rebar3 shell to avoid blocking
-    // Add timer:sleep(infinity) to keep the VM running
+    // Use erl with spawn to keep the process as a managed child
     const evalCmd = this.genEval({ gateway: this.gateway, wallet: this.wallet })
-    // Remove trailing period and add timer:sleep(infinity) to keep VM alive
-    const evalWithSleep = evalCmd.replace(/\.$/, ", timer:sleep(infinity).")
-    const cmd = `. ~/.asdf/asdf.sh && nohup erl -pa _build/default/lib/*/ebin -noshell -eval "${evalWithSleep.replace(/"/g, '\\"')}" > /dev/null 2>&1 &`
+    // Remove trailing period and add receive to keep VM alive
+    const evalWithSleep = evalCmd.replace(/\.$/, ", receive after infinity -> ok end.")
 
-    spawnSync("bash", ["-c", cmd], {
+    // Write eval command to a temp file to avoid shell escaping issues
+    const evalFile = resolve(this.dirname, ".hb_eval_cmd")
+    writeFileSync(evalFile, evalWithSleep)
+
+    // Remove any existing crash dump
+    spawnSync("rm", ["-f", resolve(this.dirname, "erl_crash.dump")], { stdio: "ignore" })
+
+    const cmd = `. ~/.asdf/asdf.sh && erl -pa _build/default/lib/*/ebin -noshell -eval "$(cat ${evalFile})"`
+
+    this.proc = spawn("bash", ["-c", cmd], {
       env: { ...process.env, ...this.genEnv() },
       cwd: resolve(process.cwd(), this.cwd),
-      encoding: "utf8"
+      detached: true,
+      stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
     })
 
+    // Don't let parent wait for this child
+    this.proc.unref()
+
+    if (this.logs && this.proc.stdout) {
+      this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
+      this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+    }
+
     if (this.logs) {
-      console.log(`HyperBEAM started in detached mode on port ${this.port}`)
+      console.log(`HyperBEAM starting on port ${this.port}...`)
     }
   }
   file(path, type = "utf8") {
@@ -271,8 +294,17 @@ export default class HyperBEAM {
   }
 
   kill() {
-    // Kill beam.smp and epmd processes directly
+    // Kill our process group if we have a reference
+    if (this.proc && this.proc.pid) {
+      try {
+        process.kill(-this.proc.pid, "SIGKILL")
+      } catch (e) {
+        // Process may already be dead
+      }
+    }
+    // Also kill any remaining beam.smp processes on our port
+    spawnSync("pkill", ["-9", "-f", `beam.smp.*${this.port}`])
+    // Fallback: kill all beam.smp processes
     spawnSync("pkill", ["-9", "-f", "beam.smp"])
-    spawnSync("pkill", ["-9", "-f", "epmd"])
   }
 }
