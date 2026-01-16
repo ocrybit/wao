@@ -188,3 +188,41 @@ pkill -9 -f epmd
 **Socket errors during tests**: HyperBEAM may not be fully initialized. The `ready()` function waits up to 60s with polling.
 
 **Missing devices (hbsig@1.0 not found)**: Use the HyperBEAM submodule (wao branch), not the standard release.
+
+## Running Legacynet Tests
+
+### Prerequisites
+
+1. **Clone arjson** (specific version required):
+```bash
+cd /home/user
+git clone https://github.com/weavedb/arjson.git
+cd arjson
+git checkout 62adab7  # Version with Parser, decode, Bundle exports
+cd sdk && npm install
+```
+
+2. **Download TinyLlama model** (for LLM tests):
+```bash
+cd /path/to/wao
+curl -L -o tinyllama.gguf "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
+```
+
+### Running Tests
+
+```bash
+# Start the wao server in background (provides AR/MU/SU/CU endpoints)
+node --experimental-wasm-memory64 src/run.js --memory --port 4000 &
+
+# Run legacynet tests
+npm run test -- test/legacynet/*.test.js
+
+# Kill server when done
+pkill -f "src/run.js"
+```
+
+### Notes
+
+- The server starts AR on port 4000, BD on 4001, MU on 4002, SU on 4003, CU on 4004
+- arjson must be at commit `62adab7` - newer versions removed `Parser` and `decode` exports
+- TinyLlama model (~460MB) is required for LLM tests
