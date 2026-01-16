@@ -18,21 +18,16 @@ describe("Hyperbeam Device", function () {
   })
 
   it("should test relay@1.0", async () => {
-    assert.equal(
-      1,
-      JSON.parse(
-        (
-          await hb.getJSON({
-            path: "/~relay@1.0/call",
-            "relay-path": "http://localhost:6359",
-          })
-        ).body
-      ).version
-    )
-    const cast = await hb.getJSON({
-      path: "/~relay@1.0/cast",
-      "relay-path": "http://localhost:6359",
-    })
-    assert.equal(cast.body, "OK")
+    // Test relay call - use raw fetch since getJSON doesn't handle relay responses correctly
+    const callRes = await fetch(`${URL}/~relay@1.0/call?relay-path=http://localhost:6359/`)
+    assert.equal(callRes.status, 200)
+    const callBody = await callRes.json()
+    assert.equal(callBody.version, 1)
+
+    // Test relay cast
+    const castRes = await fetch(`${URL}/~relay@1.0/cast?relay-path=http://localhost:6359/`)
+    assert.equal(castRes.status, 200)
+    const castBody = await castRes.text()
+    assert.equal(castBody, "OK")
   })
 })
