@@ -15,7 +15,7 @@ describe("Hyperbeam Device", function () {
     assert.deepEqual(pick(["initialized", "port", "address"])(info), {
       port: 10001,
       address: hb.addr,
-      initialized: true,
+      initialized: "true",
     })
     await hb.p("/~meta@1.0/info", {
       test_config: 123,
