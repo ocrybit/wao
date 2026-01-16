@@ -159,16 +159,21 @@ export default class HyperBEAM {
       return false
     }
   }
-  async ready(timeout = 30000) {
+  async ready(timeout = 60000) {
+    // Wait a bit for HyperBEAM to initialize before polling
+    await new Promise(r => setTimeout(r, 3000))
+
     const start = Date.now()
     return new Promise(res => {
       const to = setInterval(async () => {
         try {
-          if (Date.now() - start > 30000) {
+          if (Date.now() - start > timeout) {
             clearInterval(to)
             res(false)
           } else {
             if (await this.ok()) {
+              // Wait a bit more after first successful response
+              await new Promise(r => setTimeout(r, 1000))
               clearInterval(to)
               res(this)
             }
