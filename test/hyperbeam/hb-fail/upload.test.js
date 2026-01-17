@@ -1,3 +1,14 @@
+// Setup proxy for Node.js fetch (undici) if HTTPS_PROXY is set
+import { ProxyAgent, setGlobalDispatcher } from "undici"
+const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY
+if (proxyUrl) {
+  const proxyAgent = new ProxyAgent({
+    uri: proxyUrl,
+    requestTls: { rejectUnauthorized: false }
+  })
+  setGlobalDispatcher(proxyAgent)
+}
+
 import { bundleAndSignData, createData } from "@dha-team/arbundles"
 import { httpsig_from, structured_to } from "hbsig"
 import { ArweaveSigner } from "@ar.io/sdk"
