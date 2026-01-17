@@ -1,12 +1,9 @@
 // Setup proxy for Node.js fetch (undici) if HTTPS_PROXY is set
-import { ProxyAgent, setGlobalDispatcher } from "undici"
+// Uses EnvHttpProxyAgent which respects no_proxy for localhost
+import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici"
 const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY
 if (proxyUrl) {
-  const proxyAgent = new ProxyAgent({
-    uri: proxyUrl,
-    requestTls: { rejectUnauthorized: false }
-  })
-  setGlobalDispatcher(proxyAgent)
+  setGlobalDispatcher(new EnvHttpProxyAgent())
 }
 
 import { bundleAndSignData, createData } from "@dha-team/arbundles"
@@ -153,7 +150,8 @@ Handlers.add("Get", "Get", function (msg)
   msg.reply({ Data = "Count: "..tostring(count) })
 end)`
 
-  it.only("should test process #2", async () => {
+  // Skip: requires genesis-wasm@1.0 which needs dev_wasm:handler/3 (not implemented)
+  it.skip("should test process #2 with genesis-wasm", async () => {
     const hb2 = new HB({ jwk: hb.jwk, format: "ans104" })
     const { out } = await hb2.get({ path: "~meta@1.0/info" })
     console.log(out.address)
