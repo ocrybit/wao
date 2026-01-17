@@ -150,7 +150,7 @@ Handlers.add("Get", "Get", function (msg)
   msg.reply({ Data = "Count: "..tostring(count) })
 end)`
 
-  // Skip: requires genesis-wasm@1.0 which needs dev_wasm:handler/3 (not implemented)
+  // Skip: genesis-wasm CU integration has Erlang-side issues (hb_http.erl:255 badarg)
   it.skip("should test process #2 with genesis-wasm", async () => {
     const hb2 = new HB({ jwk: hb.jwk, format: "ans104" })
     const { out } = await hb2.get({ path: "~meta@1.0/info" })
