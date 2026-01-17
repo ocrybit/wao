@@ -150,7 +150,9 @@ Handlers.add("Get", "Get", function (msg)
   msg.reply({ Data = "Count: "..tostring(count) })
 end)`
 
-  // Skip: genesis-wasm CU integration has Erlang-side issues (hb_http.erl:255 badarg)
+  // Skip: genesis-wasm test requires external network access (up.arweave.net)
+  // to fetch process modules. This environment requires a proxy but the CU
+  // server doesn't have proxy support configured.
   it.skip("should test process #2 with genesis-wasm", async () => {
     const hb2 = new HB({ jwk: hb.jwk, format: "ans104" })
     const { out } = await hb2.get({ path: "~meta@1.0/info" })
