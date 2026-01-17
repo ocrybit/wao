@@ -237,6 +237,13 @@ function decodeValue(type, value) {
  */
 function parseStructuredItem(value) {
   // This is a simplified parser - you'd want to use a proper structured fields parser
+  // Convert Buffer/Uint8Array to string if needed
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+    value = value.toString()
+  }
+  if (typeof value !== 'string') {
+    return value
+  }
   if (value.startsWith('"') && value.endsWith('"')) {
     return value.slice(1, -1) // Remove quotes
   }
@@ -250,6 +257,13 @@ function parseStructuredItem(value) {
  */
 function parseStructuredList(value) {
   // This is a simplified parser - you'd want to use a proper structured fields parser
+  // Convert Buffer/Uint8Array to string if needed
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+    value = value.toString()
+  }
+  if (typeof value !== 'string') {
+    return [value]
+  }
   return value.split(", ").map(item => {
     if (item.startsWith('"') && item.endsWith('"')) {
       return item.slice(1, -1) // Remove quotes
