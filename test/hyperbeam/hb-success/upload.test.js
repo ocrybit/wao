@@ -150,8 +150,8 @@ Handlers.add("Get", "Get", function (msg)
   msg.reply({ Data = "Count: "..tostring(count) })
 end)`
 
-  // Skip: genesis-wasm requires prometheus_http module which isn't compiled
-  // due to network/proxy constraints preventing hexpm package fetching
+  // Skip: genesis-wasm requires CU server infrastructure which needs additional setup
+  // The HyperBEAM compilation with prometheus_http module is now fixed via git deps
   it.skip("should test process #2 with genesis-wasm", async () => {
     const hb2 = new HB({ jwk: hb.jwk, format: "ans104" })
     const { out } = await hb2.get({ path: "~meta@1.0/info" })
