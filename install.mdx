@@ -1,0 +1,124 @@
+# WAO Test Setup Requirements
+
+This document describes the requirements and configuration needed to successfully run the WAO tests.
+
+## Test Categories
+
+The tests are organized into two main categories:
+
+### hb-success tests (`test/hyperbeam/hb-success/`)
+These tests run against a local HyperBEAM instance and do not require mainnet access. They should pass in most environments.
+
+### hb-fail tests (`test/hyperbeam/hb-fail/`)
+These tests require access to the AO mainnet (Arweave gateway) for fetching WASM modules and other resources. They may fail in restricted network environments.
+
+## Prerequisites
+
+### HyperBEAM Installation
+HyperBEAM must be installed at `/root/HyperBEAM-beta1` (or set `CWD` environment variable to your installation path).
+
+### Genesis WASM Server
+For tests that use `genesis_wasm: true`, the genesis-wasm server must be built:
+
+```bash
+cd /root/HyperBEAM-beta1/_build/genesis-wasm-server
+npm install
+```
+
+### Wallet Configuration
+A wallet file (`.wallet.json`) must exist in the HyperBEAM directory.
+
+## Running Tests
+
+### Basic Test Commands
+
+```bash
+# Run hb-success tests (no mainnet required)
+npm test -- --test-name-pattern="hb-success"
+
+# Run hb-fail tests (mainnet required)
+npm test -- --test-name-pattern="hb-fail"
+```
+
+### HyperBEAM Modes
+
+The `hyperbeam.js` module supports two modes for starting HyperBEAM:
+
+#### Rebar3 Mode (Default)
+Uses pre-compiled Erlang code from rebar3 build:
+```javascript
+new HyperBEAM({ rebar3: true }) // default
+```
+Or via environment variable:
+```bash
+HB_REBAR3=true npm test
+```
+
+#### Direct Erlang Mode
+Uses direct `erl` command execution (useful for development):
+```javascript
+new HyperBEAM({ rebar3: false })
+```
+Or via environment variable:
+```bash
+HB_REBAR3=false npm test
+```
+
+## Network Configuration
+
+### Mainnet Access
+Tests in `hb-fail/` require access to Arweave gateway services:
+- Default gateway: `https://arweave.net`
+- Alternative gateway: `https://g8way.io` (may work better in some environments)
+
+### Proxy Environments
+In proxy environments, HyperBEAM's default `gun` HTTP client may not work properly. The following considerations apply:
+
+1. **DNS Resolution**: Erlang's `httpc` client requires local DNS resolution. In proxy-only DNS environments, this may cause connection failures.
+
+2. **Gateway Configuration**: Use the `arweave_gateway` option or `ARWEAVE_GATEWAY` environment variable to specify an alternative gateway:
+```javascript
+new HyperBEAM({ arweave_gateway: "https://g8way.io" })
+```
+
+3. **Known Limitations**:
+   - `gun` HTTP client: Does not automatically use `HTTP_PROXY`/`HTTPS_PROXY` environment variables
+   - `httpc` HTTP client: Requires local DNS resolution before proxy connection
+   - Some CDN services (like Cloudflare) may block requests through certain proxies
+
+### Recommended Setup for Restricted Networks
+
+For environments with network restrictions:
+
+1. Ensure direct internet access (no proxy) if possible
+2. If proxy is required, ensure local DNS resolution works
+3. Consider using `g8way.io` as the gateway if `arweave.net` is blocked
+4. Run only `hb-success` tests if mainnet access is unavailable
+
+## Troubleshooting
+
+### "necessary_message_not_found" errors
+This indicates the test cannot fetch required WASM modules from the gateway. Check:
+- Network connectivity to Arweave gateway
+- Proxy configuration if applicable
+- Try alternative gateway (`g8way.io`)
+
+### Port conflicts
+HyperBEAM uses port 10001 by default. The genesis-wasm CU server uses port 6365. Ensure these ports are available or configure alternatives.
+
+### Process cleanup
+If tests fail to start, lingering Erlang processes may be holding ports. Run:
+```bash
+pkill -9 -f beam.smp
+pkill -9 -f epmd
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CWD` | HyperBEAM installation directory | `/root/HyperBEAM-beta1` |
+| `HB_REBAR3` | Use rebar3 mode (`true`/`false`) | `true` |
+| `ARWEAVE_GATEWAY` | Remote Arweave gateway URL | `https://arweave.net` |
+| `GATEWAY_URL` | Gateway URL for genesis-wasm CU | Uses `ARWEAVE_GATEWAY` |
+| `GRAPHQL_URL` | GraphQL endpoint | `${GATEWAY_URL}/graphql` |

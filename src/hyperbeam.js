@@ -35,8 +35,18 @@ export default class HyperBEAM {
     devices,
     genesis_wasm = false,
     arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
+    rebar3, // Use rebar3 shell mode (true) or direct erl mode (false). Default: true, can be overridden by HB_REBAR3 env var
   } = {}) {
     this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
+    // Determine rebar3 mode: option > env var > default (true)
+    const envRebar3 = process.env.HB_REBAR3
+    if (rebar3 !== undefined) {
+      this.rebar3 = rebar3
+    } else if (envRebar3 !== undefined) {
+      this.rebar3 = envRebar3.toLowerCase() !== "false"
+    } else {
+      this.rebar3 = true // default to rebar3 mode
+    }
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
     this.devices = devices
@@ -109,17 +119,26 @@ export default class HyperBEAM {
     // Remove any existing crash dump
     spawnSync("rm", ["-f", resolve(this.dirname, "erl_crash.dump")], { stdio: "ignore" })
 
-    // Generate Erlang command to set httpc proxy and start prometheus before main app
-    // Prometheus must be started BEFORE hb:start_mainnet to avoid race condition with hb_event
-    // prometheus_cowboy2_instrumenter:setup() registers cowboy metrics (requires prometheus with TEST define)
-    const prometheusSetup = `application:ensure_all_started([prometheus]), prometheus_cowboy2_instrumenter:setup(), timer:sleep(200)`
-    // Parse proxy URL and extract host, port, and optional userinfo (username:password) for authentication
-    // Note: uri_string:parse may return strings or binaries depending on Erlang version, so we handle both
-    const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
-    const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end`
+    let cmd
+    if (this.rebar3) {
+      // Rebar3 shell mode - use rebar3 shell with eval
+      // This properly loads all dependencies and applications
+      const evalForRebar3 = evalCmd.replace(/\.$/, ".")
+      cmd = `. /home/user/.asdf/asdf.sh && rebar3 as genesis_wasm shell --eval '${evalForRebar3}'`
+    } else {
+      // Direct erl mode - manually specify paths
+      // Generate Erlang command to set httpc proxy and start prometheus before main app
+      // Prometheus must be started BEFORE hb:start_mainnet to avoid race condition with hb_event
+      // prometheus_cowboy2_instrumenter:setup() registers cowboy metrics (requires prometheus with TEST define)
+      const prometheusSetup = `application:ensure_all_started([prometheus]), prometheus_cowboy2_instrumenter:setup(), timer:sleep(200)`
+      // Parse proxy URL and extract host, port, and optional userinfo (username:password) for authentication
+      // Note: uri_string:parse may return strings or binaries depending on Erlang version, so we handle both
+      const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
+      const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end`
 
-    // Use genesis_wasm profile to enable genesis-wasm@1.0 device
-    const cmd = `. /home/user/.asdf/asdf.sh && erl -pa _build/genesis_wasm/lib/*/ebin -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
+      // Use genesis_wasm profile to enable genesis-wasm@1.0 device
+      cmd = `. /home/user/.asdf/asdf.sh && erl -pa _build/genesis_wasm/lib/*/ebin -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
+    }
 
     this.proc = spawn("bash", ["-c", cmd], {
       env: { ...process.env, ...this.genEnv() },
@@ -137,7 +156,7 @@ export default class HyperBEAM {
     }
 
     if (this.logs) {
-      console.log(`HyperBEAM starting on port ${this.port}...`)
+      console.log(`HyperBEAM starting on port ${this.port} (rebar3=${this.rebar3})...`)
     }
   }
   file(path, type = "utf8") {
