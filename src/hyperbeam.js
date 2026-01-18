@@ -35,7 +35,7 @@ export default class HyperBEAM {
     devices,
     genesis_wasm = false,
     arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
-    rebar3, // Use rebar3 shell mode (true) or direct erl mode (false). Default: true, can be overridden by HB_REBAR3 env var
+    rebar3, // Use original erl mode with rebar3-compiled beam files (true) or rebar3 shell (false). Default: true, can be overridden by HB_REBAR3 env var
   } = {}) {
     this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
     // Determine rebar3 mode: option > env var > default (true)
