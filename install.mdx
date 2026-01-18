@@ -45,7 +45,7 @@ npm test -- --test-name-pattern="hb-fail"
 The `hyperbeam.js` module supports two modes for starting HyperBEAM:
 
 #### Rebar3 Mode (Default)
-Uses direct `erl` command with rebar3-compiled beam files from `_build/` directory (original behavior):
+Uses `rebar3 shell --eval` command (original behavior):
 ```javascript
 new HyperBEAM({ rebar3: true }) // default
 ```
@@ -54,8 +54,8 @@ Or via environment variable:
 HB_REBAR3=true npm test
 ```
 
-#### Rebar3 Shell Mode
-Uses `rebar3 shell` command for interactive development:
+#### Direct Erl Mode
+Uses direct `erl` command with rebar3-compiled beam files:
 ```javascript
 new HyperBEAM({ rebar3: false })
 ```
