@@ -85,7 +85,7 @@ class Server {
     const app = express()
     app.use(bodyParser.json())
     this.launch("CU", app, {
-      get: ["/", "/result/:mid", "/state/:pid", "/results/:pid", "/dry-run"],
+      get: ["/", "/status", "/result/:mid", "/state/:pid", "/results/:pid", "/dry-run"],
       post: ["/result/:mid", "/dry-run"],
     })
   }
