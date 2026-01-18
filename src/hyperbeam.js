@@ -34,7 +34,9 @@ export default class HyperBEAM {
     shell = true,
     devices,
     genesis_wasm = false,
+    arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
   } = {}) {
+    this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
     this.devices = devices
@@ -111,7 +113,10 @@ export default class HyperBEAM {
     // Prometheus must be started BEFORE hb:start_mainnet to avoid race condition with hb_event
     // prometheus_cowboy2_instrumenter:setup() registers cowboy metrics (requires prometheus with TEST define)
     const prometheusSetup = `application:ensure_all_started([prometheus]), prometheus_cowboy2_instrumenter:setup(), timer:sleep(200)`
-    const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> case uri_string:parse(U) of #{host := H, port := Pt} -> inets:start(), httpc:set_options([{proxy, {{H, Pt}, ["localhost", "127.0.0.1"]}}]); _ -> ok end end)(P) end; P -> (fun(U) -> case uri_string:parse(U) of #{host := H, port := Pt} -> inets:start(), httpc:set_options([{proxy, {{H, Pt}, ["localhost", "127.0.0.1"]}}]); _ -> ok end end)(P) end`
+    // Parse proxy URL and extract host, port, and optional userinfo (username:password) for authentication
+    // Note: uri_string:parse may return strings or binaries depending on Erlang version, so we handle both
+    const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
+    const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end`
 
     // Use genesis_wasm profile to enable genesis-wasm@1.0 device
     const cmd = `. /home/user/.asdf/asdf.sh && erl -pa _build/genesis_wasm/lib/*/ebin -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
@@ -232,6 +237,11 @@ export default class HyperBEAM {
     // Ensure DB directory exists
     spawnSync("mkdir", ["-p", dbDir])
 
+    // Use arweave_gateway option or ARWEAVE_GATEWAY env var for proxy environments
+    // Default to arweave.net, but g8way.io works better through some proxies
+    const gatewayUrl = this.arweave_gateway || process.env.GATEWAY_URL || "https://arweave.net"
+    const graphqlUrl = process.env.GRAPHQL_URL || `${gatewayUrl}/graphql`
+
     const env = {
       ...process.env,
       UNIT_MODE: "hbu",
@@ -242,6 +252,11 @@ export default class HyperBEAM {
       WALLET_FILE: this.wallet_location,
       DISABLE_PROCESS_FILE_CHECKPOINT_CREATION: "false",
       PROCESS_MEMORY_FILE_CHECKPOINTS_DIR: resolve(dbDir, "checkpoints"),
+      GATEWAY_URL: gatewayUrl,
+      ARWEAVE_URL: gatewayUrl,
+      GRAPHQL_URL: graphqlUrl,
+      GRAPHQL_URLS: `${graphqlUrl},https://arweave-search.goldsky.com/graphql`,
+      CHECKPOINT_GRAPHQL_URL: graphqlUrl,
     }
 
     this.cuProc = spawn("node", ["--experimental-wasm-memory64", "-r", "dotenv/config", "src/app.js"], {
@@ -308,9 +323,12 @@ export default class HyperBEAM {
       _devices = `, preloaded_devices => [${_devs.join(", ")}]`
     }
     const _wallet = `, priv_key_location => <<"${wallet}">>`
+    // Local gateway port takes precedence, then remote arweave_gateway URL
     const _gateway = gateway
       ? `, gateway => <<"http://localhost:${gateway}">>`
-      : ""
+      : this.arweave_gateway
+        ? `, gateway => <<"${this.arweave_gateway}">>`
+        : ""
 
     // store option will be overwritten by hb.erl
     const _store = this.store_prefix
