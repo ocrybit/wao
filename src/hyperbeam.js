@@ -266,7 +266,7 @@ export default class HyperBEAM {
 
     // Wait for CU to be ready
     const start = Date.now()
-    while (Date.now() - start < 15000) {
+    while (Date.now() - start < 30000) {
       try {
         const res = await fetch(`http://localhost:${this.cu_port}/status`)
         if (res.ok) {
@@ -278,7 +278,7 @@ export default class HyperBEAM {
       }
       await new Promise(r => setTimeout(r, 500))
     }
-    console.error("CU server failed to start within 15 seconds")
+    console.error("CU server failed to start within 30 seconds")
     return false
   }
   genEnv() {
