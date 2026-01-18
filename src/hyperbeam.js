@@ -12,7 +12,7 @@ export default class HyperBEAM {
   static OPERATOR = Symbol("operator")
   constructor({
     port = 10001,
-    //cu = 6363,
+    cu_port = 6363,
     as = [],
     bundler,
     gateway,
@@ -33,7 +33,10 @@ export default class HyperBEAM {
     logs = true,
     shell = true,
     devices,
+    genesis_wasm = false,
   } = {}) {
+    this.genesis_wasm = genesis_wasm
+    this.cu_port = cu_port
     this.devices = devices
     this.p4_non_chargable_routes = p4_non_chargable_routes
     this.logs = logs
@@ -187,6 +190,11 @@ export default class HyperBEAM {
     }
   }
   async ready(timeout = 60000) {
+    // Start CU server if genesis_wasm is enabled
+    if (this.genesis_wasm) {
+      await this.startCU()
+    }
+
     // Wait a bit for HyperBEAM to initialize before polling
     await new Promise(r => setTimeout(r, 3000))
 
@@ -208,6 +216,63 @@ export default class HyperBEAM {
         } catch (e) {}
       }, 1000)
     })
+  }
+
+  // Start the genesis-wasm CU server
+  async startCU() {
+    const cuDir = resolve(this.dirname, "_build/genesis-wasm-server")
+    const dbDir = resolve(this.dirname, "cache-mainnet/genesis-wasm")
+
+    // Ensure DB directory exists
+    spawnSync("mkdir", ["-p", dbDir])
+
+    const env = {
+      ...process.env,
+      UNIT_MODE: "hbu",
+      HB_URL: `http://localhost:${this.port}`,
+      NODE_CONFIG_ENV: "development",
+      DB_URL: resolve(dbDir, "genesis-wasm-db"),
+      PORT: String(this.cu_port),
+      WALLET_FILE: this.wallet_location,
+      DISABLE_PROCESS_FILE_CHECKPOINT_CREATION: "false",
+      PROCESS_MEMORY_FILE_CHECKPOINTS_DIR: resolve(dbDir, "checkpoints"),
+    }
+
+    this.cuProc = spawn("node", ["--experimental-wasm-memory64", "-r", "dotenv/config", "src/app.js"], {
+      cwd: cuDir,
+      env,
+      detached: true,
+      stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
+    })
+
+    this.cuProc.unref()
+
+    if (this.logs) {
+      console.log(`CU server starting on port ${this.cu_port}...`)
+      if (this.cuProc.stdout) {
+        this.cuProc.stdout.on("data", chunk => console.log(`[CU] ${chunk.toString().trim()}`))
+      }
+      if (this.cuProc.stderr) {
+        this.cuProc.stderr.on("data", chunk => console.error(`[CU] ${chunk.toString().trim()}`))
+      }
+    }
+
+    // Wait for CU to be ready
+    const start = Date.now()
+    while (Date.now() - start < 15000) {
+      try {
+        const res = await fetch(`http://localhost:${this.cu_port}/status`)
+        if (res.ok) {
+          if (this.logs) console.log("CU server ready")
+          return true
+        }
+      } catch (e) {
+        // Not ready yet
+      }
+      await new Promise(r => setTimeout(r, 500))
+    }
+    console.error("CU server failed to start within 15 seconds")
+    return false
   }
   genEnv() {
     let _env = {}
@@ -248,12 +313,11 @@ export default class HyperBEAM {
     let _bundler = this.bundler
       ? `, bundler_httpsig => <<"${this.bundler}">>`
       : ""
-    let _bundler_ans104 =
-      this.bundler_ans104 === false
-        ? ", bundler_ans104 => false"
-        : this.bundler_ans104
-          ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
-          : ""
+    // Don't pass bundler_ans104 if false - Erlang code can't handle boolean false
+    // Only pass it when it's a truthy value (port number or URL)
+    let _bundler_ans104 = this.bundler_ans104 && this.bundler_ans104 !== false
+      ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
+      : ""
     /*
     const _routes = `, routes => [#{ <<"template">> => <<"/result/.*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu}">> } }, #{ <<\"template\">> => <<\"/dry-run\">>, <<\"node\">> => #{ <<\"prefix\">> => <<\"http://localhost:${this.cu}\">> } }, #{ <<"template">> => <<"/graphql">>, <<"nodes">> => [#{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => httpc, protocol => http2 } }, #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }] }, #{ <<"template">> => <<"/raw">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } } }]`
     */
@@ -295,6 +359,14 @@ export default class HyperBEAM {
   }
 
   kill() {
+    // Kill CU server if we started it
+    if (this.cuProc && this.cuProc.pid) {
+      try {
+        process.kill(-this.cuProc.pid, "SIGKILL")
+      } catch (e) {
+        // Process may already be dead
+      }
+    }
     // Kill our process group if we have a reference
     if (this.proc && this.proc.pid) {
       try {
