@@ -28,7 +28,7 @@ end)
 
 describe("Hyperbeam Device", function () {
   let hb, hbeam
-  before(async () => (hbeam = await new HyperBEAM({ reset: true }).ready()))
+  before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
   beforeEach(async () => (hb = hbeam.hb))
   after(async () => hbeam.kill())
 
