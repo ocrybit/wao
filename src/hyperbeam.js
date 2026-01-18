@@ -108,7 +108,7 @@ export default class HyperBEAM {
     spawnSync("rm", ["-f", resolve(this.dirname, "erl_crash.dump")], { stdio: "ignore" })
 
     // Use genesis_wasm profile to enable genesis-wasm@1.0 device
-    const cmd = `. ~/.asdf/asdf.sh && erl -pa _build/genesis_wasm/lib/*/ebin -pa _build/default/lib/*/ebin -noshell -eval "$(cat ${evalFile})"`
+    const cmd = `. /home/user/.asdf/asdf.sh && erl -pa _build/genesis_wasm/lib/*/ebin -pa _build/default/lib/*/ebin -noshell -eval "$(cat ${evalFile})"`
 
     this.proc = spawn("bash", ["-c", cmd], {
       env: { ...process.env, ...this.genEnv() },

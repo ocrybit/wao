@@ -42,7 +42,7 @@ describe("Hyperbeam Legacynet", function () {
   let hb, hbeam, server
   before(async () => {
     server = new Server({ port: 6359, log: true, hb_url: URL })
-    hbeam = await new HyperBEAM({ reset: true }).ready()
+    hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()
   })
   beforeEach(async () => (hb = hbeam.hb))
   after(async () => {
@@ -142,9 +142,9 @@ describe("Hyperbeam Legacynet", function () {
   })
 })
 
-describe("Hyperbeam Legacynet", function () {
+describe("Hyperbeam Legacynet 2", function () {
   let hb, hbeam
-  before(async () => (hbeam = await new HyperBEAM({ reset: true }).ready()))
+  before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
   beforeEach(async () => (hb = hbeam.hb))
   after(async () => hbeam.kill())
 
@@ -287,7 +287,7 @@ end)
     console.log(await p.m("Get"))
   })
 
-  it.only("should test oracle", async () => {
+  it("should test oracle", async () => {
     const src_data = `
 local count = 0
 json = require("json")
