@@ -288,3 +288,32 @@ The test will automatically:
 **CU health check fails (socket_closed_remotely)**: The CU server may not have started. Check that port 6363 is available and Node.js is installed.
 
 **genesis-wasm device not found**: Ensure HyperBEAM was compiled with `rebar3 as genesis_wasm compile` (not just `rebar3 compile`).
+
+### Using genesis_wasm Option in Tests
+
+The `HyperBEAM` class supports automatic CU server management via the `genesis_wasm` option:
+
+```javascript
+import HyperBEAM from "wao/hyperbeam"
+
+// Automatically starts CU server on port 6363
+const hbeam = await new HyperBEAM({
+  reset: true,
+  genesis_wasm: true,
+  cu_port: 6363  // optional, defaults to 6363
+}).ready()
+
+// CU server is automatically killed when HyperBEAM is killed
+await hbeam.kill()
+```
+
+### HTTPS Proxy Support
+
+HyperBEAM automatically configures the Erlang httpc client to use the `HTTPS_PROXY` environment variable if set. This enables HyperBEAM to fetch data from Arweave in proxy-required environments.
+
+```bash
+# Set proxy before running tests
+export HTTPS_PROXY="http://proxy-host:port"
+npm run test -- test/hyperbeam/hb-success/upload.test.js
+```
+
