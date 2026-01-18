@@ -112,11 +112,11 @@ Failures are HTTP server initialization, cron timing, and external integration i
 
 ---
 
-## WAO Test Setup
+## WAO Test Setup Requirements
+
+This section describes the requirements and configuration needed to successfully run the WAO tests.
 
 ### Test Categories
-
-The tests are organized into two main categories:
 
 #### hb-success tests (`test/hyperbeam/hb-success/`)
 These tests run against a local HyperBEAM instance and do not require mainnet access. They should pass in most environments.
@@ -129,14 +129,61 @@ These tests require access to the AO mainnet (Arweave gateway) for fetching WASM
 - **HyperBEAM Installation**: Must be installed at `~/HyperBEAM-beta1` (or set `CWD` environment variable to your installation path)
 - **Wallet Configuration**: A wallet file (`.wallet.json`) must exist in the HyperBEAM directory
 
-### Running Tests
+### Building HyperBEAM Profiles
+
+HyperBEAM must be compiled with the appropriate rebar3 profiles:
 
 ```bash
-# Run hb-success tests (no mainnet required)
-npm test -- --test-name-pattern="hb-success"
+cd ~/HyperBEAM-beta1
 
-# Run hb-fail tests (mainnet required)
-npm test -- --test-name-pattern="hb-fail"
+# Build default profile
+rebar3 compile
+
+# Build genesis_wasm profile (required for genesis-wasm tests)
+rebar3 as genesis_wasm compile
+
+# Build test profile (includes TEST macro for prometheus metrics)
+rebar3 as test compile
+```
+
+The `_build` directory should contain:
+- `_build/default/lib/*/ebin` - Default compiled beam files
+- `_build/genesis_wasm/lib/*/ebin` - Genesis WASM profile beam files
+- `_build/test/lib/*/ebin` - Test profile beam files (with TEST macro)
+
+### Prometheus Setup
+
+When using `HB_REBAR3=false` (direct erl mode), prometheus must be started before HyperBEAM:
+
+1. **Test profile required**: The test profile compiles with `-DTEST` flag which enables `prometheus_cowboy2_instrumenter:setup/0`
+2. **Startup sequence**: prometheus must start BEFORE `hb:start_mainnet()` to avoid race conditions with `hb_event`
+
+The hyperbeam.js handles this automatically in direct erl mode by running:
+```erlang
+application:ensure_all_started([prometheus]),
+prometheus_cowboy2_instrumenter:setup(),
+timer:sleep(200),
+hb:start_mainnet(...).
+```
+
+**Note**: If the test profile is not compiled, prometheus errors will appear but tests may still pass (errors are caught gracefully).
+
+### Device Availability
+
+#### Beta1 Limitations
+HyperBEAM beta1 does NOT include the `wao@1.0` device. Tests requiring this device (like cron tests) will fail on beta1.
+
+Available devices in beta1:
+- `~scheduler@1.0`
+- `~message@1.0`
+- `~process@1.0`
+- `~meta@1.0`
+- `~cron@1.0`
+- `genesis-wasm@1.0` (when compiled with genesis_wasm profile)
+
+Check available devices:
+```bash
+ls ~/HyperBEAM-beta1/src/dev_*.erl
 ```
 
 ### HyperBEAM Modes
@@ -153,6 +200,8 @@ Or via environment variable:
 HB_REBAR3=true npm test
 ```
 
+**Note**: Rebar3 mode handles application startup automatically but may have issues in certain environments.
+
 #### Direct Erl Mode
 Uses direct `erl` command with rebar3-compiled beam files:
 ```javascript
@@ -161,6 +210,50 @@ new HyperBEAM({ rebar3: false })
 Or via environment variable:
 ```bash
 HB_REBAR3=false npm test
+```
+
+**Note**: Direct erl mode requires:
+- Prometheus to be started before HyperBEAM (handled automatically by hyperbeam.js)
+- Test profile compilation for prometheus metrics support (optional, errors are caught)
+- Proper beam file paths in `_build/genesis_wasm/lib/*/ebin`
+
+### Running Tests
+
+```bash
+# Run hb-success tests (no mainnet required)
+npm test -- --test-name-pattern="hb-success"
+
+# Run hb-fail tests (mainnet required)
+npm test -- --test-name-pattern="hb-fail"
+
+# Run specific test
+npm test -- test/hyperbeam/hb-success/simple.test.js
+
+# Run with direct erl mode
+HB_REBAR3=false npm test -- test/hyperbeam/hb-success/simple.test.js
+```
+
+### WAO Test Quick Start
+
+```bash
+# 1. Build HyperBEAM with all profiles (optional but recommended)
+cd ~/HyperBEAM-beta1
+rebar3 compile
+rebar3 as genesis_wasm compile
+rebar3 as test compile
+
+# 2. Build genesis-wasm server (if needed)
+cd _build/genesis-wasm-server && npm install && cd ../..
+
+# 3. Ensure wallet exists
+ls .wallet.json
+
+# 4. Run tests
+cd /home/user/wao
+npm test -- test/hyperbeam/hb-success/simple.test.js
+
+# If rebar3 mode fails, try direct erl mode:
+HB_REBAR3=false npm test -- test/hyperbeam/hb-success/simple.test.js
 ```
 
 ---
@@ -227,6 +320,20 @@ curl http://localhost:10001/~meta@1.0/info/address
 pkill -9 -f beam.smp
 pkill -9 -f epmd
 ```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CWD` | Path to HyperBEAM directory | `./HyperBEAM` |
+
+### Troubleshooting
+
+**Tests hang forever**: The old `rebar3 shell` approach blocks. Use `erl -detached` instead.
+
+**Socket errors during tests**: HyperBEAM may not be fully initialized. The `ready()` function waits up to 60s with polling.
+
+**Missing devices (hbsig@1.0 not found)**: Use the HyperBEAM submodule (wao branch), not the standard release.
 
 ---
 
@@ -322,6 +429,16 @@ The test will automatically:
 2. Start HyperBEAM with genesis-wasm device enabled
 3. Execute AO process evaluation via the CU
 
+### Files (in `installation/` folder)
+
+- `genesis-wasm-server-precompiled.tar.xz` - Pre-compiled CU server with dependencies (~8MB)
+
+### Troubleshooting
+
+**CU health check fails (socket_closed_remotely)**: The CU server may not have started. Check that port 6363 is available and Node.js is installed.
+
+**genesis-wasm device not found**: Ensure HyperBEAM was compiled with `rebar3 as genesis_wasm compile` (not just `rebar3 compile`).
+
 ### Using genesis_wasm Option in Tests
 
 The `HyperBEAM` class supports automatic CU server management via the `genesis_wasm` option:
@@ -340,34 +457,6 @@ const hbeam = await new HyperBEAM({
 await hbeam.kill()
 ```
 
-### Files (in `installation/` folder)
-
-- `genesis-wasm-server-precompiled.tar.xz` - Pre-compiled CU server with dependencies (~8MB)
-
----
-
-## Network Configuration
-
-### Mainnet Access
-Tests in `hb-fail/` require access to Arweave gateway services:
-- Default gateway: `https://arweave.net`
-- Alternative gateway: `https://g8way.io` (may work better in some environments)
-
-### Proxy Environments
-In proxy environments, HyperBEAM's default `gun` HTTP client may not work properly. The following considerations apply:
-
-1. **DNS Resolution**: Erlang's `httpc` client requires local DNS resolution. In proxy-only DNS environments, this may cause connection failures.
-
-2. **Gateway Configuration**: Use the `arweave_gateway` option or `ARWEAVE_GATEWAY` environment variable to specify an alternative gateway:
-```javascript
-new HyperBEAM({ arweave_gateway: "https://g8way.io" })
-```
-
-3. **Known Limitations**:
-   - `gun` HTTP client: Does not automatically use `HTTP_PROXY`/`HTTPS_PROXY` environment variables
-   - `httpc` HTTP client: Requires local DNS resolution before proxy connection
-   - Some CDN services (like Cloudflare) may block requests through certain proxies
-
 ### HTTPS Proxy Support
 
 HyperBEAM automatically configures the Erlang httpc client to use the `HTTPS_PROXY` environment variable if set. This enables HyperBEAM to fetch data from Arweave in proxy-required environments.
@@ -378,14 +467,37 @@ export HTTPS_PROXY="http://proxy-host:port"
 npm run test -- test/hyperbeam/hb-success/upload.test.js
 ```
 
-### Recommended Setup for Restricted Networks
+---
 
-For environments with network restrictions:
+## Network Configuration for Tests
+
+### Mainnet Access
+Tests in `hb-fail/` require access to Arweave gateway services:
+- Default gateway: `https://arweave.net`
+- Alternative gateway: `https://g8way.io` (may work better in some environments)
+
+### Proxy Environments
+In proxy environments, HyperBEAM's default `gun` HTTP client may not work properly:
+
+1. **DNS Resolution**: Erlang's `httpc` client requires local DNS resolution. In proxy-only DNS environments, this may cause connection failures.
+
+2. **Gateway Configuration**: Use the `arweave_gateway` option or `ARWEAVE_GATEWAY` environment variable:
+```javascript
+new HyperBEAM({ arweave_gateway: "https://g8way.io" })
+```
+
+3. **Known Limitations**:
+   - `gun` HTTP client: Does not automatically use `HTTP_PROXY`/`HTTPS_PROXY` environment variables
+   - `httpc` HTTP client: Requires local DNS resolution before proxy connection
+   - Some CDN services (like Cloudflare) may block requests through certain proxies
+
+### Recommended Setup for Restricted Networks
 
 1. Ensure direct internet access (no proxy) if possible
 2. If proxy is required, ensure local DNS resolution works
 3. Consider using `g8way.io` as the gateway if `arweave.net` is blocked
 4. Run only `hb-success` tests if mainnet access is unavailable
+5. Use `HB_REBAR3=false` if rebar3 shell has issues with proxy
 
 ---
 
@@ -407,14 +519,23 @@ pkill -9 -f beam.smp
 pkill -9 -f epmd
 ```
 
+### Prometheus crashes on startup
+If HyperBEAM crashes with prometheus-related errors:
+1. Ensure test profile is compiled: `rebar3 as test compile`
+2. Use `HB_REBAR3=false` to enable automatic prometheus setup (errors are caught gracefully)
+3. Check that `prometheus_cowboy2_instrumenter` module is available
+
+### Missing devices
+If tests fail with "device not found" errors:
+1. Check device availability in your HyperBEAM version
+2. Some devices (like `wao@1.0`) are not available in beta1
+3. Ensure correct rebar3 profile is compiled for the device
+
 ### Tests hang forever
 The old `rebar3 shell` approach blocks. Use `erl -detached` instead.
 
 ### Socket errors during tests
 HyperBEAM may not be fully initialized. The `ready()` function waits up to 60s with polling.
-
-### Missing devices (hbsig@1.0 not found)
-Use the HyperBEAM submodule (wao branch), not the standard release.
 
 ---
 
@@ -422,7 +543,7 @@ Use the HyperBEAM submodule (wao branch), not the standard release.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` |
+| `CWD` | HyperBEAM installation directory | `/root/HyperBEAM-beta1` |
 | `HB_REBAR3` | Use rebar3 mode (`true`/`false`) | `true` |
 | `ARWEAVE_GATEWAY` | Remote Arweave gateway URL | `https://arweave.net` |
 | `GATEWAY_URL` | Gateway URL for genesis-wasm CU | Uses `ARWEAVE_GATEWAY` |
