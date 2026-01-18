@@ -62,7 +62,7 @@ describe("Hyperbeam Device", function () {
     assert.equal(double, 6)
   })
 
-  it.only("should patch with legacy aos", async () => {
+  it("should patch with legacy aos", async () => {
     const { pid } = await hb.spawnAOS()
     await hb.messageAOS({ pid, action: "Eval", tags: {}, data: src_data })
     await hb.messageAOS({ pid, action: "Add", tags: { Plus: "3" } })
