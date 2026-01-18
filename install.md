@@ -226,3 +226,65 @@ pkill -f "src/run.js"
 - The server starts AR on port 4000, BD on 4001, MU on 4002, SU on 4003, CU on 4004
 - arjson must be at commit `62adab7` - newer versions removed `Parser` and `decode` exports
 - TinyLlama model (~460MB) is required for LLM tests
+
+## Genesis-WASM Setup (for HyperBEAM genesis-wasm@1.0 device)
+
+The genesis-wasm device enables HyperBEAM to execute AO processes using an external Compute Unit (CU) server. This is required for running genesis-wasm tests.
+
+### Prerequisites
+
+- Node.js 22+ installed
+- HyperBEAM compiled with `genesis_wasm` profile
+
+### Option 1: Pre-compiled (Fastest)
+
+```bash
+cd ~/HyperBEAM
+tar -xJf /path/to/wao/installation/genesis-wasm-server-precompiled.tar.xz -C _build/
+```
+
+The precompiled archive includes:
+- CU server source code
+- All npm dependencies (`node_modules`)
+- Patched healthcheck routes for HyperBEAM compatibility
+
+### Option 2: Fresh Setup
+
+```bash
+cd ~/HyperBEAM
+make setup-genesis-wasm
+```
+
+This will:
+1. Clone the CU server from `permaweb/ao` repo
+2. Run `npm install` to install dependencies
+3. Apply the healthcheck patch for HyperBEAM compatibility
+
+### Compile HyperBEAM with genesis_wasm Profile
+
+```bash
+cd ~/HyperBEAM
+rebar3 as genesis_wasm compile
+```
+
+### Running Genesis-WASM Tests
+
+```bash
+cd /path/to/wao
+npm run test -- test/hyperbeam/hb-success/upload.test.js
+```
+
+The test will automatically:
+1. Start the CU server on port 6363
+2. Start HyperBEAM with genesis-wasm device enabled
+3. Execute AO process evaluation via the CU
+
+### Files (in `installation/` folder)
+
+- `genesis-wasm-server-precompiled.tar.xz` - Pre-compiled CU server with dependencies (~8MB)
+
+### Troubleshooting
+
+**CU health check fails (socket_closed_remotely)**: The CU server may not have started. Check that port 6363 is available and Node.js is installed.
+
+**genesis-wasm device not found**: Ensure HyperBEAM was compiled with `rebar3 as genesis_wasm compile` (not just `rebar3 compile`).
