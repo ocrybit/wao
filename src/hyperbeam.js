@@ -109,8 +109,8 @@ export default class HyperBEAM {
 
     // Generate Erlang command to set httpc proxy and start prometheus before main app
     // Prometheus must be started BEFORE hb:start_mainnet to avoid race condition with hb_event
-    // We only start prometheus (not prometheus_cowboy due to version mismatch issues)
-    // Cowboy metrics warnings are non-fatal and can be ignored
+    // Note: prometheus_cowboy2_instrumenter:setup() cannot be called due to prometheus_buckets
+    // version mismatch (exponential function doesn't exist). Cowboy metric warnings are non-fatal.
     const prometheusSetup = `application:ensure_all_started([prometheus]), timer:sleep(200)`
     const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> case uri_string:parse(U) of #{host := H, port := Pt} -> inets:start(), httpc:set_options([{proxy, {{H, Pt}, ["localhost", "127.0.0.1"]}}]); _ -> ok end end)(P) end; P -> (fun(U) -> case uri_string:parse(U) of #{host := H, port := Pt} -> inets:start(), httpc:set_options([{proxy, {{H, Pt}, ["localhost", "127.0.0.1"]}}]); _ -> ok end end)(P) end`
 

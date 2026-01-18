@@ -7,7 +7,6 @@ import AOHB from "../../../src/ao.js"
 import { isNotNil, filter, isNil } from "ramda"
 import { randomBytes } from "node:crypto"
 import { wait } from "../../../src/utils.js"
-import Server from "../../../src/server.js"
 import HyperBEAM from "../../../src/hyperbeam.js"
 import { readFileSync } from "fs"
 import { resolve } from "path"
@@ -36,19 +35,11 @@ Handlers.add("Get", "Get", function (msg)
   msg.reply({ Data = "Count: "..tostring(count) })
 end)`
 
-const URL = "http://localhost:10001"
-
 describe("Hyperbeam Legacynet", function () {
-  let hb, hbeam, server
-  before(async () => {
-    server = new Server({ port: 6359, log: true, hb_url: URL })
-    hbeam = await new HyperBEAM({ reset: true }).ready()
-  })
+  let hb, hbeam
+  before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
   beforeEach(async () => (hb = hbeam.hb))
-  after(async () => {
-    hbeam.kill()
-    server.end()
-  })
+  after(async () => hbeam.kill())
 
   it("should interact with a hyperbeam node", async () => {
     const { pid } = await hb.spawnLegacy()
@@ -92,17 +83,6 @@ describe("Hyperbeam Legacynet", function () {
       const r3 = await hb.computeLegacy({ pid, slot: slot2 })
       assert.equal(r3.Messages[0].Data, `Count: ${++i}`)
     }
-    return
-    // continue recovery from the last message
-    assert.equal((await ao.recover(pid)).recovered, 2)
-
-    await server.end()
-
-    // restart a new server and check recovery
-    const server2 = new Server({ port: 4000, log: true, hb_url: URL })
-    const { slot: slot2 } = await hb.scheduleLegacy({ pid, action: "Inc" })
-    const r3 = await hb.computeLegacy({ pid, slot: slot2 })
-    assert.equal(r3.Messages[0].Data, `Count: ${++i}`)
   })
 
   it("should test test device", async () => {
