@@ -12,14 +12,20 @@ asdf global erlang 27.3.4.6
 asdf global rebar 3.26.0
 echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 
-# 2. Install WAO dependencies and build hbsig
+# 2. Set required environment variables (MANDATORY)
+export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export HB_REBAR3=false
+echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export HB_REBAR3=false' >> ~/.bashrc
+
+# 3. Install WAO dependencies and build hbsig
 cd /path/to/wao
 npm install
 cd hbsig && yarn install && yarn build && cd ..
 npm install  # Re-install to link local hbsig
 
-# 3. Run tests (ALWAYS use HB_REBAR3=false and set ARWEAVE_GATEWAY)
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+# 4. Run tests
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
 ```
 
 ---
@@ -142,6 +148,20 @@ ls /path/to/wao/hbsig/dist/esm/index.js
 
 ## Step 4: Configure Environment
 
+### Set Environment Variables (MANDATORY)
+
+These environment variables MUST be set for tests to work correctly.
+
+```bash
+# Set for current session
+export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export HB_REBAR3=false
+
+# Persist to bashrc for future sessions
+echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export HB_REBAR3=false' >> ~/.bashrc
+```
+
 ### Create/Copy Wallet File
 
 ```bash
@@ -152,42 +172,43 @@ cp ~/HyperBEAM-beta1/.wallet.json /path/to/wao/.wallet.json
 ls ~/HyperBEAM-beta1/.wallet.json
 ```
 
-### Set Environment Variables (Optional)
+### Optional Environment Variables
 
 ```bash
 # HyperBEAM installation path (defaults to ~/HyperBEAM-beta1)
 export CWD=~/HyperBEAM-beta1
-
-# Arweave gateway for proxy environments
-export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
 ```
 
 ---
 
 ## Step 5: Running Tests
 
-### CRITICAL: Always Use HB_REBAR3=false and ARWEAVE_GATEWAY
+### Prerequisites
 
-**NEVER run tests without `HB_REBAR3=false`**. The rebar3 shell mode hangs indefinitely in most environments.
-
-**ALWAYS set `ARWEAVE_GATEWAY`** to ensure tests work in all network environments.
-
-### Correct Test Command
+Ensure environment variables are set (see Step 4). If you followed the installation, they should already be in your `.bashrc`.
 
 ```bash
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+# Verify environment variables are set
+echo $ARWEAVE_GATEWAY  # Should be: https://arweave-proxy.ocrybit.workers.dev
+echo $HB_REBAR3        # Should be: false
+```
+
+### Run Simple Test
+
+```bash
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
 ```
 
 ### Run All hb-success Tests
 
 ```bash
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/
 ```
 
 ### Run Specific Test File
 
 ```bash
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
 ```
 
 ### Test Command Flags Explained
@@ -220,9 +241,10 @@ new HyperBEAM({ arweave_gateway: "https://arweave-proxy.ocrybit.workers.dev" })
 
 **Cause**: Using rebar3 mode (default) which blocks indefinitely.
 
-**Solution**: Always use the correct test command with all required flags:
+**Solution**: Ensure `HB_REBAR3=false` is set:
 ```bash
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 ...
+export HB_REBAR3=false
+echo 'export HB_REBAR3=false' >> ~/.bashrc
 ```
 
 ### "400: Unauthorized" on POST Requests
@@ -272,11 +294,11 @@ rebar3 as test compile
 
 ## Environment Variables Reference
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ARWEAVE_GATEWAY` | Arweave proxy URL (MANDATORY) | Use `https://arweave-proxy.ocrybit.workers.dev` |
-| `HB_REBAR3` | Use rebar3 mode (`true`/`false`) | `true` (BUT USE `false`!) |
-| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` |
+| Variable | Description | Required Value |
+|----------|-------------|----------------|
+| `ARWEAVE_GATEWAY` | Arweave proxy URL | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY) |
+| `HB_REBAR3` | Use rebar3 mode | `false` (MANDATORY - rebar3 mode hangs) |
+| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` (optional) |
 
 ---
 
@@ -302,8 +324,10 @@ Located in `installation/` folder:
 - [ ] WAO npm dependencies installed (`npm install`)
 - [ ] hbsig built locally (`cd hbsig && yarn install && yarn build`)
 - [ ] WAO re-installed to link hbsig (`npm install`)
+- [ ] Environment variables exported to `~/.bashrc`:
+  - [ ] `ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"`
+  - [ ] `HB_REBAR3=false`
 - [ ] Wallet file exists (`~/HyperBEAM-beta1/.wallet.json`)
-- [ ] Tests run with `HB_REBAR3=false`
 
 ---
 
@@ -322,7 +346,7 @@ rebar3 as genesis_wasm compile
 ### Running Genesis-WASM Tests
 
 ```bash
-ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/upload.test.js
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/upload.test.js
 ```
 
 ---
