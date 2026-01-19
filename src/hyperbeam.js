@@ -286,7 +286,7 @@ export default class HyperBEAM {
       GATEWAY_URL: gatewayUrl,
       ARWEAVE_URL: gatewayUrl,
       GRAPHQL_URL: graphqlUrl,
-      GRAPHQL_URLS: `${graphqlUrl},https://arweave-search.goldsky.com/graphql`,
+      GRAPHQL_URLS: graphqlUrl,  // Only use proxied URL, no direct goldsky fallback
       CHECKPOINT_GRAPHQL_URL: graphqlUrl,
     }
 

@@ -250,12 +250,34 @@ log_server_events([Line | Rest]) ->
 %% @doc Get gateway-related environment variables from the parent process.
 %% These are needed for the CU server to fetch WASM modules through a proxy.
 gateway_env_vars() ->
+    GatewayUrl = os:getenv("GATEWAY_URL"),
+    % Derive GraphQL URLs from GATEWAY_URL if not explicitly set
+    GraphqlUrl = case os:getenv("GRAPHQL_URL") of
+        false when GatewayUrl =/= false -> GatewayUrl ++ "/graphql";
+        false -> false;
+        Val -> Val
+    end,
+    GraphqlUrls = case os:getenv("GRAPHQL_URLS") of
+        false when GraphqlUrl =/= false -> GraphqlUrl;  % Only use proxied URL, no goldsky fallback
+        false -> false;
+        Val2 -> Val2
+    end,
+    CheckpointGraphqlUrl = case os:getenv("CHECKPOINT_GRAPHQL_URL") of
+        false when GraphqlUrl =/= false -> GraphqlUrl;
+        false -> false;
+        Val3 -> Val3
+    end,
+    ArweaveUrl = case os:getenv("ARWEAVE_URL") of
+        false when GatewayUrl =/= false -> GatewayUrl;
+        false -> false;
+        Val4 -> Val4
+    end,
     Vars = [
-        {"GATEWAY_URL", os:getenv("GATEWAY_URL")},
-        {"ARWEAVE_URL", os:getenv("ARWEAVE_URL")},
-        {"GRAPHQL_URL", os:getenv("GRAPHQL_URL")},
-        {"GRAPHQL_URLS", os:getenv("GRAPHQL_URLS")},
-        {"CHECKPOINT_GRAPHQL_URL", os:getenv("CHECKPOINT_GRAPHQL_URL")},
+        {"GATEWAY_URL", GatewayUrl},
+        {"ARWEAVE_URL", ArweaveUrl},
+        {"GRAPHQL_URL", GraphqlUrl},
+        {"GRAPHQL_URLS", GraphqlUrls},
+        {"CHECKPOINT_GRAPHQL_URL", CheckpointGraphqlUrl},
         {"HTTPS_PROXY", os:getenv("HTTPS_PROXY")},
         {"https_proxy", os:getenv("https_proxy")}
     ],
