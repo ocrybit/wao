@@ -18,8 +18,8 @@ npm install
 cd hbsig && yarn install && yarn build && cd ..
 npm install  # Re-install to link local hbsig
 
-# 3. Run tests (ALWAYS use HB_REBAR3=false)
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+# 3. Run tests (ALWAYS use HB_REBAR3=false and set ARWEAVE_GATEWAY)
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
 ```
 
 ---
@@ -166,32 +166,35 @@ export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
 
 ## Step 5: Running Tests
 
-### CRITICAL: Always Use HB_REBAR3=false
+### CRITICAL: Always Use HB_REBAR3=false and ARWEAVE_GATEWAY
 
 **NEVER run tests without `HB_REBAR3=false`**. The rebar3 shell mode hangs indefinitely in most environments.
+
+**ALWAYS set `ARWEAVE_GATEWAY`** to ensure tests work in all network environments.
 
 ### Correct Test Command
 
 ```bash
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
 ```
 
 ### Run All hb-success Tests
 
 ```bash
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/
 ```
 
 ### Run Specific Test File
 
 ```bash
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
 ```
 
 ### Test Command Flags Explained
 
 | Flag | Purpose |
 |------|---------|
+| `ARWEAVE_GATEWAY` | Arweave proxy URL (MANDATORY - ensures network compatibility) |
 | `HB_REBAR3=false` | Use direct erl mode (MANDATORY - rebar3 mode hangs) |
 | `--experimental-wasm-memory64` | Enable WASM memory64 for AO processes |
 | `--test` | Run Node.js test runner |
@@ -277,9 +280,9 @@ rebar3 as test compile
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` |
+| `ARWEAVE_GATEWAY` | Arweave proxy URL (MANDATORY) | Use `https://arweave-proxy.ocrybit.workers.dev` |
 | `HB_REBAR3` | Use rebar3 mode (`true`/`false`) | `true` (BUT USE `false`!) |
-| `ARWEAVE_GATEWAY` | Arweave gateway URL | `https://arweave.net` |
+| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` |
 
 ---
 
