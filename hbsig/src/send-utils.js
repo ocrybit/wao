@@ -925,16 +925,18 @@ export const from = http => {
 
     // Handle ao-result pointing to body
     if (aoResult === "body") {
+      // Use http.body directly since body may not be a signed component
+      const bodyContent = extractedComponents.body || http.body
       // Handle empty body case
-      if (!extractedComponents.body) {
+      if (!bodyContent) {
         return { out: "", ...ret } // Return empty string for empty body
       }
       // Check if body is binary data
-      if (isBinaryString(extractedComponents.body)) {
-        return { out: stringToBuffer(extractedComponents.body), ...ret }
+      if (isBinaryString(bodyContent)) {
+        return { out: stringToBuffer(bodyContent), ...ret }
       }
       // Return body as-is if it's not binary
-      return { out: extractedComponents.body, ...ret }
+      return { out: bodyContent, ...ret }
     }
 
     // Convert the extracted components to JSON format
