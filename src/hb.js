@@ -287,13 +287,16 @@ class HB {
     } else {
       res = await this.post({
         path: "/~scheduler@1.0/schedule",
-        body: mergeLeft(tags, {
-          "random-seed": seed(16),
-          type: "Process",
-          "execution-device": "test-device@1.0",
-          device: "process@1.0",
-          scheduler: this.addr,
-        }),
+        body: await this.commit(
+          mergeLeft(tags, {
+            "random-seed": seed(16),
+            type: "Process",
+            "execution-device": "test-device@1.0",
+            device: "process@1.0",
+            scheduler: this.addr,
+          }),
+          { path: false }
+        ),
       })
     }
     return { res, pid: res.out.process }

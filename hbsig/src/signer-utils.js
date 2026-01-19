@@ -262,7 +262,7 @@ const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  return `sig-${hexString}`
+  return `http-sig-${hexString}`
 }
 
 /**
@@ -350,7 +350,7 @@ async function getMessageId(signedMessage) {
   // Extract signature from the Signature header
   const signatureHeader =
     signedMessage.headers.Signature || signedMessage.headers.signature
-  const match = signatureHeader.match(/Signature:\s*'sig-[^:]+:([^']+)'/)
+  const match = signatureHeader.match(/Signature:\s*'http-sig-[^:]+:([^']+)'/)
   const signature = match ? match[1] : null
 
   if (!signature) {

@@ -54,7 +54,7 @@ export const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  return `sig-${hexString}`
+  return `http-sig-${hexString}`
 }
 
 const toView = value => {
