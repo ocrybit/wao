@@ -126,10 +126,23 @@ export default class HyperBEAM {
       cmd = `. $HOME/.asdf/asdf.sh && rebar3 shell --eval '${evalForRebar3}'`
     } else {
       // Direct erl mode - use erl with rebar3-compiled beam files
-      // Generate Erlang command to set httpc proxy and start prometheus before main app
-      // Prometheus must be started BEFORE hb:start_mainnet to avoid race condition with hb_event
-      // prometheus_cowboy2_instrumenter:setup() registers cowboy metrics (requires prometheus with TEST define)
-      const prometheusSetup = `(catch application:ensure_all_started([prometheus])), (catch prometheus_cowboy2_instrumenter:setup()), timer:sleep(200)`
+      // Beta1's prometheus_cowboy uses prometheus_buckets:exponential/3 which doesn't exist.
+      // We manually register the required cowboy metrics with linear buckets instead.
+      const cowboyMetricsSetup = `
+        application:ensure_all_started(prometheus),
+        prometheus_counter:declare([{name, cowboy_early_errors_total}, {labels, [method, reason]}, {help, <<"">>}]),
+        prometheus_counter:declare([{name, cowboy_protocol_upgrades_total}, {labels, [method, status, status_class]}, {help, <<"">>}]),
+        prometheus_counter:declare([{name, cowboy_requests_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+        prometheus_counter:declare([{name, cowboy_spawned_processes_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+        prometheus_counter:declare([{name, cowboy_errors_total}, {labels, [method, reason, error]}, {help, <<"">>}]),
+        Buckets = [0, 100, 1000, 10000, 100000, 1000000, 10000000],
+        prometheus_histogram:declare([{name, cowboy_receive_body_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+        prometheus_histogram:declare([{name, cowboy_request_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+        prometheus_histogram:declare([{name, cowboy_request_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
+        prometheus_histogram:declare([{name, cowboy_response_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
+        timer:sleep(100)
+      `.replace(/\n\s*/g, ' ')
+      const prometheusSetup = cowboyMetricsSetup
       // Parse proxy URL and extract host, port, and optional userinfo (username:password) for authentication
       // Note: uri_string:parse may return strings or binaries depending on Erlang version, so we handle both
       const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
