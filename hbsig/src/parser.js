@@ -24,9 +24,10 @@ export function decodeSigInput(signatureInput, signatureName = null) {
       }
 
       // Extract from signature name to the next signature (if any) or end
+      // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
       const nextSigMatch = signatureInput
         .substring(startIndex + signatureName.length)
-        .match(/,\s*[a-zA-Z0-9-]+=/)
+        .match(/,\s*[a-zA-Z0-9_-]+=/)
       const endIndex = nextSigMatch
         ? startIndex + signatureName.length + nextSigMatch.index
         : signatureInput.length
@@ -38,13 +39,15 @@ export function decodeSigInput(signatureInput, signatureName = null) {
     const signatures = {}
 
     // Split by signature entries (handle multiple signatures)
-    const entries = inputToDecode.split(/,(?=\s*[a-zA-Z0-9-]+=)/)
+    // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
+    const entries = inputToDecode.split(/,(?=\s*[a-zA-Z0-9_-]+=)/)
 
     for (const entry of entries) {
       const trimmedEntry = entry.trim()
 
       // Match signature-name=(components);params format
-      const match = trimmedEntry.match(/^([a-zA-Z0-9-]+)=\(([^)]*)\)(.*)$/)
+      // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
+      const match = trimmedEntry.match(/^([a-zA-Z0-9_-]+)=\(([^)]*)\)(.*)$/)
       if (!match) {
         continue
       }
