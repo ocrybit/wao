@@ -219,6 +219,18 @@ echo $ARWEAVE_GATEWAY  # Should be: https://arweave-proxy.ocrybit.workers.dev
 echo $HB_REBAR3        # Should be: false
 ```
 
+### Test Organization
+
+Tests are organized into categories based on their requirements:
+
+| Directory | Description | Requirements |
+|-----------|-------------|--------------|
+| `hb-success/` | Tests that pass with standard setup | Basic HyperBEAM + wao@1.0 device |
+| `hb-genesis/` | Tests requiring genesis-wasm | CU server + genesis-wasm device |
+| `hb-fail/` | Tests with known failures | Various issues |
+| `hb-hang/` | Tests with known hang issues | Missing scripts or timing issues |
+| `hb-tutorials/` | Tutorial-based tests | May require additional setup |
+
 ### Run Simple Test
 
 ```bash
@@ -235,6 +247,14 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 
 ```bash
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
+```
+
+### Run Genesis-WASM Tests
+
+Tests in `hb-genesis/` require the CU server to be running. These tests use `genesis_wasm: true` in the HyperBEAM constructor which auto-starts the CU server:
+
+```bash
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-genesis/upload.test.js
 ```
 
 ### Test Command Flags Explained
@@ -265,12 +285,30 @@ new HyperBEAM({ arweave_gateway: "https://arweave-proxy.ocrybit.workers.dev" })
 
 ### Tests Hang Forever
 
-**Cause**: Using rebar3 mode (default) which blocks indefinitely.
+**Cause 1**: Using rebar3 mode (default) which blocks indefinitely.
 
 **Solution**: Ensure `HB_REBAR3=false` is set:
 ```bash
 export HB_REBAR3=false
 echo 'export HB_REBAR3=false' >> ~/.bashrc
+```
+
+**Cause 2**: Using a device (like `wao@1.0`) that is not registered in HyperBEAM's preloaded_devices.
+
+**Solution**: Add the device to `hb_opts.erl` preloaded_devices list and recompile:
+```bash
+cd ~/HyperBEAM-beta1
+# Check if wao@1.0 is registered
+grep "wao@1.0" src/hb_opts.erl
+# If not found, add it (see "Advanced: WAO Device Setup" section)
+```
+
+**Cause 3**: Tests requiring genesis-wasm when CU server isn't running.
+
+**Solution**: Use tests that pass `genesis_wasm: true` to auto-start CU server, or manually start CU:
+```bash
+cd ~/HyperBEAM-beta1/_build/genesis-wasm-server
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev npm run dev
 ```
 
 ### "400: Unauthorized" on POST Requests
@@ -381,18 +419,40 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 
 ## Advanced: WAO Device Setup
 
-The `wao@1.0` device is not included in the official HyperBEAM beta1 release. To enable tests that use this device:
+The `wao@1.0` device is not included in the official HyperBEAM beta1 release. To enable tests that use this device, you need BOTH the module file AND device registration:
 
-### Install dev_wao.erl
+### Step 1: Install dev_wao.erl Module
 
 ```bash
 cd ~/HyperBEAM-beta1
 curl -s https://raw.githubusercontent.com/weavedb/HyperBEAM/wao/src/dev_wao.erl -o src/dev_wao.erl
+```
+
+### Step 2: Register wao@1.0 in preloaded_devices
+
+Add the wao@1.0 device to `src/hb_opts.erl` preloaded_devices list:
+
+```erlang
+% In the preloaded_devices list, add before wasi@1.0:
+#{<<"name">> => <<"wao@1.0">>, <<"module">> => dev_wao},
+```
+
+Or apply the patch:
+
+```bash
+cd ~/HyperBEAM-beta1
+sed -i 's/#{<<"name">> => <<"wasi@1.0">>/#{<<"name">> => <<"wao@1.0">>, <<"module">> => dev_wao},\n            #{<<"name">> => <<"wasi@1.0">>/' src/hb_opts.erl
+```
+
+### Step 3: Recompile
+
+```bash
+cd ~/HyperBEAM-beta1
 . ~/.asdf/asdf.sh
 rebar3 compile
 ```
 
-This downloads the `dev_wao.erl` module from the weavedb/HyperBEAM wao branch and recompiles HyperBEAM.
+**Why both steps are required**: The module file (`dev_wao.beam`) provides the device implementation, but HyperBEAM only loads devices that are explicitly listed in the `preloaded_devices` configuration in `hb_opts.erl`. Without registration, HyperBEAM cannot find the device and tests will hang indefinitely.
 
 ---
 
