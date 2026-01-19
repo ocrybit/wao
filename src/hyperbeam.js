@@ -12,7 +12,7 @@ export default class HyperBEAM {
   static OPERATOR = Symbol("operator")
   constructor({
     port = 10001,
-    cu_port = 6365, // Changed from 6363 to avoid conflict with Server mock CU
+    cu_port = 6363, // Must match route in hb_opts.erl which hardcodes localhost:6363
     as = [],
     bundler,
     gateway,
