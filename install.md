@@ -123,6 +123,54 @@ cd ~/HyperBEAM-beta1 && rebar3 eunit --module=hb_path --sname test
 
 ---
 
+## Step 2b: Install HyperBEAM WAO Branch (Alternative)
+
+The WAO branch from weavedb/HyperBEAM includes additional devices and fixes that make more tests pass. **Recommended for full WAO compatibility.**
+
+### Clone and Build WAO Branch
+
+```bash
+cd ~
+git clone --depth 1 --branch wao https://github.com/weavedb/HyperBEAM.git HyperBEAM-wao
+cd HyperBEAM-wao
+
+# Copy rebar.config and _build from beta1 for offline compilation
+cp ~/HyperBEAM-beta1/rebar.config .
+cp -r ~/HyperBEAM-beta1/_build .
+rm -f rebar.lock
+
+# Compile
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+### Configure .env.hyperbeam to Use WAO Branch
+
+Update your `.env.hyperbeam` to point to the wao branch:
+
+```bash
+cd /path/to/wao
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+CWD=/root/HyperBEAM-wao
+EOF
+```
+
+### Key Differences: Beta1 vs WAO Branch
+
+| Feature | Beta1 | WAO Branch |
+|---------|-------|------------|
+| hbsig prefix | `sig-` | `http-sig-` |
+| wao@1.0 device | Manual setup required | Included |
+| patch@1.0 tests | Partial | Full support |
+| p4 payment tests | Fails | Passes |
+
+**Important**: When using the WAO branch, ensure hbsig uses `http-sig-` prefix (default in the repo).
+
+---
+
 ## Step 3: Install WAO Dependencies (MANDATORY)
 
 ### Install npm Dependencies
@@ -134,7 +182,7 @@ npm install
 
 ### Build Local hbsig Package (MANDATORY)
 
-The local hbsig package MUST be built before running tests. HyperBEAM beta1 requires a patched version of hbsig with `sig-` prefix (instead of `http-sig-`).
+The local hbsig package MUST be built before running tests. The WAO branch of HyperBEAM uses `http-sig-` prefix (the default in hbsig).
 
 ```bash
 cd /path/to/wao/hbsig
