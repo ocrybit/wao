@@ -491,9 +491,24 @@ new HyperBEAM({ arweave_gateway: "https://g8way.io" })
    - `httpc` HTTP client: Requires local DNS resolution before proxy connection
    - Some CDN services (like Cloudflare) may block requests through certain proxies
 
+### Cloudflare Workers Arweave Proxy
+
+For environments where direct access to Arweave gateways is blocked or unreliable, use the Cloudflare Workers proxy:
+
+```bash
+export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+```
+
+Or in code:
+```javascript
+new HyperBEAM({ arweave_gateway: "https://arweave-proxy.ocrybit.workers.dev" })
+```
+
+This proxy forwards requests to Arweave and works in restricted network environments.
+
 ### Recommended Setup for Restricted Networks
 
-1. Ensure direct internet access (no proxy) if possible
+1. Use the Cloudflare Workers proxy: `https://arweave-proxy.ocrybit.workers.dev`
 2. If proxy is required, ensure local DNS resolution works
 3. Consider using `g8way.io` as the gateway if `arweave.net` is blocked
 4. Run only `hb-success` tests if mainnet access is unavailable
