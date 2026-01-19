@@ -142,6 +142,10 @@ rm -f rebar.lock
 # Compile
 . ~/.asdf/asdf.sh
 rebar3 compile
+
+# Copy native drivers from beta1 (required for wasm-64@1.0 device)
+cp ~/HyperBEAM-beta1/_build/default/lib/hb/priv/hb_beamr.so _build/default/lib/hb/priv/
+cp ~/HyperBEAM-beta1/_build/default/lib/hb/priv/hb_keccak.so _build/default/lib/hb/priv/
 ```
 
 ### Configure .env.hyperbeam to Use WAO Branch
