@@ -14,8 +14,10 @@ echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
 
 # 2. Set required environment variables (MANDATORY)
 export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"
 export HB_REBAR3=false
 echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
 echo 'export HB_REBAR3=false' >> ~/.bashrc
 
 # 3. Install WAO dependencies and build hbsig
@@ -155,10 +157,12 @@ These environment variables MUST be set for tests to work correctly.
 ```bash
 # Set for current session
 export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"
 export HB_REBAR3=false
 
 # Persist to bashrc for future sessions
 echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
 echo 'export HB_REBAR3=false' >> ~/.bashrc
 ```
 
@@ -296,7 +300,8 @@ rebar3 as test compile
 
 | Variable | Description | Required Value |
 |----------|-------------|----------------|
-| `ARWEAVE_GATEWAY` | Arweave proxy URL | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY) |
+| `ARWEAVE_GATEWAY` | Arweave proxy URL for HyperBEAM | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY) |
+| `GATEWAY_URL` | Arweave proxy URL for CU server | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY for genesis-wasm) |
 | `HB_REBAR3` | Use rebar3 mode | `false` (MANDATORY - rebar3 mode hangs) |
 | `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` (optional) |
 
@@ -326,6 +331,7 @@ Located in `installation/` folder:
 - [ ] WAO re-installed to link hbsig (`npm install`)
 - [ ] Environment variables exported to `~/.bashrc`:
   - [ ] `ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"`
+  - [ ] `GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"`
   - [ ] `HB_REBAR3=false`
 - [ ] Wallet file exists (`~/HyperBEAM-beta1/.wallet.json`)
 
