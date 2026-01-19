@@ -206,14 +206,8 @@ ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node
 
 ### Cloudflare Workers Arweave Proxy
 
-For environments where direct Arweave access is blocked:
+The `ARWEAVE_GATEWAY` is mandatory for all test commands. In code, you can also set it programmatically:
 
-```bash
-export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
-```
-
-Or in code:
 ```javascript
 new HyperBEAM({ arweave_gateway: "https://arweave-proxy.ocrybit.workers.dev" })
 ```
@@ -226,9 +220,9 @@ new HyperBEAM({ arweave_gateway: "https://arweave-proxy.ocrybit.workers.dev" })
 
 **Cause**: Using rebar3 mode (default) which blocks indefinitely.
 
-**Solution**: Always use `HB_REBAR3=false`:
+**Solution**: Always use the correct test command with all required flags:
 ```bash
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 ...
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 ...
 ```
 
 ### "400: Unauthorized" on POST Requests
@@ -328,7 +322,7 @@ rebar3 as genesis_wasm compile
 ### Running Genesis-WASM Tests
 
 ```bash
-HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/upload.test.js
+ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev" HB_REBAR3=false node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/upload.test.js
 ```
 
 ---
