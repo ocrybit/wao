@@ -257,6 +257,38 @@ Tests in `hb-genesis/` require the CU server to be running. These tests use `gen
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-genesis/upload.test.js
 ```
 
+### Background Test Technique (Recommended for Unknown Tests)
+
+When running tests that may hang, use this background technique to avoid blocking your terminal:
+
+```bash
+# 1. Run test in background
+npm test -- --test-name-pattern="." test/hyperbeam/hb-hang/some.test.js > /tmp/test.log 2>&1 &
+TEST_PID=$!
+echo "Test running with PID: $TEST_PID"
+
+# 2. Monitor the log in another terminal (or same terminal)
+tail -f /tmp/test.log
+
+# 3. Check if test completed
+tail -50 /tmp/test.log | grep -E "(pass|fail|duration_ms)"
+
+# 4. Kill hung test if needed (no output for >60s usually means hung)
+kill $TEST_PID
+pkill -9 -f beam.smp  # Clean up HyperBEAM processes
+```
+
+**Quick one-liner to run and wait with timeout:**
+
+```bash
+timeout 120 npm test -- --test-name-pattern="." test/hyperbeam/hb-success/simple.test.js
+```
+
+**Signs a test is hung:**
+- CU stats keep printing every 10s with no progress
+- No new "sent, status:" messages from HyperBEAM
+- Test duration exceeds 60s with no subtest results
+
 ### Test Command Flags Explained
 
 | Flag | Purpose |
