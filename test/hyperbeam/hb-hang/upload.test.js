@@ -51,8 +51,8 @@ describe("Hyperbeam Device", function () {
     hbeam.kill()
   })
 
-  // Test with wao@1.0 device - SKIP: dev_wao not available in beta1
-  it.skip("should test process #0", async () => {
+  // Test with wao@1.0 device
+  it("should test process #0", async () => {
     const signer = new ArweaveSigner(hbeam.jwk)
     const fields = {
       Type: "Process",
@@ -110,8 +110,8 @@ describe("Hyperbeam Device", function () {
     await wait(5000)
   })
 
-  // Test with wao@1.0 device - SKIP: dev_wao not available in beta1
-  it.skip("should test process #2", async () => {
+  // Test with wao@1.0 device
+  it("should test process #2", async () => {
     const hb2 = new HB({ jwk: hb.jwk, format: "ans104" })
     const { pid } = await hb2.spawn({
       Name: "turbo-test",

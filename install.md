@@ -351,6 +351,23 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 
 ---
 
+## Advanced: WAO Device Setup
+
+The `wao@1.0` device is not included in the official HyperBEAM beta1 release. To enable tests that use this device:
+
+### Install dev_wao.erl
+
+```bash
+cd ~/HyperBEAM-beta1
+curl -s https://raw.githubusercontent.com/weavedb/HyperBEAM/wao/src/dev_wao.erl -o src/dev_wao.erl
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+This downloads the `dev_wao.erl` module from the weavedb/HyperBEAM wao branch and recompiles HyperBEAM.
+
+---
+
 ## Advanced: Running Legacynet Tests
 
 ### Prerequisites
