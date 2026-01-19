@@ -537,6 +537,37 @@ The old `rebar3 shell` approach blocks. Use `erl -detached` instead.
 ### Socket errors during tests
 HyperBEAM may not be fully initialized. The `ready()` function waits up to 60s with polling.
 
+### POST requests return "400: Unauthorized"
+If HyperBEAM starts successfully but POST requests fail with `400: Unauthorized`, this is an httpsig signature format issue.
+
+**Beta1 requires `sig-` prefix** instead of `http-sig-` in signature names. The local hbsig package must be patched:
+
+1. Edit `hbsig/src/send.js` line 57:
+```javascript
+// Change from:
+return `http-sig-${hexString}`
+// To:
+return `sig-${hexString}`
+```
+
+2. Edit `hbsig/src/signer-utils.js` line 265:
+```javascript
+// Change from:
+return `http-sig-${hexString}`
+// To:
+return `sig-${hexString}`
+```
+
+3. Rebuild and reinstall:
+```bash
+cd /home/user/wao/hbsig
+yarn build
+cd /home/user/wao
+npm install
+```
+
+This fix is required because HyperBEAM beta1's `dev_codec_httpsig_siginfo.erl` expects signatures to start with `sig-`, not `http-sig-`.
+
 ---
 
 ## Environment Variables
