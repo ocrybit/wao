@@ -202,7 +202,7 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 ### Run All hb-success Tests
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
 ```
 
 ### Run Specific Test File
