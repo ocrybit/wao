@@ -26,7 +26,14 @@ npm install
 cd hbsig && yarn install && yarn build && cd ..
 npm install  # Re-install to link local hbsig
 
-# 4. Run tests
+# 4. Create .env.hyperbeam file (MANDATORY for tests)
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+
+# 5. Run tests
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
 ```
 
@@ -165,6 +172,21 @@ echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.
 echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
 echo 'export HB_REBAR3=false' >> ~/.bashrc
 ```
+
+### Create .env.hyperbeam File (MANDATORY)
+
+The test suite loads environment variables from `.env.hyperbeam` via dotenv. This file MUST exist in the wao directory:
+
+```bash
+cd /path/to/wao
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+```
+
+**Why this is mandatory**: The HyperBEAM class uses `dotenv.config({ path: ".env.hyperbeam" })` to load configuration. Without this file, `HB_REBAR3` defaults to `true` which causes tests to hang indefinitely.
 
 ### Create/Copy Wallet File
 
