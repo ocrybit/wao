@@ -374,6 +374,34 @@ This downloads the `dev_wao.erl` module from the weavedb/HyperBEAM wao branch an
 
 ---
 
+## Advanced: Genesis-WASM Proxy Fix
+
+The default `dev_genesis_wasm.erl` in HyperBEAM beta1 does not pass `GATEWAY_URL` to the CU server when starting it. This causes the CU to try fetching WASM modules from `https://arweave.net` directly, which hangs in restricted network environments.
+
+### Apply the Fix
+
+Replace the `dev_genesis_wasm.erl` file with the patched version:
+
+```bash
+cd ~/HyperBEAM-beta1
+curl -s https://raw.githubusercontent.com/weavedb/wao/main/installation/dev_genesis_wasm.erl -o src/dev_genesis_wasm.erl
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+### What the Fix Does
+
+1. **Increases STATUS_TIMEOUT** from 100ms to 2000ms to handle proxy latency
+2. **Passes gateway environment variables** to the CU server:
+   - `GATEWAY_URL`
+   - `ARWEAVE_URL`
+   - `GRAPHQL_URL`
+   - `HTTPS_PROXY`
+
+This ensures the CU server uses the configured proxy instead of trying to reach arweave.net directly.
+
+---
+
 ## Advanced: Running Legacynet Tests
 
 ### Prerequisites
