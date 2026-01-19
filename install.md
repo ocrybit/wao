@@ -305,9 +305,9 @@ Tests in `hb-genesis/` require the CU server to be running. These tests use `gen
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-genesis/upload.test.js
 ```
 
-### Background Test Technique (Recommended for Unknown Tests)
+### Background Test Technique (MANDATORY for Unknown Tests)
 
-When running tests that may hang, use this background technique to avoid blocking your terminal:
+**Always use this technique when running unfamiliar tests.** Many tests can hang indefinitely, blocking your terminal:
 
 ```bash
 # 1. Run test in background
