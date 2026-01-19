@@ -883,13 +883,31 @@ export const result = async response => {
   const body = Buffer.from(msg.body).toString()
   const http = { headers, body }
   const _from = from(http)
+
+  // Determine the output value
+  let outValue = out
+  if (out["ao-result"]) {
+    if (_from) {
+      // Signed response - use the extracted output
+      outValue = _from.out
+    } else {
+      // Unsigned response with ao-result - handle directly
+      const aoResult = out["ao-result"]
+      if (aoResult === "body") {
+        outValue = body
+      } else {
+        outValue = out[aoResult] ?? ""
+      }
+    }
+  }
+
   return {
     signer: _from?.signer ?? null,
     hashpath: _from?.hashpath ?? null,
     headers,
     status: response.status,
     body,
-    out: out["ao-result"] ? _from?.out : out,
+    out: outValue,
   }
 }
 
