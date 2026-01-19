@@ -1,6 +1,58 @@
-# WAO + HyperBEAM Beta1 Installation Guide
+# WAO + HyperBEAM Installation Guide
 
-## Quick Start (TL;DR)
+## Quick Start: WAO Branch Setup (Recommended - All Tests Pass)
+
+```bash
+# 1. Extract pre-compiled Erlang and HyperBEAM beta1
+cd ~
+tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
+tar -xJf /path/to/wao/installation/hyperbeam-v0.9-m3-b1-compiled.tar.xz
+. ~/.asdf/asdf.sh
+asdf global erlang 27.3.4.6
+asdf global rebar 3.26.0
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+
+# 2. Clone and build HyperBEAM WAO branch
+git clone --depth 1 --branch wao https://github.com/weavedb/HyperBEAM.git HyperBEAM-wao
+cd HyperBEAM-wao
+cp ~/HyperBEAM-beta1/rebar.config .
+cp -r ~/HyperBEAM-beta1/_build .
+rm -f rebar.lock
+rebar3 compile
+
+# 3. Copy native drivers from beta1 (CRITICAL for wasm-64@1.0)
+cp ~/HyperBEAM-beta1/_build/default/lib/hb/priv/hb_beamr.so _build/default/lib/hb/priv/
+cp ~/HyperBEAM-beta1/_build/default/lib/hb/priv/hb_keccak.so _build/default/lib/hb/priv/
+
+# 4. Set environment variables
+export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"
+export HB_REBAR3=false
+echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export HB_REBAR3=false' >> ~/.bashrc
+
+# 5. Install WAO dependencies and build hbsig
+cd /path/to/wao
+npm install
+cd hbsig && yarn install && yarn build && cd ..
+npm install  # Re-install to link local hbsig
+
+# 6. Create .env.hyperbeam pointing to WAO branch
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+CWD=/root/HyperBEAM-wao
+EOF
+
+# 7. Run all tests
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+```
+
+---
+
+## Quick Start: Beta1 Only (Simpler, Fewer Tests Pass)
 
 ```bash
 # 1. Extract pre-compiled Erlang and HyperBEAM
@@ -172,6 +224,45 @@ EOF
 | p4 payment tests | Fails | Passes |
 
 **Important**: When using the WAO branch, ensure hbsig uses `http-sig-` prefix (default in the repo).
+
+### Test Status with WAO Branch
+
+With the WAO branch properly configured, **all tests in `hb-success/` pass** (some with skipped subtests for unavailable devices):
+
+| Test File | Status | Notes |
+|-----------|--------|-------|
+| `simple.test.js` | ✅ Pass | Basic HyperBEAM connectivity |
+| `meta.test.js` | ✅ Pass | Metadata endpoint tests |
+| `message.test.js` | ✅ Pass | Message scheduling |
+| `process.test.js` | ✅ Pass | Process spawn/schedule |
+| `stack.test.js` | ✅ Pass | Stack device tests |
+| `patch.test.js` | ✅ Pass | Patch device (requires native drivers) |
+| `p4.test.js` | ✅ Pass | P4 payment tests |
+| `upload.test.js` | ✅ Pass | Module upload tests |
+| `hyperbeam.test.js` | ✅ Pass | 11 pass, 4 skipped |
+| `wao-hb.test.js` | ✅ Pass | 3 pass, 1 skipped |
+| `ans104.test.js` | ✅ Pass | ANS-104 format tests |
+| `cache.test.js` | ✅ Pass | Cache device tests |
+| `faff.test.js` | ✅ Pass | FAFF tests |
+| `json.test.js` | ✅ Pass | JSON device tests |
+| `local_name.test.js` | ✅ Pass | Local name resolution |
+| `router.test.js` | ✅ Pass | Router tests |
+
+**Skipped Tests** (devices not available in WAO branch):
+- `add@1.0` device tests - dev_add module not included
+- `mul@1.0` device tests - dev_mul NIF not built
+- `oracle@1.0` device tests - oracle device not available
+- Self-send `receive()` pattern - timing limitation
+
+### Running All Tests
+
+```bash
+# Run all hb-success tests (takes ~5-10 minutes)
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+
+# Run specific category
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/hyperbeam.test.js
+```
 
 ---
 
@@ -463,21 +554,40 @@ Located in `installation/` folder:
 
 ---
 
-## Complete Installation Checklist
+## Complete Installation Checklist (WAO Branch - All Tests Pass)
 
+### Base Setup
 - [ ] System dependencies installed (build-essential, autoconf, libssl-dev, etc.)
 - [ ] Node.js 22+ installed
 - [ ] Erlang 27.3.4.6 installed via asdf
 - [ ] rebar3 3.26.0 installed via asdf
 - [ ] HyperBEAM beta1 extracted to `~/HyperBEAM-beta1`
+
+### WAO Branch Setup (Required for all tests to pass)
+- [ ] HyperBEAM WAO branch cloned to `~/HyperBEAM-wao`
+- [ ] rebar.config copied from beta1
+- [ ] _build directory copied from beta1
+- [ ] WAO branch compiled (`rebar3 compile`)
+- [ ] Native drivers copied from beta1:
+  - [ ] `hb_beamr.so` (WASM runtime)
+  - [ ] `hb_keccak.so` (Keccak hashing)
+
+### WAO SDK Setup
 - [ ] WAO npm dependencies installed (`npm install`)
 - [ ] hbsig built locally (`cd hbsig && yarn install && yarn build`)
 - [ ] WAO re-installed to link hbsig (`npm install`)
+
+### Environment Configuration
 - [ ] Environment variables exported to `~/.bashrc`:
   - [ ] `ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"`
   - [ ] `GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"`
   - [ ] `HB_REBAR3=false`
-- [ ] Wallet file exists (`~/HyperBEAM-beta1/.wallet.json`)
+- [ ] `.env.hyperbeam` file created with `CWD=/root/HyperBEAM-wao`
+- [ ] Wallet file exists (`~/HyperBEAM-wao/.wallet.json` or `~/HyperBEAM-beta1/.wallet.json`)
+
+### Verify Installation
+- [ ] Run simple test: `node --experimental-wasm-memory64 --test test/hyperbeam/hb-success/simple.test.js`
+- [ ] Run all tests: `node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js`
 
 ---
 
