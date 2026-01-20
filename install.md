@@ -2,25 +2,20 @@
 
 ## ⚠️ IMPORTANT: Test Command Reference
 
-**Always use this exact test command format:**
+**Always use this exact test command format (with HB_TIMEOUT to prevent hangs):**
 ```bash
 # Single test file:
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/TESTNAME.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/TESTNAME.test.js
 
 # All tests in a folder:
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
-
-# With timeout (prevents hangs - RECOMMENDED):
-HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/FOLDER/TESTNAME.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
 ```
 
 **Key flags (NEVER OMIT):**
+- `HB_TIMEOUT=60` - **CRITICAL**: Auto-kills HyperBEAM after 60 seconds (prevents permanent hangs)
 - `--experimental-wasm-memory64` - Required for WASM memory64 support
 - `--test` - Enables Node.js test runner
 - `--test-concurrency=1` - Runs tests sequentially (prevents port conflicts)
-
-**Environment variable:**
-- `HB_TIMEOUT=60` - Auto-kills HyperBEAM after 60 seconds (prevents permanent hangs)
 
 ---
 
@@ -71,7 +66,7 @@ CWD=/root/HyperBEAM-wao
 EOF
 
 # 7. Run all tests
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
 ```
 
 ---
@@ -110,7 +105,7 @@ HB_REBAR3=false
 EOF
 
 # 5. Run tests
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js
 ```
 
 ---
@@ -170,7 +165,7 @@ HB_REBAR3=false
 EOF
 
 # 11. Run all tests (prometheus errors are expected but non-fatal)
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
 ```
 
 ### Key Features of Beta3
@@ -378,11 +373,11 @@ With the WAO branch properly configured, **all tests in `hb-success/` pass** (so
 ### Running All Tests
 
 ```bash
-# Run all hb-success tests (takes ~5-10 minutes)
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+# Run all hb-success-beta3 tests (takes ~5-10 minutes)
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
 
 # Run specific category
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/hyperbeam.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/hyperbeam.test.js
 ```
 
 ---
@@ -627,23 +622,26 @@ Tests are organized into categories based on their requirements:
 ### Run Simple Test (Beta3)
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js
 ```
 
-### Run All Beta3 Tests (23 test files, 50+ tests)
+### Run All Beta3 Tests (23 test files, 67 tests)
 
 ```bash
-# Run tests one by one (recommended)
+# Run all tests at once
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
+
+# Or run tests one by one
 for f in test/hyperbeam/hb-success-beta3/*.test.js; do
   echo "Testing: $f"
-  node --experimental-wasm-memory64 --test --test-concurrency=1 "$f"
+  HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 "$f"
 done
 ```
 
 ### Run Specific Test File
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/scheduler.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/scheduler.test.js
 ```
 
 ### Beta3 Test Files (All Pass)
@@ -665,7 +663,7 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 Tests in `hb-genesis/` require the CU server to be running. These tests use `genesis_wasm: true` in the HyperBEAM constructor which auto-starts the CU server:
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-genesis/upload.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-genesis/upload.test.js
 ```
 
 ### Background Test Technique (MANDATORY for Unknown Tests)
@@ -858,8 +856,8 @@ Located in `installation/` folder:
 - [ ] Wallet file exists (`~/HyperBEAM-wao/.wallet.json` or `~/HyperBEAM-beta1/.wallet.json`)
 
 ### Verify Installation
-- [ ] Run simple test: `node --experimental-wasm-memory64 --test test/hyperbeam/hb-success-beta3/simple.test.js`
-- [ ] Run all tests: `node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js`
+- [ ] Run simple test: `HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js`
+- [ ] Run all tests: `HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js`
 
 ---
 
@@ -898,8 +896,8 @@ Located in `installation/` folder:
 ### Verify Installation
 - [ ] `dev_wao.beam` exists in `_build/default/lib/hb/ebin/`
 - [ ] `wao@1.0` registered: `grep "wao@1.0" ~/HyperBEAM/src/hb_opts.erl`
-- [ ] Run simple test: `node --experimental-wasm-memory64 --test test/hyperbeam/hb-success-beta3/simple.test.js`
-- [ ] Run all tests: `node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js`
+- [ ] Run simple test: `HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js`
+- [ ] Run all tests: `HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js`
 
 ---
 
@@ -918,7 +916,7 @@ rebar3 as genesis_wasm compile
 ### Running Genesis-WASM Tests
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/upload.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/upload.test.js
 ```
 
 ---
@@ -1015,16 +1013,16 @@ curl -L -o tinyllama.gguf "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v
 Run each test file individually:
 ```bash
 # extension.test.js - requires arjson
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/extension.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/extension.test.js
 
 # llm.test.js - requires tinyllama.gguf (~3 min)
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/llm.test.js
+HB_TIMEOUT=180 node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/llm.test.js
 
 # main.test.js - 28/30 pass, 2 skipped
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/main.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/main.test.js
 
 # server.test.js - 8/9 pass, 1 skipped
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/server.test.js
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/server.test.js
 ```
 
 ### Expected Results
