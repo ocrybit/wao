@@ -286,7 +286,9 @@ export const toHttpSigner = signer => {
       const signingParameters = createSigningParameters({
         params,
         paramValues: {
-          keyid: base64url.encode(publicKeyBuffer),
+          // Beta3 requires "publickey:" scheme prefix on keyid
+          // HyperBEAM uses standard base64 (not base64url) for keyid
+          keyid: `publickey:${publicKeyBuffer.toString("base64")}`,
           alg,
         },
       })

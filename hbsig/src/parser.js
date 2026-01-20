@@ -157,7 +157,16 @@ export function extractPubKey(headers, signatureName) {
     const keyData = keyid.startsWith(pubkeyPrefix)
       ? keyid.slice(pubkeyPrefix.length)
       : keyid
-    return base64url.toBuffer(keyData)
+
+    // Handle both standard base64 (with + and /) and base64url (with - and _)
+    // HyperBEAM uses standard base64, but we may also receive base64url
+    if (keyData.includes("+") || keyData.includes("/")) {
+      // Standard base64 - use Buffer.from
+      return Buffer.from(keyData, "base64")
+    } else {
+      // base64url - use base64url library
+      return base64url.toBuffer(keyData)
+    }
   } catch (error) {
     return null
   }
