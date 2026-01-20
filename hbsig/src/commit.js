@@ -4,6 +4,82 @@ import { extractPubKey } from "./signer-utils.js"
 import { verify } from "./signer-utils.js"
 
 /**
+ * Parse a structured field list string back into an array
+ * Reverses the encoding done by encodeAsStructuredFieldList in signer.js
+ *
+ * Format: `"value1", "value2", 123, ?1, :base64:`
+ * Returns: ["value1", "value2", 123, true, <Buffer>]
+ */
+function parseStructuredFieldList(str) {
+  if (!str || typeof str !== "string") return str
+
+  const result = []
+  let i = 0
+
+  while (i < str.length) {
+    // Skip whitespace and commas
+    while (i < str.length && (str[i] === " " || str[i] === "," || str[i] === "\t")) {
+      i++
+    }
+    if (i >= str.length) break
+
+    // Check what type of value this is
+    if (str[i] === '"') {
+      // Quoted string
+      i++ // skip opening quote
+      let value = ""
+      while (i < str.length && str[i] !== '"') {
+        if (str[i] === "\\" && i + 1 < str.length) {
+          // Escape sequence
+          i++
+          value += str[i]
+        } else {
+          value += str[i]
+        }
+        i++
+      }
+      i++ // skip closing quote
+      result.push(value)
+    } else if (str[i] === "?") {
+      // Boolean
+      i++ // skip ?
+      if (str[i] === "1") {
+        result.push(true)
+      } else {
+        result.push(false)
+      }
+      i++
+    } else if (str[i] === ":") {
+      // Binary data (base64)
+      i++ // skip opening colon
+      let base64 = ""
+      while (i < str.length && str[i] !== ":") {
+        base64 += str[i]
+        i++
+      }
+      i++ // skip closing colon
+      result.push(Buffer.from(base64, "base64"))
+    } else if (/[0-9-]/.test(str[i])) {
+      // Number
+      let numStr = ""
+      while (i < str.length && /[0-9.\-eE+]/.test(str[i])) {
+        numStr += str[i]
+        i++
+      }
+      const num = numStr.includes(".") ? parseFloat(numStr) : parseInt(numStr, 10)
+      result.push(num)
+    } else {
+      // Unknown, skip to next comma
+      while (i < str.length && str[i] !== ",") {
+        i++
+      }
+    }
+  }
+
+  return result
+}
+
+/**
  * Parse signature header into individual signatures
  * Format: "name1=:base64sig1:, name2=:base64sig2:"
  * Returns: { name1: "base64sig1", name2: "base64sig2" }
@@ -132,6 +208,15 @@ export const commit = async (obj, opts) => {
       .filter(([_, type]) => type === "list")
       .map(([field, _]) => field)
   )
+
+  // Convert list fields from structured field strings to proper arrays
+  // This is needed because HTTP headers encode arrays as structured field lists (strings)
+  // but HyperBEAM expects proper JSON arrays in the body
+  for (const field of listFields) {
+    if (body[field] && typeof body[field] === "string") {
+      body[field] = parseStructuredFieldList(body[field])
+    }
+  }
 
   // Beta3 requires 'committed' array listing the signed keys in each commitment
   // Exclude list fields as they get converted to +links by HyperBEAM
