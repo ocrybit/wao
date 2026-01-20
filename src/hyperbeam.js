@@ -128,18 +128,21 @@ export default class HyperBEAM {
       // Direct erl mode - use erl with rebar3-compiled beam files
       // Beta1's prometheus_cowboy uses prometheus_buckets:exponential/3 which doesn't exist.
       // We manually register the required cowboy metrics with linear buckets instead.
+      // Beta3 doesn't include prometheus, so wrap in try-catch to handle gracefully.
       const cowboyMetricsSetup = `
-        application:ensure_all_started(prometheus),
-        prometheus_counter:declare([{name, cowboy_early_errors_total}, {labels, [method, reason]}, {help, <<"">>}]),
-        prometheus_counter:declare([{name, cowboy_protocol_upgrades_total}, {labels, [method, status, status_class]}, {help, <<"">>}]),
-        prometheus_counter:declare([{name, cowboy_requests_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
-        prometheus_counter:declare([{name, cowboy_spawned_processes_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
-        prometheus_counter:declare([{name, cowboy_errors_total}, {labels, [method, reason, error]}, {help, <<"">>}]),
-        Buckets = [0, 100, 1000, 10000, 100000, 1000000, 10000000],
-        prometheus_histogram:declare([{name, cowboy_receive_body_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
-        prometheus_histogram:declare([{name, cowboy_request_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
-        prometheus_histogram:declare([{name, cowboy_request_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
-        prometheus_histogram:declare([{name, cowboy_response_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
+        try
+          application:ensure_all_started(prometheus),
+          prometheus_counter:declare([{name, cowboy_early_errors_total}, {labels, [method, reason]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_protocol_upgrades_total}, {labels, [method, status, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_requests_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_spawned_processes_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_errors_total}, {labels, [method, reason, error]}, {help, <<"">>}]),
+          Buckets = [0, 100, 1000, 10000, 100000, 1000000, 10000000],
+          prometheus_histogram:declare([{name, cowboy_receive_body_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_request_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_request_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_response_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}])
+        catch _:_ -> ok end,
         timer:sleep(100)
       `.replace(/\n\s*/g, ' ')
       const prometheusSetup = cowboyMetricsSetup

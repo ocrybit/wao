@@ -121,7 +121,10 @@ rebar3 compile
 # 6. Extract genesis-wasm server
 tar -xJf /path/to/wao/installation/genesis-wasm-server-precompiled.tar.xz -C _build/
 
-# 7. Set environment variables
+# 7. Generate wallet file (required for signing)
+node -e "const Arweave = require('arweave'); Arweave.init({}).wallets.generate().then(jwk => console.log(JSON.stringify(jwk)));" > .wallet.json
+
+# 8. Set environment variables
 export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
 export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"
 export HB_REBAR3=false
@@ -129,13 +132,13 @@ echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.
 echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
 echo 'export HB_REBAR3=false' >> ~/.bashrc
 
-# 8. Install WAO dependencies and build hbsig
+# 9. Install WAO dependencies and build hbsig
 cd /path/to/wao
 npm install
 cd hbsig && yarn install && yarn build && cd ..
 npm install  # Re-install to link local hbsig
 
-# 9. Create .env.hyperbeam pointing to beta3
+# 10. Create .env.hyperbeam pointing to beta3
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
@@ -143,7 +146,7 @@ HB_REBAR3=false
 CWD=/root/HyperBEAM
 EOF
 
-# 10. Run all tests
+# 11. Run all tests (prometheus errors are expected but non-fatal)
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
 ```
 
@@ -417,6 +420,23 @@ grep "wao@1.0" ~/HyperBEAM/src/hb_opts.erl
 ls -d ~/HyperBEAM/_build/genesis-wasm-server
 ```
 
+### Generate Wallet File (Required)
+
+Beta3 requires a wallet file for signing messages. Generate one using Node.js:
+
+```bash
+cd ~/HyperBEAM
+node -e "
+const Arweave = require('arweave');
+const arweave = Arweave.init({});
+arweave.wallets.generate().then(jwk => {
+  console.log(JSON.stringify(jwk));
+});" > .wallet.json
+
+# Verify wallet was created
+ls -la ~/HyperBEAM/.wallet.json
+```
+
 ### Configure .env.hyperbeam for Beta3
 
 ```bash
@@ -428,6 +448,10 @@ HB_REBAR3=false
 CWD=/root/HyperBEAM
 EOF
 ```
+
+### Beta3 Notes
+
+**Prometheus Errors**: Beta3 does not include prometheus as a dependency. You will see non-fatal `prometheus_cowboy2_instrumenter` errors in logs during request handling. These can be safely ignored - tests still pass.
 
 ### Beta3 Directory Structure
 
@@ -791,6 +815,7 @@ Located in `installation/` folder:
 - [ ] `dev_genesis_wasm.erl` patched for proxy support
 - [ ] Beta3 recompiled (`rebar3 compile`)
 - [ ] Genesis-wasm server extracted to `_build/`
+- [ ] Wallet file generated (`~/HyperBEAM/.wallet.json`)
 - [ ] Native drivers verified:
   - [ ] `hb_beamr.so` (WASM runtime)
   - [ ] `hb_keccak.so` (Keccak hashing)
