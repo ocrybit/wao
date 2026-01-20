@@ -202,7 +202,11 @@ const smartSign = async (obj, path) => {
         ) {
           types.push(`${key}="empty-message"`)
         } else if (isSimpleArray(value)) {
-          types.push(`${key}="list"`)
+          // NOTE: We intentionally do NOT add list to ao-types here.
+          // HyperBEAM converts arrays marked as "list" to +link references,
+          // which breaks commitment validation. By omitting the type hint,
+          // HyperBEAM treats this as a regular string and preserves the value.
+          // The array is encoded as a structured field list string.
           message[key] = encodeAsStructuredFieldList(value)
         } else if (typeof value === "number") {
           types.push(
@@ -366,10 +370,26 @@ async function _sign({
         .map(k => k.trim())
     : []
 
+  // Parse ao-types to identify list fields that should be excluded from signing
+  // HyperBEAM converts arrays to +link references, which would cause commitment validation to fail
+  const aoTypes = lowercaseHeaders["ao-types"] || ""
+  const listFields = new Set()
+  const aoTypesRegex = /([a-zA-Z0-9_-]+)="list"/g
+  let aoMatch
+  while ((aoMatch = aoTypesRegex.exec(aoTypes)) !== null) {
+    listFields.add(aoMatch[1])
+  }
+
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    return key !== "body-keys" && key !== "path" && !bodyKeys.includes(key)
+    // Exclude body-keys, path, body keys, and list fields from signing
+    return (
+      key !== "body-keys" &&
+      key !== "path" &&
+      !bodyKeys.includes(key) &&
+      !listFields.has(key)
+    )
   })
 
   // Only add @path if signPath is enabled AND path header exists

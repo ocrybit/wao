@@ -37,6 +37,23 @@ function parseSignatureInputs(signatureInputHeader) {
   return inputs
 }
 
+/**
+ * Parse ao-types header to get field type mappings
+ * Format: 'field1="type1", field2="type2"'
+ * Returns: { field1: "type1", field2: "type2" }
+ */
+function parseAoTypes(aoTypesHeader) {
+  if (!aoTypesHeader) return {}
+  const types = {}
+  // Match pattern: fieldname="typename"
+  const regex = /([a-zA-Z0-9_-]+)="([^"]+)"/g
+  let match
+  while ((match = regex.exec(aoTypesHeader)) !== null) {
+    types[match[1]] = match[2]
+  }
+  return types
+}
+
 // todo: handle @
 export const commit = async (obj, opts) => {
   const msg = await opts.signer(obj, opts)
@@ -49,10 +66,28 @@ export const commit = async (obj, opts) => {
   // Check for inline-body-key
   const inlineBodyKey = msg.headers["inline-body-key"]
 
-  // Build body from components
+  // Build body from components (signed fields)
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     body[key] = msg.headers[key]
+  }
+
+  // Also include non-signed fields (like list fields) in the body
+  // These headers should be in the message but are not cryptographically committed
+  const excludedHeaders = new Set([
+    "signature",
+    "signature-input",
+    "content-digest",
+    "content-length",
+    "content-type",
+    "body-keys",
+    "inline-body-key",
+    "path", // Don't include path in body - it's for routing only
+  ])
+  for (const [key, value] of Object.entries(msg.headers)) {
+    if (!body.hasOwnProperty(key) && !excludedHeaders.has(key) && value !== undefined) {
+      body[key] = value
+    }
   }
 
   // Handle body resolution
@@ -89,8 +124,20 @@ export const commit = async (obj, opts) => {
   // Find the signature name (they share the same name)
   const sigName = Object.keys(signatures)[0]
 
+  // Parse ao-types to identify list fields that should be excluded from committed keys
+  // HyperBEAM converts arrays to +link references, which would cause commitment validation to fail
+  const aoTypes = parseAoTypes(msg.headers["ao-types"])
+  const listFields = new Set(
+    Object.entries(aoTypes)
+      .filter(([_, type]) => type === "list")
+      .map(([field, _]) => field)
+  )
+
   // Beta3 requires 'committed' array listing the signed keys in each commitment
-  const committedKeys = components.map(v => (v === "@path" ? "path" : v))
+  // Exclude list fields as they get converted to +links by HyperBEAM
+  const committedKeys = components
+    .map(v => (v === "@path" ? "path" : v))
+    .filter(key => !listFields.has(key))
 
   // Beta3: Create single RSA commitment
   // The HMAC signature is server-side only (for "constant:ao" keyid)

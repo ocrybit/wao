@@ -352,12 +352,16 @@ function from(msg) {
         value.forEach((item, idx) => {
           numberedMap[(idx + 1).toString()] = item
         })
-        types.push([normKey, "list"])
+        // NOTE: We intentionally do NOT add "list" to types/ao-types here.
+        // HyperBEAM converts arrays marked as "list" to +link references,
+        // which breaks commitment validation. By omitting the type hint,
+        // HyperBEAM treats this as a regular value and preserves it.
         values.push([normKey, from(numberedMap)])
       } else {
-        // Encode as list string
-        const [type, encoded] = encodeValue(value)
-        types.push([normKey, type])
+        // Encode as list string - also don't add to types
+        // The value is encoded as a structured field list string
+        const [_type, encoded] = encodeValue(value)
+        // Don't add to types - let it be treated as a string
         values.push([normKey, encoded])
       }
       continue
