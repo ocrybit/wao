@@ -1,10 +1,13 @@
 import assert from "assert"
-import { after, describe, it, before, beforeEach } from "node:test"
+import { describe, it } from "node:test"
 import HyperBEAM from "../../../src/hyperbeam.js"
 
 describe("Hyperbeam Eunit", function () {
-  let hb, hbeam
-  before(async () => (hbeam = new HyperBEAM({ reset: true, shell: false })))
-  beforeEach(async () => (hb = hbeam.hb))
-  it.only("should run eunit", async () => await hbeam.eunit("dev_message"))
+  // Note: eunit runs rebar3 tests directly, doesn't need server running
+  // The eunit method requires logs:true for promise to resolve (due to implementation)
+
+  it("should run eunit dev_message", async () => {
+    const hbeam = new HyperBEAM({ reset: false, shell: false, logs: true })
+    await hbeam.eunit("dev_message")
+  })
 })
