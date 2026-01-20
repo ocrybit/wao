@@ -128,16 +128,36 @@ export function extractPubKey(headers, signatureName) {
 
   if (!decoded) return null
 
-  // If we decoded a specific signature, use its keyid
-  const keyid =
-    signatureName && decoded.params
-      ? decoded.params.keyid
-      : Object.values(decoded)[0]?.params?.keyid
+  const pubkeyPrefix = "publickey:"
+  let keyid = null
+
+  if (signatureName && decoded.params) {
+    // If specific signature was requested, use its keyid
+    keyid = decoded.params.keyid
+  } else {
+    // No specific signature requested - find one with a publickey: keyid
+    // This handles beta3 which may have multiple signatures (HMAC and RSA)
+    for (const sig of Object.values(decoded)) {
+      if (sig.params?.keyid?.startsWith(pubkeyPrefix)) {
+        keyid = sig.params.keyid
+        break
+      }
+    }
+    // Fall back to first signature's keyid if no publickey: found
+    if (!keyid) {
+      keyid = Object.values(decoded)[0]?.params?.keyid
+    }
+  }
 
   if (!keyid) return null
 
   try {
-    return base64url.toBuffer(keyid)
+    // Handle "publickey:<base64-encoded-key>" format (beta3)
+    // Strip the prefix to get the actual base64-encoded key
+    const keyData = keyid.startsWith(pubkeyPrefix)
+      ? keyid.slice(pubkeyPrefix.length)
+      : keyid
+    return base64url.toBuffer(keyData)
   } catch (error) {
     return null
   }
