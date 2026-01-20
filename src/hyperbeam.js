@@ -49,6 +49,7 @@ export default class HyperBEAM {
     arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
     rebar3, // Use original rebar3 shell (true) or direct erl mode (false). Default: true, can be overridden by HB_REBAR3 env var
     timeout, // Auto-kill timeout in seconds. Uses SIGKILL which Erlang cannot trap. Falls back to HB_TIMEOUT env var.
+    prometheus = false, // Enable prometheus metrics. Default: false (beta3 lacks prometheus dependency)
   } = {}) {
     this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
     // Determine rebar3 mode: option > env var > default (true)
@@ -64,6 +65,7 @@ export default class HyperBEAM {
     const envTimeout = process.env.HB_TIMEOUT ? parseInt(process.env.HB_TIMEOUT, 10) : undefined
     this.timeout = timeout !== undefined ? timeout : envTimeout
     this.timeoutTimer = null
+    this.prometheus = prometheus
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
     this.devices = devices
@@ -434,6 +436,8 @@ export default class HyperBEAM {
       : ""
     const _spp = this.spp ? `, simple_pay_price => ${this.spp}` : ""
     const _genesis_wasm_port = this.genesis_wasm ? `, genesis_wasm_port => ${this.cu_port}` : ""
+    // Disable prometheus metrics by default (beta3 lacks prometheus dependency, causes cowboy crash)
+    const _prometheus = this.prometheus ? "" : ", prometheus => false"
 
     const _node_processes = this.p4_lua
       ? `, node_processes => #{ <<"ledger">> => #{ <<"device">> => <<"process@1.0">>, <<"execution-device">> => <<"lua@5.3a">>, <<"scheduler-device">> => <<"scheduler@1.0">>, <<"module">> => <<"${this.p4_lua.processor}">>, <<"operator">> => <<"${this.operator}">> } }`
@@ -453,7 +457,7 @@ export default class HyperBEAM {
         : !isNil(this.faff)
           ? `, on => #{ <<"request">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> }, <<"response">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> } }`
           : ""
-    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}}).`
+    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_prometheus}${_devices}${_node_processes}}).`
     return start
   }
 

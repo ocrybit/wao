@@ -1,5 +1,29 @@
 # WAO + HyperBEAM Installation Guide
 
+## ⚠️ IMPORTANT: Test Command Reference
+
+**Always use this exact test command format:**
+```bash
+# Single test file:
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/TESTNAME.test.js
+
+# All tests in a folder:
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+
+# With timeout (prevents hangs - RECOMMENDED):
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/FOLDER/TESTNAME.test.js
+```
+
+**Key flags (NEVER OMIT):**
+- `--experimental-wasm-memory64` - Required for WASM memory64 support
+- `--test` - Enables Node.js test runner
+- `--test-concurrency=1` - Runs tests sequentially (prevents port conflicts)
+
+**Environment variable:**
+- `HB_TIMEOUT=60` - Auto-kills HyperBEAM after 60 seconds (prevents permanent hangs)
+
+---
+
 ## Quick Start: WAO Branch Setup (Recommended - All Tests Pass)
 
 ```bash
