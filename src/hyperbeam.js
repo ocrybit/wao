@@ -48,6 +48,7 @@ export default class HyperBEAM {
     genesis_wasm = false,
     arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
     rebar3, // Use original rebar3 shell (true) or direct erl mode (false). Default: true, can be overridden by HB_REBAR3 env var
+    timeout, // Auto-kill timeout in seconds. Uses SIGKILL which Erlang cannot trap. Falls back to HB_TIMEOUT env var.
   } = {}) {
     this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
     // Determine rebar3 mode: option > env var > default (true)
@@ -59,6 +60,10 @@ export default class HyperBEAM {
     } else {
       this.rebar3 = true // default to rebar3 mode
     }
+    // Timeout in seconds - option > HB_TIMEOUT env var > no timeout
+    const envTimeout = process.env.HB_TIMEOUT ? parseInt(process.env.HB_TIMEOUT, 10) : undefined
+    this.timeout = timeout !== undefined ? timeout : envTimeout
+    this.timeoutTimer = null
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
     this.devices = devices
@@ -184,6 +189,29 @@ export default class HyperBEAM {
 
     if (this.logs) {
       console.log(`HyperBEAM starting on port ${this.port} (rebar3=${this.rebar3})...`)
+    }
+
+    // Set up auto-kill timeout if specified (uses SIGKILL which Erlang cannot trap)
+    if (this.timeout && this.timeout > 0) {
+      if (this.logs) {
+        console.log(`Auto-kill timeout set: ${this.timeout} seconds`)
+      }
+      this.timeoutTimer = setTimeout(() => {
+        if (this.logs) {
+          console.error(`HyperBEAM timeout (${this.timeout}s) exceeded - sending SIGKILL`)
+        }
+        this.kill()
+      }, this.timeout * 1000)
+
+      // Clear timeout if process exits before timeout
+      if (this.proc) {
+        this.proc.on("exit", () => {
+          if (this.timeoutTimer) {
+            clearTimeout(this.timeoutTimer)
+            this.timeoutTimer = null
+          }
+        })
+      }
     }
   }
   file(path, type = "utf8") {
@@ -430,6 +458,11 @@ export default class HyperBEAM {
   }
 
   kill() {
+    // Clear any pending timeout timer
+    if (this.timeoutTimer) {
+      clearTimeout(this.timeoutTimer)
+      this.timeoutTimer = null
+    }
     // Kill CU server if we started it
     if (this.cuProc && this.cuProc.pid) {
       try {
