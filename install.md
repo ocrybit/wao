@@ -91,6 +91,83 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 
 ---
 
+## Quick Start: Beta3 Setup (Latest - Recommended)
+
+Beta3 is the latest HyperBEAM release with pre-compiled native drivers. This setup adds WAO device support from the WAO branch.
+
+```bash
+# 1. Extract pre-compiled Erlang and HyperBEAM beta3
+cd ~
+tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
+tar -xJf /path/to/wao/installation/hyperbeam-v0.9-m3-b3-compiled.tar.xz
+. ~/.asdf/asdf.sh
+asdf global erlang 27.3.4.6
+asdf global rebar 3.26.0
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+
+# 2. Add wao@1.0 device from WAO branch
+cd ~/HyperBEAM
+curl -s https://raw.githubusercontent.com/weavedb/HyperBEAM/wao/src/dev_wao.erl -o src/dev_wao.erl
+
+# 3. Register wao@1.0 in preloaded_devices (add before wasi@1.0)
+sed -i 's/#{<<"name">> => <<"wasi@1.0">>/#{<<"name">> => <<"wao@1.0">>, <<"module">> => dev_wao},\n            #{<<"name">> => <<"wasi@1.0">>/' src/hb_opts.erl
+
+# 4. Apply patched dev_genesis_wasm.erl (passes gateway env vars to CU)
+cp /path/to/wao/installation/dev_genesis_wasm.erl src/dev_genesis_wasm.erl
+
+# 5. Recompile with new modules
+rebar3 compile
+
+# 6. Extract genesis-wasm server
+tar -xJf /path/to/wao/installation/genesis-wasm-server-precompiled.tar.xz -C _build/
+
+# 7. Set environment variables
+export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"
+export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"
+export HB_REBAR3=false
+echo 'export ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"' >> ~/.bashrc
+echo 'export HB_REBAR3=false' >> ~/.bashrc
+
+# 8. Install WAO dependencies and build hbsig
+cd /path/to/wao
+npm install
+cd hbsig && yarn install && yarn build && cd ..
+npm install  # Re-install to link local hbsig
+
+# 9. Create .env.hyperbeam pointing to beta3
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+CWD=/root/HyperBEAM
+EOF
+
+# 10. Run all tests
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+```
+
+### Key Features of Beta3
+
+| Feature | Status |
+|---------|--------|
+| Native drivers (`hb_beamr.so`, `hb_keccak.so`) | ✅ Pre-compiled and included |
+| `wao@1.0` device | ✅ Added from WAO branch |
+| `wasm-64@1.0` device | ✅ Included |
+| Genesis-WASM support | ✅ With patched proxy fix |
+| `http-sig-` prefix | ✅ Default in hbsig |
+
+### Beta3 vs Beta1 vs WAO Branch
+
+| Feature | Beta1 | Beta3 | WAO Branch |
+|---------|-------|-------|------------|
+| Native drivers | ✅ Included | ✅ Included | ❌ Copy from beta1 |
+| `wao@1.0` device | ❌ Manual setup | ✅ Added via setup | ✅ Included |
+| Compilation required | ❌ Pre-compiled | ✅ After adding wao@1.0 | ✅ Full compile |
+| Installation complexity | Simple | Medium | Complex |
+
+---
+
 ## Prerequisites
 
 ### System Dependencies (requires root/sudo)
@@ -262,6 +339,111 @@ node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-
 
 # Run specific category
 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/hyperbeam.test.js
+```
+
+---
+
+## Step 2c: Install HyperBEAM Beta3 (Latest Release)
+
+Beta3 is the latest HyperBEAM release (v0.9-milestone-3-beta-3) with pre-compiled native drivers included. This is the recommended option for new installations.
+
+### Option A: Pre-compiled (Recommended, ~10 seconds)
+
+```bash
+cd ~
+tar -xJf /path/to/wao/installation/hyperbeam-v0.9-m3-b3-compiled.tar.xz
+```
+
+This extracts to `~/HyperBEAM` with native drivers already compiled.
+
+### Add WAO Device Support
+
+Beta3 does not include the `wao@1.0` device by default. Add it from the WAO branch:
+
+```bash
+cd ~/HyperBEAM
+
+# Download dev_wao.erl from WAO branch
+curl -s https://raw.githubusercontent.com/weavedb/HyperBEAM/wao/src/dev_wao.erl -o src/dev_wao.erl
+
+# Register wao@1.0 in preloaded_devices (add before wasi@1.0)
+sed -i 's/#{<<"name">> => <<"wasi@1.0">>/#{<<"name">> => <<"wao@1.0">>, <<"module">> => dev_wao},\n            #{<<"name">> => <<"wasi@1.0">>/' src/hb_opts.erl
+
+# Verify the device was added
+grep "wao@1.0" src/hb_opts.erl
+# Should show: #{<<"name">> => <<"wao@1.0">>, <<"module">> => dev_wao},
+```
+
+### Apply Genesis-WASM Proxy Fix
+
+Apply the patched `dev_genesis_wasm.erl` that passes gateway environment variables to the CU server:
+
+```bash
+cd ~/HyperBEAM
+cp /path/to/wao/installation/dev_genesis_wasm.erl src/dev_genesis_wasm.erl
+```
+
+### Recompile Beta3
+
+After adding the WAO device and proxy fix, recompile:
+
+```bash
+cd ~/HyperBEAM
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+### Extract Genesis-WASM Server
+
+```bash
+cd ~/HyperBEAM
+tar -xJf /path/to/wao/installation/genesis-wasm-server-precompiled.tar.xz -C _build/
+```
+
+### Verify Beta3 Installation
+
+```bash
+# Check native drivers exist
+ls -la ~/HyperBEAM/_build/default/lib/hb/priv/*.so
+# Should show hb_beamr.so and hb_keccak.so
+
+# Check dev_wao.beam was compiled
+ls -la ~/HyperBEAM/_build/default/lib/hb/ebin/dev_wao.beam
+
+# Check wao@1.0 is registered
+grep "wao@1.0" ~/HyperBEAM/src/hb_opts.erl
+
+# Check genesis-wasm server exists
+ls -d ~/HyperBEAM/_build/genesis-wasm-server
+```
+
+### Configure .env.hyperbeam for Beta3
+
+```bash
+cd /path/to/wao
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+CWD=/root/HyperBEAM
+EOF
+```
+
+### Beta3 Directory Structure
+
+```
+~/HyperBEAM/
+├── _build/
+│   ├── default/lib/hb/
+│   │   ├── ebin/          # Compiled .beam files including dev_wao.beam
+│   │   └── priv/          # Native drivers (hb_beamr.so, hb_keccak.so)
+│   └── genesis-wasm-server/  # CU server for genesis-wasm tests
+├── src/
+│   ├── dev_wao.erl        # WAO device (added from WAO branch)
+│   ├── dev_genesis_wasm.erl  # Patched for proxy support
+│   └── hb_opts.erl        # Modified to register wao@1.0
+├── rebar.config
+└── Makefile
 ```
 
 ---
@@ -550,7 +732,10 @@ Located in `installation/` folder:
 |------|-------------|------|
 | `asdf-erlang-rebar.tar.xz` | Pre-compiled Erlang 27.3.4.6 + rebar3 | ~23MB |
 | `hyperbeam-v0.9-m3-b1-compiled.tar.xz` | Pre-compiled HyperBEAM beta1 | ~38MB |
+| `hyperbeam-v0.9-m3-b3-compiled.tar.xz` | Pre-compiled HyperBEAM beta3 (latest) | ~40MB |
 | `hyperbeam_rebar_beta1.config` | Patched rebar config for beta1 | - |
+| `dev_genesis_wasm.erl` | Patched genesis-wasm with proxy support | - |
+| `genesis-wasm-server-precompiled.tar.xz` | Pre-compiled CU server | ~15MB |
 
 ---
 
@@ -586,6 +771,45 @@ Located in `installation/` folder:
 - [ ] Wallet file exists (`~/HyperBEAM-wao/.wallet.json` or `~/HyperBEAM-beta1/.wallet.json`)
 
 ### Verify Installation
+- [ ] Run simple test: `node --experimental-wasm-memory64 --test test/hyperbeam/hb-success/simple.test.js`
+- [ ] Run all tests: `node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js`
+
+---
+
+## Complete Installation Checklist (Beta3 - Latest Release)
+
+### Base Setup
+- [ ] System dependencies installed (build-essential, autoconf, libssl-dev, etc.)
+- [ ] Node.js 22+ installed
+- [ ] Erlang 27.3.4.6 installed via asdf
+- [ ] rebar3 3.26.0 installed via asdf
+
+### HyperBEAM Beta3 Setup
+- [ ] HyperBEAM beta3 extracted to `~/HyperBEAM`
+- [ ] `dev_wao.erl` downloaded from WAO branch
+- [ ] `wao@1.0` registered in `hb_opts.erl` preloaded_devices
+- [ ] `dev_genesis_wasm.erl` patched for proxy support
+- [ ] Beta3 recompiled (`rebar3 compile`)
+- [ ] Genesis-wasm server extracted to `_build/`
+- [ ] Native drivers verified:
+  - [ ] `hb_beamr.so` (WASM runtime)
+  - [ ] `hb_keccak.so` (Keccak hashing)
+
+### WAO SDK Setup
+- [ ] WAO npm dependencies installed (`npm install`)
+- [ ] hbsig built locally (`cd hbsig && yarn install && yarn build`)
+- [ ] WAO re-installed to link hbsig (`npm install`)
+
+### Environment Configuration
+- [ ] Environment variables exported to `~/.bashrc`:
+  - [ ] `ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"`
+  - [ ] `GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"`
+  - [ ] `HB_REBAR3=false`
+- [ ] `.env.hyperbeam` file created with `CWD=/root/HyperBEAM`
+
+### Verify Installation
+- [ ] `dev_wao.beam` exists in `_build/default/lib/hb/ebin/`
+- [ ] `wao@1.0` registered: `grep "wao@1.0" ~/HyperBEAM/src/hb_opts.erl`
 - [ ] Run simple test: `node --experimental-wasm-memory64 --test test/hyperbeam/hb-success/simple.test.js`
 - [ ] Run all tests: `node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js`
 
