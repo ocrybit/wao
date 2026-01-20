@@ -210,14 +210,29 @@ class HB {
         tags: _tags,
         data: data ?? "1984",
       })
+      return { slot: res.out.slot, res, pid }
     } else {
-      let _tags = mergeLeft(tags, { Type: "Message", target: pid })
+      // Use commit + fetch pattern for beta3 HTTP signatures
+      let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
-      let body = await this.commit(_tags, { path: false })
-      let signed = await this.sign({ path: `/${pid}/schedule`, body })
-      res = await this.send(signed)
+      const committed = await this.commit(_tags, { path: false })
+      const response = await fetch(`${this.url}/${pid}/schedule`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(committed),
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
+      }
+
+      return {
+        slot: response.headers.get("slot"),
+        pid,
+        status: response.status,
+      }
     }
-    return { slot: res.out.slot, res, pid }
   }
 
   async scheduleLua({ action = "Eval", tags = {}, ...rest }) {
@@ -284,50 +299,72 @@ class HB {
           Scheduler: this.operator,
         }),
       })
+      return { res, pid: res.out.process }
     } else {
-      res = await this.post({
-        path: "/~scheduler@1.0/schedule",
-        body: await this.commit(
-          mergeLeft(tags, {
-            "random-seed": seed(16),
-            type: "Process",
-            "execution-device": "test-device@1.0",
-            device: "process@1.0",
-            scheduler: this.addr,
-          }),
-          { path: false }
-        ),
+      // Use commit + fetch pattern for beta3 HTTP signatures
+      const spawnTags = mergeLeft(tags, {
+        "random-seed": seed(16),
+        type: "Process",
+        "execution-device": "test-device@1.0",
+        device: "process@1.0",
+        scheduler: this.addr,
       })
+      const committed = await this.commit(spawnTags, { path: false })
+      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(committed),
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
+      }
+
+      return {
+        pid: response.headers.get("process"),
+        slot: response.headers.get("slot"),
+        status: response.status,
+      }
     }
-    return { res, pid: res.out.process }
   }
 
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
-    let t = {}
-    if (this.format === "ans104") {
-      t = mergeLeft(tags, {
-        "Data-Protocol": "ao",
-        Variant: "ao.TN.1",
-        Authority: this.operator,
-        Scheduler: this.operator,
-        Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
-        device: "process@1.0",
-        "execution-device": "genesis-wasm@1.0",
-      })
-    } else {
-      t = mergeLeft(tags, {
-        "Data-Protocol": "ao",
-        Variant: "ao.TN.1",
-        Authority: this.operator,
-        Scheduler: this.operator,
-        Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
-        device: "process@1.0",
-        "execution-device": "genesis-wasm@1.0",
-      })
+    // Use genesis-wasm directly as execution-device for legacynet AOS
+    // Beta3 HTTP signatures have issues with device-stack arrays
+    const legacyTags = {
+      "data-protocol": "ao",
+      variant: "ao.TN.1",
+      authority: this.operator,
+      scheduler: this.addr,
+      module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
+      device: "process@1.0",
+      "execution-device": "genesis-wasm@1.0",
+      "random-seed": seed(16),
+      type: "Process",
     }
+    const t = mergeLeft(tags, legacyTags)
     if (data) t.data = data
-    return await this.spawn(t)
+
+    // Use commit + fetch pattern that works in beta3
+    const committed = await this.commit(t, { path: false })
+    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(committed),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
+    }
+
+    return {
+      pid: response.headers.get("process"),
+      slot: response.headers.get("slot"),
+      status: response.status,
+    }
   }
 
   async scheduleLegacy({ action = "Eval", tags = {}, ...rest } = {}) {
