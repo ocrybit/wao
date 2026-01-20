@@ -380,15 +380,20 @@ async function _sign({
     listFields.add(aoMatch[1])
   }
 
+  // Known array fields that should be excluded from signing
+  // These get converted to +link references by HyperBEAM, breaking commitment validation
+  const knownArrayFields = new Set(["device-stack", "as"])
+
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    // Exclude body-keys, path, body keys, and list fields from signing
+    // Exclude body-keys, path, body keys, list fields, and known array fields from signing
     return (
       key !== "body-keys" &&
       key !== "path" &&
       !bodyKeys.includes(key) &&
-      !listFields.has(key)
+      !listFields.has(key) &&
+      !knownArrayFields.has(key)
     )
   })
 

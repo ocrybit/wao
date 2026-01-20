@@ -80,6 +80,59 @@ function parseStructuredFieldList(str) {
 }
 
 /**
+ * Check if a string looks like a structured field list
+ * Used to detect arrays that were encoded without ao-types "list" marker
+ *
+ * Pattern examples:
+ * - "value1", "value2" (quoted strings separated by comma-space)
+ * - "wasi@1.0", "json-iface@1.0" (device stack)
+ * - 123, 456 (numbers)
+ * - ?0, ?1 (booleans)
+ */
+function isStructuredFieldList(str) {
+  if (!str || typeof str !== "string") return false
+
+  // Must have at least 2 items (indicated by comma)
+  if (!str.includes(",")) return false
+
+  const trimmed = str.trim()
+
+  // Check for quoted string list pattern: "value1", "value2"
+  // This is the most common case for device-stack arrays
+  // Use a more permissive regex that handles various characters in values
+  if (/^"[^"]*"(\s*,\s*"[^"]*")+$/.test(trimmed)) {
+    return true
+  }
+
+  // Check for number list pattern: 123, 456
+  if (/^-?\d+(\.\d+)?(\s*,\s*-?\d+(\.\d+)?)+$/.test(trimmed)) {
+    return true
+  }
+
+  // Check for boolean list pattern: ?0, ?1
+  if (/^\?[01](\s*,\s*\?[01])+$/.test(trimmed)) {
+    return true
+  }
+
+  // Check for mixed pattern starting with quote
+  // This catches arrays like: "value", 123, ?1
+  if (trimmed.startsWith('"') && trimmed.includes('",')) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Known field names that are always arrays when encoded as structured field lists
+ * These get converted regardless of pattern matching
+ */
+const KNOWN_ARRAY_FIELDS = new Set([
+  "device-stack",
+  "as", // genesis-wasm tag
+])
+
+/**
  * Parse signature header into individual signatures
  * Format: "name1=:base64sig1:, name2=:base64sig2:"
  * Returns: { name1: "base64sig1", name2: "base64sig2" }
@@ -200,29 +253,47 @@ export const commit = async (obj, opts) => {
   // Find the signature name (they share the same name)
   const sigName = Object.keys(signatures)[0]
 
-  // Parse ao-types to identify list fields that should be excluded from committed keys
-  // HyperBEAM converts arrays to +link references, which would cause commitment validation to fail
+  // Parse ao-types to identify fields explicitly marked as "list"
+  // These are excluded from committedKeys since HyperBEAM converts them to +link references
   const aoTypes = parseAoTypes(msg.headers["ao-types"])
-  const listFields = new Set(
+  const explicitListFields = new Set(
     Object.entries(aoTypes)
       .filter(([_, type]) => type === "list")
       .map(([field, _]) => field)
   )
 
-  // Convert list fields from structured field strings to proper arrays
-  // This is needed because HTTP headers encode arrays as structured field lists (strings)
-  // but HyperBEAM expects proper JSON arrays in the body
-  for (const field of listFields) {
-    if (body[field] && typeof body[field] === "string") {
-      body[field] = parseStructuredFieldList(body[field])
+  // Track which fields were converted from structured field lists to arrays
+  // These fields are NOT excluded from committedKeys (unlike explicit list fields)
+  const detectedArrayFields = new Set()
+
+  // Convert ALL structured field list strings to proper arrays
+  // This handles:
+  // 1. Explicit list fields (marked in ao-types)
+  // 2. Known array fields (device-stack, as, etc.)
+  // 3. Arrays detected by pattern matching
+  for (const [key, value] of Object.entries(body)) {
+    if (typeof value === "string") {
+      const shouldConvert =
+        explicitListFields.has(key) ||
+        KNOWN_ARRAY_FIELDS.has(key) ||
+        isStructuredFieldList(value)
+
+      if (shouldConvert) {
+        body[key] = parseStructuredFieldList(value)
+        if (!explicitListFields.has(key)) {
+          detectedArrayFields.add(key)
+        }
+      }
     }
   }
 
   // Beta3 requires 'committed' array listing the signed keys in each commitment
-  // Exclude list fields as they get converted to +links by HyperBEAM
+  // Exclude both explicit list fields AND detected array fields from committedKeys
+  // because HyperBEAM converts arrays to +link references, which breaks commitment validation
+  // (the signed value was a string, but actual value becomes a link)
   const committedKeys = components
     .map(v => (v === "@path" ? "path" : v))
-    .filter(key => !listFields.has(key))
+    .filter(key => !explicitListFields.has(key) && !detectedArrayFields.has(key))
 
   // Beta3: Create single RSA commitment
   // The HMAC signature is server-side only (for "constant:ao" keyid)
