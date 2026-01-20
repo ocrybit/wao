@@ -600,29 +600,47 @@ Tests are organized into categories based on their requirements:
 
 | Directory | Description | Requirements |
 |-----------|-------------|--------------|
-| `hb-success/` | Tests that pass with standard setup | Basic HyperBEAM + wao@1.0 device |
+| `hb-success-beta3/` | Tests verified for HyperBEAM beta3 | Basic HyperBEAM beta3 setup |
 | `hb-genesis/` | Tests requiring genesis-wasm | CU server + genesis-wasm device |
 | `hb-fail/` | Tests with known failures | Various issues |
 | `hb-hang/` | Tests with known hang issues | Missing scripts or timing issues |
 | `hb-tutorials/` | Tutorial-based tests | May require additional setup |
 
-### Run Simple Test
+### Run Simple Test (Beta3)
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/simple.test.js
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js
 ```
 
-### Run All hb-success Tests
+### Run All Beta3 Tests (23 test files, 50+ tests)
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/*.test.js
+# Run tests one by one (recommended)
+for f in test/hyperbeam/hb-success-beta3/*.test.js; do
+  echo "Testing: $f"
+  node --experimental-wasm-memory64 --test --test-concurrency=1 "$f"
+done
 ```
 
 ### Run Specific Test File
 
 ```bash
-node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success/meta.test.js
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/scheduler.test.js
 ```
+
+### Beta3 Test Files (All Pass)
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| simple.test.js | 1 | Basic connectivity |
+| meta.test.js | 3 | Metadata endpoints |
+| message.test.js | 2 | Message handling |
+| json.test.js | 3 | JSON device |
+| scheduler.test.js | 4 | Process scheduling |
+| process.test.js | 4 | Process spawn/compute |
+| server.test.js | 2 | Server persistence |
+| hyperbeam.test.js | 7 | Integration tests |
+| + 15 more... | ~24 | Various device tests |
 
 ### Run Genesis-WASM Tests
 
@@ -958,24 +976,45 @@ This ensures the CU server uses the configured proxy instead of trying to reach 
 
 ### Prerequisites
 
-1. Clone arjson (specific version):
+1. Clone arjson (specific version) and install dependencies:
 ```bash
 cd /home/user
 git clone https://github.com/weavedb/arjson.git
 cd arjson && git checkout 62adab7
-cd sdk && npm install
+cd sdk && npm install && npm install ramda
 ```
 
-2. Download TinyLlama model (for LLM tests):
+**Note:** The `ramda` package is required but missing from arjson's package.json.
+
+2. Download TinyLlama model (for LLM tests, ~483MB):
 ```bash
-cd /path/to/wao
+cd ~/wao
 curl -L -o tinyllama.gguf "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
 ```
 
 ### Running Tests
 
+Run each test file individually:
 ```bash
-node --experimental-wasm-memory64 src/run.js --memory --port 4000 &
-npm run test -- test/legacynet/*.test.js
-pkill -f "src/run.js"
+# extension.test.js - requires arjson
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/extension.test.js
+
+# llm.test.js - requires tinyllama.gguf (~3 min)
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/llm.test.js
+
+# main.test.js - 28/30 pass, 2 skipped
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/main.test.js
+
+# server.test.js - 8/9 pass, 1 skipped
+node --experimental-wasm-memory64 --test --test-concurrency=1 test/legacynet/server.test.js
 ```
+
+### Expected Results
+
+| Test File | Pass | Skip | Total |
+|-----------|------|------|-------|
+| extension.test.js | 2 | 0 | 2 |
+| llm.test.js | 1 | 0 | 1 |
+| main.test.js | 28 | 2 | 30 |
+| server.test.js | 8 | 1 | 9 |
+| **Total** | **39** | **3** | **42** |
