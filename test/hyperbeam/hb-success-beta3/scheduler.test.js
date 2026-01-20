@@ -69,7 +69,7 @@ async function scheduleMessage(hb, pid, tags = {}) {
   }
 }
 
-describe("HyperBEAM Scheduler (Beta3)", function () {
+describe("HyperBEAM Scheduler", function () {
   let hb, hbeam
 
   before(async () => {

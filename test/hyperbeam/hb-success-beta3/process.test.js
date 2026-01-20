@@ -69,7 +69,7 @@ async function scheduleMessage(hb, pid, tags = {}) {
   }
 }
 
-describe("HyperBEAM Process (Beta3)", function () {
+describe("HyperBEAM Process", function () {
   let hb, hbeam
 
   before(async () => {
@@ -146,4 +146,3 @@ describe("HyperBEAM Process (Beta3)", function () {
     console.log("Slot info:", slotInfo)
   })
 })
-

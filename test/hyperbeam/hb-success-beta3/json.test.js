@@ -2,7 +2,7 @@ import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
 import HyperBEAM from "../../../src/hyperbeam.js"
 
-describe("Hyperbeam Device (Beta3)", function () {
+describe("Hyperbeam Device", function () {
   let hb, hbeam
   before(async () => (hbeam = await new HyperBEAM({ reset: true, timeout: 60 }).ready()))
   beforeEach(async () => (hb = hbeam.hb))

@@ -4,7 +4,7 @@ import HyperBEAM from "../../../src/hyperbeam.js"
 import { extractPubKey } from "hbsig"
 import { toAddr } from "../../../src/test.js"
 
-describe("Hyperbeam Device (Beta3)", function () {
+describe("Hyperbeam Device", function () {
   let hb, hbeam
   before(async () => (hbeam = await new HyperBEAM({ reset: true, timeout: 60 }).ready()))
   beforeEach(async () => (hb = hbeam.hb))
