@@ -8,6 +8,18 @@ import devs from "./devs.js"
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.hyperbeam" })
 
+// HyperBEAM version paths
+const HB_PATHS = {
+  beta1: "/root/HyperBEAM-beta1",
+  beta3: "/root/HyperBEAM",
+}
+
+// Get default CWD based on HB_VERSION (default: beta3)
+function getDefaultCwd() {
+  const version = process.env.HB_VERSION || "beta3"
+  return process.env.CWD || HB_PATHS[version] || HB_PATHS.beta3
+}
+
 export default class HyperBEAM {
   static OPERATOR = Symbol("operator")
   constructor({
@@ -18,7 +30,7 @@ export default class HyperBEAM {
     gateway,
     wallet = ".wallet.json",
     reset,
-    cwd = process.env.CWD ?? "/root/HyperBEAM-beta1",
+    cwd = getDefaultCwd(),
     c,
     cmake,
     faff,

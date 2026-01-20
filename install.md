@@ -138,12 +138,11 @@ npm install
 cd hbsig && yarn install && yarn build && cd ..
 npm install  # Re-install to link local hbsig
 
-# 10. Create .env.hyperbeam pointing to beta3
+# 10. Create .env.hyperbeam (beta3 is default, no CWD needed)
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
-CWD=/root/HyperBEAM
 EOF
 
 # 11. Run all tests (prometheus errors are expected but non-fatal)
@@ -439,15 +438,18 @@ ls -la ~/HyperBEAM/.wallet.json
 
 ### Configure .env.hyperbeam for Beta3
 
+Beta3 is the default version, so `CWD` is not required:
+
 ```bash
 cd /path/to/wao
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
-CWD=/root/HyperBEAM
 EOF
 ```
+
+To use beta1 instead, set `HB_VERSION=beta1` or `CWD=/root/HyperBEAM-beta1`.
 
 ### Beta3 Notes
 
@@ -739,12 +741,13 @@ rebar3 as test compile
 
 ## Environment Variables Reference
 
-| Variable | Description | Required Value |
-|----------|-------------|----------------|
-| `ARWEAVE_GATEWAY` | Arweave proxy URL for HyperBEAM | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY) |
-| `GATEWAY_URL` | Arweave proxy URL for CU server | `https://arweave-proxy.ocrybit.workers.dev` (MANDATORY for genesis-wasm) |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ARWEAVE_GATEWAY` | Arweave proxy URL for HyperBEAM | (MANDATORY) `https://arweave-proxy.ocrybit.workers.dev` |
+| `GATEWAY_URL` | Arweave proxy URL for CU server | (MANDATORY for genesis-wasm) |
 | `HB_REBAR3` | Use rebar3 mode | `false` (MANDATORY - rebar3 mode hangs) |
-| `CWD` | HyperBEAM installation directory | `~/HyperBEAM-beta1` (optional) |
+| `HB_VERSION` | HyperBEAM version to use | `beta3` (default), `beta1` |
+| `CWD` | HyperBEAM installation directory | Auto-set by `HB_VERSION`: beta3=`~/HyperBEAM`, beta1=`~/HyperBEAM-beta1` |
 
 ---
 
@@ -830,7 +833,7 @@ Located in `installation/` folder:
   - [ ] `ARWEAVE_GATEWAY="https://arweave-proxy.ocrybit.workers.dev"`
   - [ ] `GATEWAY_URL="https://arweave-proxy.ocrybit.workers.dev"`
   - [ ] `HB_REBAR3=false`
-- [ ] `.env.hyperbeam` file created with `CWD=/root/HyperBEAM`
+- [ ] `.env.hyperbeam` file created (CWD not needed - beta3 is default)
 
 ### Verify Installation
 - [ ] `dev_wao.beam` exists in `_build/default/lib/hb/ebin/`
