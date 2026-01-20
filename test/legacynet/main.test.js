@@ -130,9 +130,10 @@ describe("GraphQL", () => {
 
 describe("Aoconnect", () => {
   it("should work with pre-loaded packages", async () => {
-    const mem = new ArMem()
+    const server = new Server({ port: 4000, log: false })
     const ar = new AR({ host: "localhost", port: 4000 })
     await ar.post({ data: "abc", tags: { test: 3 }, jwk })
+    server.end()
   })
   it("should spawn a process and send messages", async () => {
     const mem = new ArMem()
