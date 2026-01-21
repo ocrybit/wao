@@ -11,9 +11,18 @@ This document is for Claude (the AI assistant) when helping users build on AO/Ar
 **Workflow:**
 ```
 1. Write Lua code (handlers, state, messages)
-2. Test with WAO SDK (in-memory or HyperBEAM)
+2. Test with HyperBEAM (real behavior verification)
 3. Deploy to network
 ```
+
+**⚠️ IMPORTANT: Always test with HyperBEAM, not just ArMem!**
+
+ArMem (in-memory) is fast but behavior may differ from real execution. HyperBEAM is the source of truth.
+
+| Testing Method | Speed | Fidelity | When to Use |
+|----------------|-------|----------|-------------|
+| ArMem (in-memory) | Fastest | Lower | Quick iteration, syntax checking |
+| **HyperBEAM** | Fast | **High** | **Always before deploy - real behavior** |
 
 **Target Networks:**
 
@@ -26,15 +35,15 @@ This document is for Claude (the AI assistant) when helping users build on AO/Ar
 **Testing Strategy:**
 
 ```javascript
-// 1. In-Memory Testing (ArMem) - Fastest, full Lua execution
+// ArMem - Quick iteration (behavior may differ!)
 import { connect, acc } from "wao/test"
 const { spawn, message, dryrun } = connect()
 
-// 2. HyperBEAM Testing - SDK validation, HTTP signatures
+// HyperBEAM - Real behavior verification (USE THIS!)
 import HyperBEAM from "wao/hyperbeam"
 const hb = await new HyperBEAM({ reset: true }).ready()
 
-// Spawn processes
+// Spawn processes - test all execution modes
 await hb.hb.spawnLua()      // HyperAOS (lua@5.3a)
 await hb.hb.spawnLegacy()   // Legacynet (genesis-wasm@1.0)
 await hb.hb.spawnAOS()      // Mainnet (stack@1.0 + wasi/wasm-64)
@@ -222,13 +231,13 @@ const { pid } = await hb.hb.spawnAOS(imageId)
 
 1. **For app development:**
    - Start with `/vibe/apps/` examples
-   - Use in-memory testing for fast iteration
-   - Graduate to HyperBEAM for integration testing
+   - **Always test with HyperBEAM** - ArMem behavior may differ!
+   - ArMem is OK for quick syntax checks only
 
 2. **For device development:**
    - Start with `/tutorial-devices/` examples
    - Read `docs/docs/pages/book/dev*.mdx` tutorials
-   - Use eunit for unit tests, WAO for integration
+   - Use eunit for unit tests, **WAO + HyperBEAM for integration**
 
 3. **For debugging:**
    - Check `llms.txt` for HyperBEAM internals
@@ -236,9 +245,11 @@ const { pid } = await hb.hb.spawnAOS(imageId)
    - Check message tags for error responses
 
 4. **For deployment:**
-   - Test thoroughly with HyperBEAM first
+   - **Must pass HyperBEAM tests first** (not just ArMem)
    - Use `ao.deploy()` for mainnet
    - Verify with dry runs before state-changing messages
+
+**⚠️ Golden Rule: If it works in ArMem but not HyperBEAM, the HyperBEAM behavior is correct.**
 
 ---
 
