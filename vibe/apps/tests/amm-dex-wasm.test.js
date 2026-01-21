@@ -2,7 +2,12 @@
  * AMM DEX Test Suite - Mainnet WASM (In-Memory)
  *
  * Tests the Uniswap-style AMM DEX using ArMem (in-memory AOS with WASM).
- * Uses aos2_0_1 module which is the actual mainnet WASM execution.
+ *
+ * Available WASM modules:
+ * - aos2_0_6 (latest, variant ao.TN.1) - has state persistence issues
+ * - aos2_0_3
+ * - aos2_0_1 (stable, used by default)
+ * - aos2_0_4_32 (wasm32 format)
  *
  * Test Flow:
  * 1. Write Lua code (amm-dex.lua)
@@ -67,10 +72,11 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
     dryrun = dry
 
     // Spawn process with WASM module
+    // aos2_0_1 is stable; aos2_0_6 has state persistence issues
     pid = await spawn({
       signer,
       scheduler,
-      module: mem.modules.aos2_0_1,  // Mainnet WASM
+      module: mem.modules.aos2_0_1,  // Stable mainnet WASM
     })
     console.log("Process spawned:", pid)
 
