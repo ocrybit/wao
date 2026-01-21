@@ -412,24 +412,129 @@ Figure out what's wrong and fix it.
 
 ---
 
+## Vibe-Coded Examples
+
+The `/vibe` folder contains exhaustive working examples you can learn from and extend. Each example includes the original "vibe prompt" that describes what it does.
+
+### Apps (13 Ready-to-Use Examples)
+
+| App | What It Does | Vibe Prompt |
+|-----|--------------|-------------|
+| **[Counter](/vibe/apps/counter.lua)** | Increment, decrement, reset with history | "Build me a simple counter that tracks who made each change" |
+| **[Token](/vibe/apps/token.lua)** | Fungible token with transfers, minting, burning | "Create a fungible token called VibeToken with 12 decimals" |
+| **[Chatroom](/vibe/apps/chatroom.lua)** | Rooms, members, private messages | "Build a chatroom where users can join rooms and send messages" |
+| **[Todo](/vibe/apps/todo.lua)** | Tasks with priorities, categories, stats | "Create a todo app with priorities and productivity stats" |
+| **[Voting DAO](/vibe/apps/voting-dao.lua)** | Proposals, voting, execution | "Build a DAO where token holders can create proposals and vote" |
+| **[Auction](/vibe/apps/auction.lua)** | English & Dutch auctions, escrow | "Create an auction house with automatic settlement" |
+| **[NFT Collection](/vibe/apps/nft-collection.lua)** | Mint, transfer, metadata, royalties | "Build an NFT collection with minting and transfers" |
+| **[Staking Pool](/vibe/apps/staking-pool.lua)** | Stake, earn, compound rewards | "Create a staking pool with compound interest" |
+| **[KV Store](/vibe/apps/kv-store.lua)** | Namespaces, TTL, access control | "Build a key-value database with TTL and access control" |
+| **[Social Feed](/vibe/apps/social-feed.lua)** | Posts, follows, likes, comments | "Build a Twitter-like social feed" |
+| **[Lottery](/vibe/apps/lottery.lua)** | Tickets, random drawing, prize tiers | "Create a lottery with automatic prize distribution" |
+| **[Escrow](/vibe/apps/escrow.lua)** | Secure trades, disputes, arbitration | "Build an escrow service for peer-to-peer trades" |
+| **[AMM DEX](/vibe/apps/amm-dex.lua)** | Liquidity pools, swaps, constant product | "Build a Uniswap-style DEX with liquidity pools" |
+
+### Devices (4 Infrastructure Examples)
+
+| Device | What It Does | Vibe Prompt |
+|--------|--------------|-------------|
+| **[Rate Limiter](/vibe/devices/rate-limiter.lua)** | Throttle messages per address | "Create a device that rate limits incoming messages" |
+| **[Access Control](/vibe/devices/access-control.lua)** | Roles, permissions, hierarchy | "Create an access control device with roles and permissions" |
+| **[Analytics](/vibe/devices/analytics.lua)** | Track usage, generate reports | "Create an analytics device that tracks all message activity" |
+| **[Logger](/vibe/devices/logger.lua)** | Log levels, search, export | "Create a logging device with log levels and filtering" |
+
+### Using the Examples
+
+**Copy and customize:**
+```
+Take the voting-dao.lua example and customize it:
+- Rename it to "Project Governance"
+- Change quorum to 20%
+- Add a proposal deposit of 1000 tokens
+- Run tests to verify it works
+```
+
+**Combine examples:**
+```
+Build me an NFT marketplace by combining:
+- The NFT collection for tokens
+- The auction system for sales
+- The escrow for secure trades
+Add a 2.5% marketplace fee on all sales.
+```
+
+**Learn patterns:**
+```
+Show me how the staking pool calculates compound interest.
+Explain the access control device's role hierarchy.
+```
+
+---
+
+## What You Can Build
+
+With vibe coding, you can build virtually any application:
+
+### DeFi (Decentralized Finance)
+- Tokens, stablecoins, wrapped assets
+- AMM DEXs (Uniswap-style)
+- Lending protocols
+- Yield farming, staking pools
+- Options, futures, derivatives
+
+### NFTs & Digital Assets
+- Art collections with royalties
+- Gaming items with attributes
+- Membership passes
+- Domain names
+
+### DAOs & Governance
+- Proposal systems
+- Voting with token weight
+- Treasury management
+- Multi-sig wallets
+
+### Social Applications
+- Social feeds, microblogging
+- Messaging, chatrooms
+- Reputation systems
+- Content moderation
+
+### Gaming
+- Lotteries, raffles
+- Auctions, bidding wars
+- Turn-based games
+- Tournaments, leaderboards
+
+### Infrastructure
+- Databases (key-value stores)
+- Analytics, logging
+- Rate limiting, access control
+- Oracles, bridges
+
+**Just describe what you want and Claude will build it!**
+
+---
+
 ## Ideas to Build
 
-### Easy
-- **Todo List** - Add, complete, and delete tasks
-- **Scoreboard** - Track high scores for a game
+### Beginner Projects
 - **Tip Jar** - Accept token tips and track donors
+- **Scoreboard** - Track high scores for a game
+- **Poll** - Quick voting on multiple options
+- **Guestbook** - Leave messages with timestamps
 
-### Medium
-- **Auction** - Time-limited bidding on items
-- **Subscription** - Recurring payments with token transfers
-- **Multi-sig Wallet** - Require multiple approvals for transfers
+### Intermediate Projects
+- **Subscription Service** - Recurring token payments
+- **Crowdfunding** - Fund projects with milestones
+- **Loyalty Points** - Earn and redeem rewards
+- **Referral System** - Track and reward referrals
 
-### Advanced
-- **DEX** - Decentralized exchange for swapping tokens
-- **DAO** - Governance with proposals and voting
-- **Game** - Turn-based game with multiple players
-
-Just describe what you want and let Claude build it!
+### Advanced Projects
+- **Prediction Market** - Bet on outcomes
+- **Bonding Curve Token** - Price based on supply
+- **Flash Loans** - Borrow within a single transaction
+- **Cross-chain Bridge** - Move assets between chains
 
 ---
 
@@ -468,6 +573,65 @@ Explain it with a simple example.
 
 ---
 
+## Common Patterns in Vibe-Coded Apps
+
+### State Management Pattern
+```lua
+-- Lazy initialization - state persists between messages
+Balances = Balances or {}
+Config = Config or { fee = 100, owner = ao.env.Process.Owner }
+```
+
+### Handler Pattern
+```lua
+-- Tag-based routing
+Handlers.add("Transfer", "Transfer", function(msg)
+  -- Validate inputs
+  if not msg.Tags.Recipient then
+    msg.reply({ Tags = { Error = "Recipient-Required" } })
+    return
+  end
+  -- Execute logic
+  -- Reply with result
+  msg.reply({ Data = json.encode({ success = true }) })
+end)
+```
+
+### Access Control Pattern
+```lua
+-- Owner-only actions
+Owner = Owner or ao.env.Process.Owner
+
+if msg.From ~= Owner then
+  msg.reply({ Tags = { Error = "Unauthorized" } })
+  return
+end
+```
+
+### Notification Pattern
+```lua
+-- Notify other processes
+ao.send({
+  Target = recipient,
+  Tags = { Action = "Credit-Notice", Amount = quantity },
+  Data = json.encode({ from = sender, amount = quantity })
+})
+```
+
+### Error Handling Pattern
+```lua
+-- Validate and return structured errors
+if balance < amount then
+  msg.reply({
+    Tags = { Error = "Insufficient-Balance" },
+    Data = json.encode({ have = balance, need = amount })
+  })
+  return
+end
+```
+
+---
+
 ## Summary
 
 | Testing Mode | Speed | Execution | Best For |
@@ -480,5 +644,10 @@ Explain it with a simple example.
 1. Build and test with in-memory (ArMem) for fast iteration
 2. Validate SDK operations with HyperBEAM test-device
 3. Deploy to mainnet when ready
+
+**Explore the examples:**
+- Browse `/vibe/apps/` for 13 ready-to-use applications
+- Browse `/vibe/devices/` for 4 infrastructure components
+- Each example includes the original vibe prompt that created it
 
 Open [Claude Code](https://claude.ai/code), describe what you want to create, and start vibing!
