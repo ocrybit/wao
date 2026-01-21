@@ -4,18 +4,32 @@
 
 **Everything pre-compiled. No build steps. Just extract and run.**
 
+### Download Pre-built Tarballs
+
+```bash
+# From Cloudflare R2 (fast, free egress)
+curl -LO https://pub-XXXXXXXX.r2.dev/wao/asdf-erlang-rebar.tar.xz
+curl -LO https://pub-XXXXXXXX.r2.dev/wao/hyperbeam-wao-ready.tar.xz
+curl -LO https://pub-XXXXXXXX.r2.dev/wao/wao-node-modules.tar.xz
+```
+
+> **Note:** Replace `pub-XXXXXXXX.r2.dev` with actual R2 bucket URL after upload.
+> R2 free tier: 10GB storage, unlimited egress - perfect for distribution.
+
+### Install
+
 ```bash
 # 1. Extract Erlang + HyperBEAM (fully configured with wao@1.0)
 cd ~
-tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
-tar -xJf /path/to/wao/installation/hyperbeam-wao-ready.tar.xz
+tar -xJf asdf-erlang-rebar.tar.xz
+tar -xJf hyperbeam-wao-ready.tar.xz
 . ~/.asdf/asdf.sh
 asdf global erlang 27.3.4.6
 asdf global rebar 3.26.0
 
 # 2. Extract pre-built WAO dependencies
 cd /path/to/wao
-tar -xJf installation/wao-node-modules.tar.xz
+tar -xJf ~/wao-node-modules.tar.xz  # Or wherever you downloaded it
 
 # 3. Set environment
 echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
