@@ -3,16 +3,16 @@
 ## Overview
 
 This report covers testing of both:
-- **Lua Apps** - AOS processes running on HyperBEAM via genesis-wasm
+- **Lua Apps** - AOS processes running on HyperBEAM via native lua@5.3a
 - **Erlang Devices** - HyperBEAM infrastructure components
 
 ## Summary
 
 | Category | Environment | Status | Tests |
 |----------|-------------|--------|-------|
-| **Lua Apps** | HyperBEAM (genesis-wasm) | ✅ PASS | 22/22 |
-| **Erlang Devices** | Eunit | ✅ READY | 8 devices |
-| **Erlang Devices** | WAO/HyperBEAM | 📋 READY | Tests written |
+| **Lua Apps** | HyperBEAM (lua@5.3a) | PASS | 30/30 |
+| **Erlang Devices** | Eunit | READY | 8 devices |
+| **Erlang Devices** | WAO/HyperBEAM | READY | Tests written |
 
 ---
 
@@ -20,79 +20,115 @@ This report covers testing of both:
 
 ### Test Results
 
-All 22 tests pass using HyperBEAM with genesis-wasm execution device.
+All 30 tests pass using HyperBEAM with native lua@5.3a execution device.
 
-**Run time:** ~84 seconds (includes HyperBEAM startup)
+**Run time:** ~45 seconds (includes HyperBEAM startup)
 
-#### Basic Apps (5 apps, 17 tests)
+#### Server Status (3 tests)
+
+| Test | Status |
+|------|--------|
+| HyperBEAM running | PASS |
+| lua@5.3a available | PASS |
+| Lua module cached | PASS |
+
+#### Basic Lua Process (4 tests)
+
+| Test | Status |
+|------|--------|
+| Spawn Lua process | PASS |
+| Schedule to process | PASS |
+| Get process info | PASS |
+| Get slot assignments | PASS |
+
+#### Lua Apps (9 apps, 23 tests)
 
 | App | Tests | Status |
 |-----|-------|--------|
-| Counter | 5 | ✅ PASS |
-| Token | 3 | ✅ PASS |
-| Todo | 2 | ✅ PASS |
-| Chatroom | 2 | ✅ PASS |
-| KV Store | 2 | ✅ PASS |
-
-#### Advanced Apps (6 apps, 8 tests)
-
-| App | Tests | Status |
-|-----|-------|--------|
-| Voting DAO | 2 | ✅ PASS |
-| NFT Collection | 1 | ✅ PASS |
-| AMM DEX | 1 | ✅ PASS |
-| Lottery | 1 | ✅ PASS |
-| Escrow | 1 | ✅ PASS |
-| Social Feed | 2 | ✅ PASS |
+| Counter | 4 | PASS |
+| Token | 3 | PASS |
+| Todo | 3 | PASS |
+| KV Store | 3 | PASS |
+| Chatroom | 2 | PASS |
+| Voting DAO | 2 | PASS |
+| NFT Collection | 2 | PASS |
+| AMM DEX | 2 | PASS |
+| Social Feed | 2 | PASS |
 
 ### Running Lua App Tests
 
 ```bash
-HB_TIMEOUT=180 node --experimental-wasm-memory64 --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 ```
 
 ### Architecture
 
-The tests use:
-1. **HyperBEAM** - Process spawning and message scheduling
-2. **genesis-wasm@1.0** - Execution device for Lua/WASM
-3. **Direct CU calls** - Compute and dry-run queries (bypasses beta3 prometheus bug)
+The tests use **native lua@5.3a** execution device which runs Lua code directly in HyperBEAM via luerl (Lua implemented in Erlang). **NO external CU required.**
 
 ```
-┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
-│   Test Suite     │───▶│   HyperBEAM     │───▶│   CU Server  │
-│                  │    │   (spawn/sched) │    │   (compute)  │
-└──────────────────┘    └─────────────────┘    └──────────────┘
-         │                                              ▲
-         └──────────────────────────────────────────────┘
-                        Direct CU calls
+┌──────────────────┐    ┌─────────────────────────────────┐
+│   Test Suite     │───▶│   HyperBEAM                     │
+│                  │    │   ├── lua@5.3a (luerl)          │
+│                  │    │   ├── process@1.0               │
+│                  │    │   └── scheduler@1.0             │
+└──────────────────┘    └─────────────────────────────────┘
 ```
+
+Key components:
+- **lua@5.3a** - Native Lua execution device using luerl (Lua in Erlang)
+- **hyper-aos.js** - Cached Lua runtime module (base64 encoded)
+- **process@1.0** - Process lifecycle management
+- **scheduler@1.0** - Message scheduling and slot management
 
 ### Test Pattern
 
 ```javascript
-// Spawn process
-const { pid } = await hb.spawnLegacy()
+// Spawn native Lua process
+const { pid } = await spawnLuaProcess(hb, luaCode)
 
-// Load Lua code
-const { slot } = await hb.scheduleLegacy({ pid, data: luaCode })
-await cuCompute(hb, pid, slot)  // Direct CU call
+// Schedule message
+const { slot } = await scheduleLuaMessage(hb, pid, { action: "Inc" })
 
-// Send action and get result
-const { slot: slot2 } = await hb.scheduleLegacy({ pid, action: "Inc" })
-await cuCompute(hb, pid, slot2)
-
-// Query current state
-const result = await cuDryrun(hb, pid, "Get")
+// Compute state at slot
+const result = await computeLua(hb, pid, slot)
 ```
 
-### Known Issues
+### Helper Functions
 
-#### Beta3 Prometheus Bug
-HyperBEAM beta3's relay/compute has a bug in `prometheus_http:status_class` that crashes when processing CU responses. **Workaround:** Direct CU calls using `cuCompute()` and `cuDryrun()`.
+```javascript
+// Spawn Lua process with code embedded
+async function spawnLuaProcess(hb, luaCode) {
+  const moduleId = await hb.getLua()  // Cache Lua runtime
+  const tags = {
+    "execution-device": "lua@5.3a",
+    module: moduleId,
+    "push-device": "push@1.0",
+    // ... other tags
+  }
+  if (luaCode) tags.data = luaCode
+  // POST to scheduler
+}
 
-#### lua@5.3a Not Working
-The native `lua@5.3a` execution device (luerl) returns 500 errors during compute. Use `genesis-wasm@1.0` instead.
+// Schedule message to process
+async function scheduleLuaMessage(hb, pid, { action, data, tags }) {
+  // POST committed message to scheduler
+}
+
+// Compute process state at slot
+async function computeLua(hb, pid, slot) {
+  return await hb.g(`/${pid}~process@1.0/compute`, { slot })
+}
+```
+
+### lua@5.3a vs genesis-wasm
+
+| Feature | lua@5.3a | genesis-wasm@1.0 |
+|---------|----------|------------------|
+| Execution | In-process (luerl) | External CU server |
+| CU Required | No | Yes |
+| Speed | Fast | Slower (network) |
+| Setup | Simple | Requires CU start |
+| Memory | Erlang VM | WASM runtime |
 
 ---
 
@@ -237,7 +273,7 @@ wao/
 │   │   ├── token.lua
 │   │   └── ...
 │   └── tests/
-│       └── hyperbeam.test.js    # HyperBEAM tests (22 tests)
+│       └── hyperbeam.test.js    # HyperBEAM tests (30 tests)
 │
 ├── tutorial-devices/            # 8 Erlang devices
 │   ├── dev_kv.erl              # Existing
@@ -259,8 +295,8 @@ wao/
 
 ## Recommendations
 
-1. **Lua Apps**: Test with HyperBEAM + genesis-wasm for production verification
-2. **Direct CU Calls**: Use `cuCompute()` and `cuDryrun()` to bypass beta3 bugs
+1. **Lua Apps**: Use native lua@5.3a for simple Lua execution (no CU needed)
+2. **Complex WASM**: Use genesis-wasm@1.0 if you need full AOS WASM runtime
 3. **Erlang Devices**: Use eunit for unit tests, WAO for integration tests
 4. **Avoid AOS Globals**: Use prefixed names (e.g., `TokenName` not `Name`)
 5. **Response Format**: Lua apps use `msg.reply({ Data = json.encode(...) })`
