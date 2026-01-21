@@ -202,11 +202,10 @@ const smartSign = async (obj, path) => {
         ) {
           types.push(`${key}="empty-message"`)
         } else if (isSimpleArray(value)) {
-          // NOTE: We intentionally do NOT add list to ao-types here.
-          // HyperBEAM converts arrays marked as "list" to +link references,
-          // which breaks commitment validation. By omitting the type hint,
-          // HyperBEAM treats this as a regular string and preserves the value.
-          // The array is encoded as a structured field list string.
+          // Add list to ao-types so HyperBEAM knows this is an array
+          // Arrays are excluded from signing (via knownArrayFields), so the +link
+          // conversion won't break commitment validation
+          types.push(`${key}="list"`)
           message[key] = encodeAsStructuredFieldList(value)
         } else if (typeof value === "number") {
           types.push(
@@ -384,16 +383,36 @@ async function _sign({
   // These get converted to +link references by HyperBEAM, breaking commitment validation
   const knownArrayFields = new Set(["device-stack", "as"])
 
+  // Metadata fields that are not part of the message body
+  // These get removed from the final committed message, so should not be signed
+  const metadataFields = new Set(["inline-body-key"])
+
+  // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
+  // "authority" conflicts with the HTTP :authority pseudo-header - when HyperBEAM
+  // reconstructs the signature base, it sees the HTTP header value instead of our message field
+  // "content-digest" conflicts because we sign the digest computed during encoding, but
+  // when using commit + JSON POST, HyperBEAM computes a different digest from the HTTP body
+  const httpPseudoHeaders = new Set(["authority", "content-digest"])
+
+  // Check if ao-types contains any "list" declarations
+  // If so, exclude ao-types from signing because HyperBEAM converts lists to +link references
+  // which changes the ao-types value and breaks commitment validation
+  const hasListInAoTypes = aoTypes.includes('"list"')
+
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    // Exclude body-keys, path, body keys, list fields, and known array fields from signing
+    // Exclude body-keys, path, body keys, list fields, known array fields, metadata fields, and HTTP pseudo-headers from signing
+    // Also exclude ao-types if it contains list declarations (they get converted to links)
     return (
       key !== "body-keys" &&
       key !== "path" &&
       !bodyKeys.includes(key) &&
       !listFields.has(key) &&
-      !knownArrayFields.has(key)
+      !knownArrayFields.has(key) &&
+      !metadataFields.has(key) &&
+      !httpPseudoHeaders.has(key) &&
+      !(key === "ao-types" && hasListInAoTypes)
     )
   })
 

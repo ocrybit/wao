@@ -291,9 +291,27 @@ export const commit = async (obj, opts) => {
   // Exclude both explicit list fields AND detected array fields from committedKeys
   // because HyperBEAM converts arrays to +link references, which breaks commitment validation
   // (the signed value was a string, but actual value becomes a link)
+  // Also exclude inline-body-key as it's metadata that gets removed from the final body
+  const metadataFields = new Set(["inline-body-key"])
+
+  // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
+  // "authority" conflicts with the HTTP :authority pseudo-header
+  // "content-digest" conflicts when using commit + JSON POST (different HTTP body)
+  const httpPseudoHeaders = new Set(["authority", "content-digest"])
+
+  // Check if ao-types contains any "list" declarations (from explicit or detected lists)
+  // If so, exclude ao-types from committed fields because HyperBEAM converts lists to +link references
+  const hasListTypes = explicitListFields.size > 0 || detectedArrayFields.size > 0
+
   const committedKeys = components
     .map(v => (v === "@path" ? "path" : v))
-    .filter(key => !explicitListFields.has(key) && !detectedArrayFields.has(key))
+    .filter(key =>
+      !explicitListFields.has(key) &&
+      !detectedArrayFields.has(key) &&
+      !metadataFields.has(key) &&
+      !httpPseudoHeaders.has(key) &&
+      !(key === "ao-types" && hasListTypes)
+    )
 
   // Beta3: Create single RSA commitment
   // The HMAC signature is server-side only (for "constant:ao" keyid)
