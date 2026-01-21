@@ -12,7 +12,6 @@ By the end of this guide, you'll have created:
 - **Counter** - A simple app that counts up and down
 - **Token** - A cryptocurrency with transfers and minting
 - **Messenger** - A chat system where processes talk to each other
-- **Custom Devices** - Extend HyperBEAM with new capabilities
 
 All running on AO's decentralized hypercomputer.
 
@@ -29,26 +28,71 @@ Go to [claude.ai/code](https://claude.ai/code) and start a new session.
 Tell Claude:
 
 ```
-Install HyperBEAM beta3 and the WAO SDK so I can build AO apps locally.
-Set up a new project called "my-ao-apps".
+Clone the WAO repository and set up the development environment.
+I want to build AO apps with full testing support.
 ```
 
 Claude will:
-- Install Node.js if needed
-- Create your project folder
-- Install WAO (the AO development kit)
-- Configure everything for beta3
+- Clone the WAO SDK
+- Install dependencies
+- Set up the testing environment
 
 ### Step 3: Verify It Works
 
 Tell Claude:
 
 ```
-Run a quick test to make sure everything is working.
-Spawn a test process and send it a message.
+Run the counter tests to make sure everything is working.
 ```
 
-If you see a process ID and successful message, you're ready to build!
+You should see all tests pass.
+
+---
+
+## Understanding the Three Execution Modes
+
+AO has three ways to run your code:
+
+### 1. In-Memory (ArMem) - For Development
+
+**What it is:** A fast JavaScript emulator that runs AO locally in memory.
+
+**Best for:** Development, testing, rapid iteration.
+
+**Speed:** 1000x faster than network testing.
+
+**Tell Claude:**
+```
+Build me a counter app with in-memory tests using ArMem.
+```
+
+### 2. HyperBEAM Test Device - For SDK Validation
+
+**What it is:** A local HyperBEAM node with basic validation (no Lua execution).
+
+**Best for:** Testing SDK operations (spawn, schedule, message signing).
+
+**Speed:** Moderate (requires starting local node).
+
+**Tell Claude:**
+```
+Create HyperBEAM tests for my counter app using test-device@1.0.
+```
+
+### 3. Full Execution Modes - For Production
+
+These require a properly configured HyperBEAM installation:
+
+| Mode | Execution Device | Requirements |
+|------|-----------------|--------------|
+| **HyperAOS** | `lua@5.3a` | Lua device module |
+| **Legacynet** | `genesis-wasm@1.0` | External CU server |
+| **Mainnet WASM** | `stack@1.0` with device-stack | WASI, WASM-64 modules |
+
+**Tell Claude:**
+```
+What do I need to set up for full HyperAOS execution with lua@5.3a?
+```
 
 ---
 
@@ -75,21 +119,14 @@ It should:
 - Have handlers for: Get (show count), Inc (add 1), Dec (subtract 1), Add (add any number), Reset (back to 0)
 - Return the new count after each operation
 
-Write tests to make sure it all works, then run them.
+Create both in-memory tests and HyperBEAM tests.
+Run all tests to verify it works.
 ```
 
 Claude will create:
 - `counter.lua` - The counter logic
-- `counter.test.js` - Tests that verify everything works
-
-### Try It Out
-
-Once Claude says the tests pass, ask:
-
-```
-Show me how to manually test the counter.
-Increment it 3 times, then add 100, then show me the count.
-```
+- `counter.test.js` - In-memory tests (full Lua execution)
+- `counter.hyperbeam.test.js` - HyperBEAM tests (SDK validation)
 
 ### Understanding What Claude Built
 
@@ -100,11 +137,11 @@ Explain the counter code to me like I'm a beginner.
 What is a handler? What is state? How do messages work?
 ```
 
-Key concepts you'll learn:
-- **State** - The count that remembers its value
-- **Handlers** - Functions that respond when you send actions
-- **Messages** - How you talk to the app
-- **Dryruns** - Checking the count without changing it
+Key concepts:
+- **State** - Variables that persist between messages (`local count = 0`)
+- **Handlers** - Functions that respond to actions
+- **Messages** - State-changing operations
+- **Dryruns** - Read-only queries
 
 ---
 
@@ -133,13 +170,7 @@ It should have:
 - Transfers should send Debit-Notice and Credit-Notice to the parties involved
 
 Use big integers for precise math.
-Write comprehensive tests including:
-- Minting tokens
-- Transferring between accounts
-- Checking balances
-- Burning tokens
-- Approving and using allowances
-
+Write comprehensive in-memory tests.
 Run all the tests.
 ```
 
@@ -157,8 +188,6 @@ Walk me through a scenario:
 ```
 
 ### Customize Your Token
-
-Want changes? Just ask:
 
 ```
 Change the token name to "Awesome Coin" with ticker "AWE".
@@ -178,7 +207,6 @@ A messaging system where:
 - Add contacts (other processes)
 - Send messages between processes
 - Broadcast to all contacts
-- Ping/pong to check if someone's online
 
 ### How to Build It
 
@@ -193,11 +221,10 @@ It should have:
 - Messaging (send to specific contact, receive messages)
 - Inbox and outbox to track messages
 - Broadcast (send to all contacts at once)
-- Ping/Pong (check if a contact is responsive)
 
 Use Send() for delivering messages to other processes via push@1.0.
 
-Write tests with two processes (Alice and Bob) that:
+Write in-memory tests with two processes (Alice and Bob) that:
 - Both register with names
 - Add each other as contacts
 - Exchange messages
@@ -208,16 +235,12 @@ Run all tests.
 
 ### Watch Processes Talk
 
-Ask Claude:
-
 ```
 Show me the message flow when Alice sends "Hello!" to Bob.
 What happens step by step?
 ```
 
 ### The Magic of Inter-Process Communication
-
-This is where AO gets powerful. Ask:
 
 ```
 Explain how Send() and push@1.0 work.
@@ -226,96 +249,41 @@ How does a message get from Alice's process to Bob's process?
 
 ---
 
-## Testing with HyperBEAM Beta3
+## Testing Strategy
 
-So far we've tested in-memory (fast but simulated). Now let's test with real HyperBEAM.
+### Two-Tier Testing
 
-### Why HyperBEAM?
+1. **In-Memory Tests** (`.test.js`)
+   - Fast development iteration
+   - Full Lua execution
+   - All business logic validation
 
-- **In-memory tests** - Fast (milliseconds), great for development
-- **HyperBEAM tests** - Real execution, proves it works in production
+2. **HyperBEAM Tests** (`.hyperbeam.test.js`)
+   - SDK operation validation
+   - HTTP signature testing
+   - Process lifecycle verification
 
-### Run HyperBEAM Tests
-
-Tell Claude:
-
-```
-Create HyperBEAM tests for my counter app.
-Start a local beta3 node, spawn a process, and test the counter operations.
-```
-
-Claude will create `counter.hyperbeam.test.js` that:
-- Starts a local HyperBEAM node
-- Spawns a real process with HTTP signatures
-- Schedules messages through the beta3 protocol
-- Verifies everything works
-
-### Understanding Beta3
-
-Ask Claude:
-
-```
-Explain HyperBEAM beta3 to me:
-- What are devices?
-- What is HTTP message signing?
-- What are slots?
-- How is this different from in-memory testing?
-```
-
----
-
-## Building Custom Devices
-
-Devices extend what HyperBEAM can do. They're like plugins.
-
-### Built-in Devices
+### Run Tests
 
 Tell Claude:
 
 ```
-Explain the main HyperBEAM devices:
-- process@1.0
-- scheduler@1.0
-- push@1.0
-- json-iface@1.0
-- wasm-64@1.0
-
-What does each one do?
+Run all my in-memory tests.
 ```
 
-### Device Composition
-
-Devices stack together. Ask Claude:
-
 ```
-Show me how device stacks work.
-What's the difference between:
-- A basic test process
-- A full WASM AOS process with the mainnet device stack
-
-Create examples of both.
+Run my HyperBEAM tests.
 ```
 
-### Creating Custom Behavior
-
-Tell Claude:
-
 ```
-I want to create a rate-limiter that:
-- Tracks how many messages each sender has sent
-- Rejects messages if someone sends more than 10 per minute
-
-Build this as a Lua module I can add to my apps.
-Write tests for it.
+Run all tests and show me a summary.
 ```
 
 ---
 
 ## Three Types of AOS Apps
 
-Now you understand the three main patterns:
-
-### 1. Stateful Apps (Counter)
+### 1. Stateful Apps (Counter Pattern)
 
 Simple state that changes over time.
 
@@ -324,7 +292,7 @@ Build me an app that tracks a shopping cart.
 Users can add items, remove items, and checkout.
 ```
 
-### 2. Financial Apps (Token)
+### 2. Financial Apps (Token Pattern)
 
 Complex state with validation and notifications.
 
@@ -335,7 +303,7 @@ Build me an NFT collection where:
 - There's a minting limit of 1000
 ```
 
-### 3. Communication Apps (Messenger)
+### 3. Communication Apps (Messenger Pattern)
 
 Multiple processes working together.
 
@@ -349,35 +317,16 @@ Build me a voting system where:
 
 ---
 
-## Putting It All Together
-
-### Full Project
+## Project Structure
 
 Tell Claude:
 
 ```
-Organize my apps into a proper project structure:
+Organize my apps into a proper project structure with:
 - Source files in src/
 - Tests in test/
 - Separate in-memory and HyperBEAM tests
-- A README explaining what each app does
 - NPM scripts to run different test suites
-```
-
-### Run All Tests
-
-```
-Run all my tests - both in-memory and HyperBEAM.
-Show me a summary of what passed and what failed.
-```
-
-### Deploy to Mainnet
-
-When you're ready to go live:
-
-```
-Help me deploy my token app to AO mainnet.
-I have my Arweave wallet at wallet.json.
 ```
 
 ---
@@ -387,7 +336,7 @@ I have my Arweave wallet at wallet.json.
 ### Starting Fresh
 
 ```
-Set up a new AO project with WAO and HyperBEAM beta3.
+Set up a new AO project with WAO SDK.
 ```
 
 ### Building Apps
@@ -427,12 +376,6 @@ Add [feature] to my [app].
 Run the tests to make sure it still works.
 ```
 
-### Deploying
-
-```
-Deploy my [app] to AO mainnet.
-```
-
 ---
 
 ## Common Requests
@@ -443,13 +386,6 @@ Deploy my [app] to AO mainnet.
 Review my token app for security issues.
 Add input validation and error handling.
 Make sure only authorized users can do sensitive operations.
-```
-
-### "Make it faster"
-
-```
-Optimize my app for better performance.
-Are there any inefficient patterns I should fix?
 ```
 
 ### "Add a feature"
@@ -478,8 +414,6 @@ Figure out what's wrong and fix it.
 
 ## Ideas to Build
 
-Once you're comfortable, try these:
-
 ### Easy
 - **Todo List** - Add, complete, and delete tasks
 - **Scoreboard** - Track high scores for a game
@@ -496,6 +430,17 @@ Once you're comfortable, try these:
 - **Game** - Turn-based game with multiple players
 
 Just describe what you want and let Claude build it!
+
+---
+
+## Deployment
+
+When you're ready to go live:
+
+```
+Help me deploy my token app to AO mainnet.
+I have my Arweave wallet ready.
+```
 
 ---
 
@@ -521,26 +466,19 @@ I don't understand [concept].
 Explain it with a simple example.
 ```
 
-### If You Want to Learn More
-
-```
-What else can I build with AO?
-Show me more advanced patterns.
-What are best practices for [topic]?
-```
-
 ---
 
-## You're Ready!
+## Summary
 
-You now know how to:
+| Testing Mode | Speed | Execution | Best For |
+|--------------|-------|-----------|----------|
+| In-Memory (ArMem) | Fastest | Full Lua | Development |
+| HyperBEAM test-device | Moderate | Validation only | SDK testing |
+| Full HyperBEAM | Slower | Full execution | Production |
 
-1. **Set up** - Install beta3 and WAO
-2. **Build** - Create counter, token, and messenger apps
-3. **Test** - Both in-memory and HyperBEAM
-4. **Extend** - Create custom devices and patterns
-5. **Deploy** - Go live on mainnet
+**Recommended workflow:**
+1. Build and test with in-memory (ArMem) for fast iteration
+2. Validate SDK operations with HyperBEAM test-device
+3. Deploy to mainnet when ready
 
-The best way to learn is to build. Open [Claude Code](https://claude.ai/code), describe what you want to create, and start vibing!
-
-Welcome to the future of development. 🎯
+Open [Claude Code](https://claude.ai/code), describe what you want to create, and start vibing!
