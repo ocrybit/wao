@@ -5,22 +5,27 @@
 ## Setup
 
 ```bash
-# 1. Install dependencies
+# 1. Check/install dependencies
 npm install
-cd hbsig && npm install && npm run build && cd ..
+[ -d hbsig/dist ] || (cd hbsig && npm install && npm run build && cd ..)
 npm install
 
-# 2. Setup Erlang via asdf
-git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
-. ~/.asdf/asdf.sh
-asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
-asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6
-asdf install rebar 3.26.0 && asdf global rebar 3.26.0
+# 2. Check Erlang (skip if exists)
+if ! command -v erl &> /dev/null; then
+  git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+  . ~/.asdf/asdf.sh
+  asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
+  asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6
+  asdf install rebar 3.26.0 && asdf global rebar 3.26.0
+fi
+[ -f ~/.asdf/asdf.sh ] && . ~/.asdf/asdf.sh
 
-# 3. Setup HyperBEAM
-git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git ~/HyperBEAM
-cd ~/HyperBEAM && rebar3 compile
-cd -
+# 3. Check HyperBEAM (skip if exists)
+if [ ! -d ~/HyperBEAM ]; then
+  git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git ~/HyperBEAM
+  cd ~/HyperBEAM && rebar3 compile
+  cd -
+fi
 
 # 4. Configure environment
 cat > .env.hyperbeam << 'EOF'
