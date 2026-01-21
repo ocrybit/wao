@@ -5,35 +5,22 @@
 ## Setup
 
 ```bash
-# 1. Source asdf if exists
-[ -f ~/.asdf/asdf.sh ] && . ~/.asdf/asdf.sh
+# 1. Extract tarballs (Erlang, HyperBEAM, node_modules)
+cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
+cd /home/user/wao && tar -xJf installation/wao-node-modules.tar.xz
 
-# 2. Check Erlang (extract tarball if not installed)
-if ! command -v erl &> /dev/null; then
-  cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
-  . ~/.asdf/asdf.sh
-  asdf global erlang 27.3.4.6
-  asdf global rebar 3.26.0
-fi
+# 2. Setup Erlang
+. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# 3. Check HyperBEAM (extract tarball if not exists)
-if [ ! -d ~/HyperBEAM ]; then
-  cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
-fi
-
-# 4. Check node_modules (extract tarball if not exists)
-if [ ! -d node_modules ]; then
-  tar -xJf /home/user/wao/installation/wao-node-modules.tar.xz
-fi
-
-# 5. Configure environment
+# 3. Configure environment
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
-# 6. Verify (30 tests should pass)
-HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+# 4. Verify (1 test should pass)
+. ~/.asdf/asdf.sh && HB_TIMEOUT=30 node --test install.test.js
 ```
 
 ## What is WAO?
@@ -180,11 +167,14 @@ hb.now({ pid })             // Get current state
 ## Test Commands
 
 ```bash
+# Quick install verification (1 test)
+. ~/.asdf/asdf.sh && HB_TIMEOUT=30 node --test install.test.js
+
 # Lua apps on HyperBEAM (30 tests)
-HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 
 # All beta3 tests
-HB_TIMEOUT=60 node --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=60 node --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
 
 # In-memory tests
 npm test
