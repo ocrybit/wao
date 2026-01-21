@@ -129,19 +129,17 @@ npm test -- vibe/apps/tests/amm-dex-wasm.test.js
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| `aos2_0_6` | Latest | **BREAKING**: lowercases custom tag names |
-| `aos2_0_3` | Stable | |
-| `aos2_0_1` | Recommended | Preserves tag case |
+| `aos2_0_6` | **Default** | Use this. Lowercases custom tag names |
+| `aos2_0_3` | Legacy | |
+| `aos2_0_1` | Legacy | Preserves tag case (don't use) |
 | `aos2_0_4_32` | wasm32 | Different format |
 
-**aos2_0_6 Breaking Change:**
+**aos2_0_6 Tag Case Rule:**
 ```lua
--- aos2_0_1: msg.Tags.TokenA = "VALUE"  (preserved)
--- aos2_0_6: msg.Tags.Tokena = "VALUE"  (lowercased!)
--- Reserved tags like "Action" stay capitalized in both
+-- Custom tags are lowercased: TokenA → Tokena, PoolId → Poolid
+-- Reserved tags stay capitalized: Action, Data, From, Target, etc.
+-- Always use lowercase in Lua: msg.Tags.Tokena (not msg.Tags.TokenA)
 ```
-
-Use `aos2_0_1` for existing Lua code, or update tag access to lowercase.
 
 ## Lua App Pattern
 
@@ -293,10 +291,10 @@ When asked to build/test for "mainnet WASM" (not `lua@5.3a`):
 2. **Use absolute paths in setup scripts:**
    After `cd ~`, relative paths like `installation/...` won't work. Use `/home/user/wao/installation/...`.
 
-3. **aos2_0_6 lowercases custom tags:**
-   - `msg.Tags.TokenA` becomes `msg.Tags.Tokena`
+3. **aos2_0_6 lowercases custom tags (this is expected):**
+   - `msg.Tags.TokenA` → `msg.Tags.Tokena`
    - Reserved tags (`Action`, `Data`, etc.) stay capitalized
-   - Use `aos2_0_1` for existing Lua code
+   - Always write Lua code with lowercase: `msg.Tags.Tokena`
 
 4. **Rebuild hbsig after tarball extraction:**
    ```bash
@@ -311,37 +309,47 @@ import { ArMem, connect, acc, scheduler } from "../../../src/test.js"
 const mem = new ArMem()
 const { spawn, message, dryrun } = connect(mem)
 
-// Use aos2_0_1 (stable), NOT aos2_0_6 (breaks tag case)
+// Always use aos2_0_6 (latest)
 const pid = await spawn({
   signer: acc[0].signer,
   scheduler,
-  module: mem.modules.aos2_0_1,
+  module: mem.modules.aos2_0_6,
 })
 
 // Load Lua code
 await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: luaCode })
 
-// Send message
-await message({ process: pid, signer, tags: [{ name: "Action", value: "MyAction" }] })
+// Send message - use lowercase for custom tags!
+await message({ process: pid, signer, tags: [
+  { name: "Action", value: "CreatePool" },
+  { name: "Tokena", value: "TOKEN-A" },  // lowercase!
+  { name: "Tokenb", value: "TOKEN-B" },
+]})
 
 // Query state (read-only)
 const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Query" }] })
 const data = JSON.parse(res.Messages[0].Data)
 ```
 
-### Debugging WASM Module Issues
+### Tag Naming Convention (aos2_0_6)
 
-If WASM tests fail mysteriously, check tag case handling:
+**In JavaScript (sending messages):**
 ```javascript
-// Debug test to check tag structure
-await message({
-  process: pid,
-  signer,
-  tags: [
-    { name: "Action", value: "Debug" },
-    { name: "TokenA", value: "VALUE-A" },  // Will this become "Tokena"?
-  ]
-})
+// Custom tags: use lowercase
+{ name: "Tokena", value: "TOKEN-A" }
+{ name: "Poolid", value: "TOKEN-A-TOKEN-B" }
+{ name: "Amountin", value: "1000" }
+
+// Reserved tags: use capitalized
+{ name: "Action", value: "Swap" }
+{ name: "Target", value: pid }
+```
+
+**In Lua (receiving messages):**
+```lua
+local tokenA = msg.Tags.Tokena      -- lowercase
+local poolId = msg.Tags.Poolid      -- lowercase
+local action = msg.Tags.Action      -- capitalized (reserved)
 ```
 
 ### Key Files for Reference

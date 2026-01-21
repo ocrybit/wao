@@ -4,18 +4,18 @@
  * Tests the Uniswap-style AMM DEX using ArMem (in-memory AOS with WASM).
  *
  * Available WASM modules:
- * - aos2_0_6 (latest) - BREAKING: lowercases custom tag names (TokenA → Tokena)
+ * - aos2_0_6 (latest) - lowercases custom tag names (TokenA → Tokena)
  * - aos2_0_3
- * - aos2_0_1 (stable) - preserves tag case, recommended for existing Lua code
+ * - aos2_0_1 (legacy) - preserves tag case
  * - aos2_0_4_32 (wasm32 format)
  *
- * aos2_0_6 Tag Case Issue:
- *   aos2_0_1: msg.Tags.TokenA = "VALUE"   (preserved)
- *   aos2_0_6: msg.Tags.Tokena = "VALUE"   (lowercased)
- *   Reserved tags like "Action" stay capitalized in both.
+ * aos2_0_6 Tag Case:
+ *   Custom tags are lowercased: TokenA → Tokena, PoolId → Poolid
+ *   Reserved tags stay capitalized: Action, Data, From, etc.
+ *   Lua code must use lowercase: msg.Tags.Tokena (not msg.Tags.TokenA)
  *
  * Test Flow:
- * 1. Write Lua code (amm-dex.lua)
+ * 1. Write Lua code (amm-dex.lua) with lowercase tag access
  * 2. Test in-memory with ArMem (this file) - WASM execution
  * 3. Test with HyperBEAM (hyperbeam.test.js)
  *
@@ -70,18 +70,18 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
   let mem
 
   before(async () => {
-    console.log("Initializing ArMem with WASM module (aos2_0_1)...")
+    console.log("Initializing ArMem with WASM module (aos2_0_6)...")
     mem = new ArMem()
     const { spawn, message: msg, dryrun: dry } = connect(mem)
     message = msg
     dryrun = dry
 
     // Spawn process with WASM module
-    // aos2_0_1 is stable; aos2_0_6 has state persistence issues
+    // aos2_0_6 is latest - lowercases custom tag names
     pid = await spawn({
       signer,
       scheduler,
-      module: mem.modules.aos2_0_1,  // Stable mainnet WASM
+      module: mem.modules.aos2_0_6,  // Latest mainnet WASM
     })
     console.log("Process spawned:", pid)
 
@@ -155,10 +155,10 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "CreatePool" },
-          { name: "TokenA", value: "TOKEN-A" },
-          { name: "TokenB", value: "TOKEN-B" },
-          { name: "AmountA", value: "100000" },
-          { name: "AmountB", value: "100000" }
+          { name: "Tokena", value: "TOKEN-A" },
+          { name: "Tokenb", value: "TOKEN-B" },
+          { name: "Amounta", value: "100000" },
+          { name: "Amountb", value: "100000" }
         ]
       })
 
@@ -167,7 +167,7 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "GetPool" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" }
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" }
         ]
       })
       const data = getReplyData(res)
@@ -193,7 +193,7 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "GetPool" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" }
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" }
         ]
       })
       const data = getReplyData(res)
@@ -210,9 +210,9 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "GetQuote" },
-          { name: "TokenIn", value: "TOKEN-A" },
-          { name: "TokenOut", value: "TOKEN-B" },
-          { name: "AmountIn", value: "1000" }
+          { name: "Tokenin", value: "TOKEN-A" },
+          { name: "Tokenout", value: "TOKEN-B" },
+          { name: "Amountin", value: "1000" }
         ]
       })
       const data = getReplyData(res)
@@ -240,10 +240,10 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "Swap" },
-          { name: "TokenIn", value: "TOKEN-A" },
-          { name: "TokenOut", value: "TOKEN-B" },
-          { name: "AmountIn", value: "1000" },
-          { name: "MinAmountOut", value: "900" }
+          { name: "Tokenin", value: "TOKEN-A" },
+          { name: "Tokenout", value: "TOKEN-B" },
+          { name: "Amountin", value: "1000" },
+          { name: "Minamountout", value: "900" }
         ]
       })
 
@@ -267,10 +267,10 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "Swap" },
-          { name: "TokenIn", value: "TOKEN-B" },
-          { name: "TokenOut", value: "TOKEN-A" },
-          { name: "AmountIn", value: "500" },
-          { name: "MinAmountOut", value: "400" }
+          { name: "Tokenin", value: "TOKEN-B" },
+          { name: "Tokenout", value: "TOKEN-A" },
+          { name: "Amountin", value: "500" },
+          { name: "Minamountout", value: "400" }
         ]
       })
 
@@ -290,7 +290,7 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "GetPool" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" }
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" }
         ]
       })
       const data = getReplyData(res)
@@ -308,9 +308,9 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "AddLiquidity" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" },
-          { name: "AmountA", value: "10000" },
-          { name: "AmountB", value: "10000" }
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" },
+          { name: "Amounta", value: "10000" },
+          { name: "Amountb", value: "10000" }
         ]
       })
 
@@ -342,7 +342,7 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "RemoveLiquidity" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" },
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" },
           { name: "Percent", value: "10" }
         ]
       })
@@ -376,7 +376,7 @@ describe("AMM DEX (Mainnet WASM - ArMem)", () => {
         signer,
         tags: [
           { name: "Action", value: "GetPool" },
-          { name: "PoolId", value: "TOKEN-A-TOKEN-B" }
+          { name: "Poolid", value: "TOKEN-A-TOKEN-B" }
         ]
       })
       const data = getReplyData(res)

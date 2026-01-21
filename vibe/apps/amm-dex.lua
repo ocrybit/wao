@@ -82,10 +82,10 @@ end
 
 -- Create a new pool
 Handlers.add("CreatePool", "CreatePool", function(msg)
-  local tokenA = msg.Tags.TokenA
-  local tokenB = msg.Tags.TokenB
-  local amountA = tonumber(msg.Tags.AmountA)
-  local amountB = tonumber(msg.Tags.AmountB)
+  local tokenA = msg.Tags.Tokena
+  local tokenB = msg.Tags.Tokenb
+  local amountA = tonumber(msg.Tags.Amounta)
+  local amountB = tonumber(msg.Tags.Amountb)
 
   if not tokenA or not tokenB then
     msg.reply({ Tags = { Error = "Tokens-Required" }, Data = "Both tokens are required" })
@@ -176,9 +176,9 @@ end)
 
 -- Add liquidity
 Handlers.add("AddLiquidity", "AddLiquidity", function(msg)
-  local poolId = msg.Tags.PoolId
-  local amountA = tonumber(msg.Tags.AmountA)
-  local amountB = tonumber(msg.Tags.AmountB)
+  local poolId = msg.Tags.Poolid
+  local amountA = tonumber(msg.Tags.Amounta)
+  local amountB = tonumber(msg.Tags.Amountb)
   local slippage = tonumber(msg.Tags.Slippage) or 100  -- 1% default
 
   if not poolId or not Pools[poolId] then
@@ -249,7 +249,7 @@ end)
 
 -- Remove liquidity
 Handlers.add("RemoveLiquidity", "RemoveLiquidity", function(msg)
-  local poolId = msg.Tags.PoolId
+  local poolId = msg.Tags.Poolid
   local liquidity = tonumber(msg.Tags.Liquidity)
   local percent = tonumber(msg.Tags.Percent)  -- Alternative: remove X% of position
 
@@ -306,10 +306,10 @@ end)
 
 -- Swap tokens
 Handlers.add("Swap", "Swap", function(msg)
-  local tokenIn = msg.Tags.TokenIn
-  local tokenOut = msg.Tags.TokenOut
-  local amountIn = tonumber(msg.Tags.AmountIn)
-  local minAmountOut = tonumber(msg.Tags.MinAmountOut) or 0
+  local tokenIn = msg.Tags.Tokenin
+  local tokenOut = msg.Tags.Tokenout
+  local amountIn = tonumber(msg.Tags.Amountin)
+  local minAmountOut = tonumber(msg.Tags.Minamountout) or 0
 
   if not tokenIn or not tokenOut then
     msg.reply({ Tags = { Error = "Tokens-Required" }, Data = "Both tokens required" })
@@ -397,9 +397,9 @@ end)
 
 -- Get swap quote
 Handlers.add("GetQuote", "GetQuote", function(msg)
-  local tokenIn = msg.Tags.TokenIn
-  local tokenOut = msg.Tags.TokenOut
-  local amountIn = tonumber(msg.Tags.AmountIn)
+  local tokenIn = msg.Tags.Tokenin
+  local tokenOut = msg.Tags.Tokenout
+  local amountIn = tonumber(msg.Tags.Amountin)
 
   if not tokenIn or not tokenOut or not amountIn then
     msg.reply({ Tags = { Error = "Invalid-Request" }, Data = "All parameters required" })
@@ -440,7 +440,7 @@ end)
 
 -- Get pool info
 Handlers.add("GetPool", "GetPool", function(msg)
-  local poolId = msg.Tags.PoolId
+  local poolId = msg.Tags.Poolid
 
   if not poolId or not Pools[poolId] then
     msg.reply({ Tags = { Error = "Not-Found" }, Data = "Pool not found" })
