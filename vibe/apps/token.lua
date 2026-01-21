@@ -18,21 +18,21 @@
 
 local json = require("json")
 
--- Token metadata
-Name = Name or "VibeToken"
-Ticker = Ticker or "VIBE"
-Denomination = Denomination or 12
-Logo = Logo or "dR7j3RCy9TXuYRq4OcCy_lZ42eE_5yTcuMQU4hKzWvI"
+-- Token metadata (use explicit assignment if default Name exists from AOS)
+if not TokenName then TokenName = "VibeToken" end
+if not TokenTicker then TokenTicker = "VIBE" end
+if not TokenDenomination then TokenDenomination = 12 end
+if not TokenLogo then TokenLogo = "dR7j3RCy9TXuYRq4OcCy_lZ42eE_5yTcuMQU4hKzWvI" end
 
 -- State
 Balances = Balances or {}
 TotalSupply = TotalSupply or 0
-Owner = Owner or ao.env.Process.Owner
+TokenOwner = TokenOwner or ao.env.Process.Owner
 
 -- Initialize owner balance
 if TotalSupply == 0 then
-  local initialSupply = 1000000 * (10 ^ Denomination)
-  Balances[Owner] = initialSupply
+  local initialSupply = 1000000 * (10 ^ TokenDenomination)
+  Balances[TokenOwner] = initialSupply
   TotalSupply = initialSupply
 end
 
@@ -40,12 +40,12 @@ end
 Handlers.add("Info", "Info", function(msg)
   msg.reply({
     Data = json.encode({
-      Name = Name,
-      Ticker = Ticker,
-      Denomination = Denomination,
-      Logo = Logo,
+      Name = TokenName,
+      Ticker = TokenTicker,
+      Denomination = TokenDenomination,
+      Logo = TokenLogo,
       TotalSupply = tostring(TotalSupply),
-      Owner = Owner
+      Owner = TokenOwner
     })
   })
 end)
@@ -58,7 +58,7 @@ Handlers.add("Balance", "Balance", function(msg)
     Tags = {
       Balance = tostring(balance),
       Target = target,
-      Ticker = Ticker
+      Ticker = TokenTicker
     },
     Data = json.encode({ balance = tostring(balance), target = target })
   })
@@ -111,7 +111,7 @@ Handlers.add("Transfer", "Transfer", function(msg)
       Action = "Credit-Notice",
       Sender = msg.From,
       Quantity = tostring(quantity),
-      Ticker = Ticker
+      Ticker = TokenTicker
     },
     Data = json.encode({
       type = "credit",
@@ -126,7 +126,7 @@ Handlers.add("Transfer", "Transfer", function(msg)
       Action = "Debit-Notice",
       Recipient = recipient,
       Quantity = tostring(quantity),
-      Ticker = Ticker
+      Ticker = TokenTicker
     },
     Data = json.encode({
       type = "transfer",
@@ -139,12 +139,12 @@ end)
 
 -- Mint tokens (owner only)
 Handlers.add("Mint", "Mint", function(msg)
-  if msg.From ~= Owner then
+  if msg.From ~= TokenOwner then
     msg.reply({ Tags = { Error = "Unauthorized" }, Data = "Only owner can mint" })
     return
   end
 
-  local recipient = msg.Tags.Recipient or Owner
+  local recipient = msg.Tags.Recipient or TokenOwner
   local quantity = tonumber(msg.Tags.Quantity)
 
   if not quantity or quantity <= 0 then

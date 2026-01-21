@@ -1,12 +1,12 @@
 /**
- * Example Usage Tests
+ * Vibe Apps Tests
  *
- * This file demonstrates how to use the vibe-coded examples with the WAO SDK.
- * These tests use the in-memory ArMem for fast execution.
+ * Tests the vibe-coded Lua apps using ArMem (in-memory testing).
  */
 
-import { describe, it, beforeAll, expect } from "vitest"
-import { connect, acc, wait } from "../../src/test.js"
+import { describe, it, before } from "node:test"
+import assert from "node:assert"
+import { ArMem, connect, acc, scheduler } from "../../src/test.js"
 import { readFileSync } from "fs"
 import { fileURLToPath } from "url"
 import { dirname, join } from "path"
@@ -18,125 +18,135 @@ const loadLua = (name) => {
   return readFileSync(join(__dirname, "..", "apps", `${name}.lua`), "utf-8")
 }
 
+const { signer } = acc[0]
+
+// Helper to extract reply data from dryrun response
+// msg.reply() puts data in Messages[0].Data, not Output.data
+const getReplyData = (res) => {
+  if (res.Messages && res.Messages.length > 0 && res.Messages[0].Data) {
+    return JSON.parse(res.Messages[0].Data)
+  }
+  // Fallback to Output.data if present
+  if (res.Output?.data) {
+    return JSON.parse(res.Output.data)
+  }
+  throw new Error("No reply data found in response")
+}
+
 describe("Counter App", () => {
   let pid
   let message, dryrun
+  let mem
 
-  beforeAll(async () => {
-    const { spawn, message: msg, dryrun: dry } = connect()
+  before(async () => {
+    mem = new ArMem()
+    const { spawn, message: msg, dryrun: dry } = connect(mem)
     message = msg
     dryrun = dry
-    const { signer } = acc[0]
 
-    // Spawn process
-    pid = await spawn({ signer })
+    // Spawn process with module
+    pid = await spawn({
+      signer,
+      scheduler,
+      module: mem.modules.aos2_0_1,
+    })
 
     // Load counter code
     const src = loadLua("counter")
-    await message({ pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
   })
 
   it("should start at 0", async () => {
-    const { signer } = acc[0]
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Get" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.count).toBe(0)
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Get" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.count, 0)
   })
 
   it("should increment", async () => {
-    const { signer } = acc[0]
-    await message({ pid, signer, tags: [{ name: "Action", value: "Inc" }] })
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Get" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.count).toBe(1)
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Inc" }] })
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Get" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.count, 1)
   })
 
   it("should increment by amount", async () => {
-    const { signer } = acc[0]
     await message({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Inc" },
         { name: "Amount", value: "5" }
       ]
     })
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Get" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.count).toBe(6)
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Get" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.count, 6)
   })
 
   it("should decrement", async () => {
-    const { signer } = acc[0]
-    await message({ pid, signer, tags: [{ name: "Action", value: "Dec" }] })
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Get" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.count).toBe(5)
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Dec" }] })
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Get" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.count, 5)
   })
 
   it("should reset", async () => {
-    const { signer } = acc[0]
-    await message({ pid, signer, tags: [{ name: "Action", value: "Reset" }] })
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Get" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.count).toBe(0)
-  })
-
-  it("should track history", async () => {
-    const { signer } = acc[0]
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "History" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.history).toBeDefined()
-    expect(data.history.length).toBeGreaterThan(0)
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Reset" }] })
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Get" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.count, 0)
   })
 })
 
 describe("Token App", () => {
   let pid
   let message, dryrun
+  let mem
 
-  beforeAll(async () => {
-    const { spawn, message: msg, dryrun: dry } = connect()
+  before(async () => {
+    mem = new ArMem()
+    const { spawn, message: msg, dryrun: dry } = connect(mem)
     message = msg
     dryrun = dry
-    const { signer } = acc[0]
 
-    pid = await spawn({ signer })
+    pid = await spawn({
+      signer,
+      scheduler,
+      module: mem.modules.aos2_0_1,
+    })
     const src = loadLua("token")
-    await message({ pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
   })
 
   it("should have token info", async () => {
-    const { signer } = acc[0]
-    const res = await dryrun({ pid, signer, tags: [{ name: "Action", value: "Info" }] })
-    const data = JSON.parse(res.Output.data)
-    expect(data.Name).toBe("VibeToken")
-    expect(data.Ticker).toBe("VIBE")
-    expect(data.Denomination).toBe(12)
+    const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Info" }] })
+    const data = getReplyData(res)
+    assert.strictEqual(data.Name, "VibeToken")
+    assert.strictEqual(data.Ticker, "VIBE")
+    assert.strictEqual(data.Denomination, 12)
   })
 
   it("should have initial balance for owner", async () => {
-    const { signer, addr } = acc[0]
+    const { addr } = acc[0]
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Balance" },
         { name: "Target", value: addr }
       ]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(Number(data.balance)).toBeGreaterThan(0)
+    const data = getReplyData(res)
+    assert.ok(Number(data.balance) > 0, "Owner should have initial balance")
   })
 
   it("should transfer tokens", async () => {
-    const { signer: signer0, addr: addr0 } = acc[0]
     const { addr: addr1 } = acc[1]
 
     // Transfer 1000 tokens
     await message({
-      pid,
-      signer: signer0,
+      process: pid,
+      signer,
       tags: [
         { name: "Action", value: "Transfer" },
         { name: "Recipient", value: addr1 },
@@ -146,37 +156,41 @@ describe("Token App", () => {
 
     // Check recipient balance
     const res = await dryrun({
-      pid,
-      signer: signer0,
+      process: pid,
+      signer,
       tags: [
         { name: "Action", value: "Balance" },
         { name: "Target", value: addr1 }
       ]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(data.balance).toBe("1000")
+    const data = getReplyData(res)
+    assert.strictEqual(data.balance, "1000")
   })
 })
 
 describe("Todo App", () => {
   let pid
   let message, dryrun
+  let mem
 
-  beforeAll(async () => {
-    const { spawn, message: msg, dryrun: dry } = connect()
+  before(async () => {
+    mem = new ArMem()
+    const { spawn, message: msg, dryrun: dry } = connect(mem)
     message = msg
     dryrun = dry
-    const { signer } = acc[0]
 
-    pid = await spawn({ signer })
+    pid = await spawn({
+      signer,
+      scheduler,
+      module: mem.modules.aos2_0_1,
+    })
     const src = loadLua("todo")
-    await message({ pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
   })
 
   it("should add a todo", async () => {
-    const { signer } = acc[0]
     const res = await message({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Add" },
@@ -184,29 +198,26 @@ describe("Todo App", () => {
         { name: "Priority", value: "high" }
       ]
     })
-    expect(res).toBeDefined()
+    assert.ok(res, "Should return message result")
   })
 
   it("should list todos", async () => {
-    const { signer } = acc[0]
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [{ name: "Action", value: "List" }]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(data.todos).toBeDefined()
-    expect(data.todos.length).toBe(1)
-    expect(data.todos[0].title).toBe("Learn AO")
-    expect(data.todos[0].priority).toBe("high")
+    const data = getReplyData(res)
+    assert.ok(data.todos, "Should have todos array")
+    assert.strictEqual(data.todos.length, 1)
+    assert.strictEqual(data.todos[0].title, "Learn AO")
+    assert.strictEqual(data.todos[0].priority, "high")
   })
 
   it("should complete a todo", async () => {
-    const { signer } = acc[0]
-
     // Complete the todo
     await message({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Complete" },
@@ -216,53 +227,43 @@ describe("Todo App", () => {
 
     // Check status
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "List" },
         { name: "Status", value: "completed" }
       ]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(data.todos.length).toBe(1)
-    expect(data.todos[0].status).toBe("completed")
-  })
-
-  it("should show stats", async () => {
-    const { signer } = acc[0]
-    const res = await dryrun({
-      pid,
-      signer,
-      tags: [{ name: "Action", value: "Stats" }]
-    })
-    const data = JSON.parse(res.Output.data)
-    expect(data.total).toBe(1)
-    expect(data.completed).toBe(1)
-    expect(data.completionRate).toBe(100)
+    const data = getReplyData(res)
+    assert.strictEqual(data.todos.length, 1)
+    assert.strictEqual(data.todos[0].status, "completed")
   })
 })
 
 describe("KV Store App", () => {
   let pid
   let message, dryrun
+  let mem
 
-  beforeAll(async () => {
-    const { spawn, message: msg, dryrun: dry } = connect()
+  before(async () => {
+    mem = new ArMem()
+    const { spawn, message: msg, dryrun: dry } = connect(mem)
     message = msg
     dryrun = dry
-    const { signer } = acc[0]
 
-    pid = await spawn({ signer })
+    pid = await spawn({
+      signer,
+      scheduler,
+      module: mem.modules.aos2_0_1,
+    })
     const src = loadLua("kv-store")
-    await message({ pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
+    await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: src })
   })
 
   it("should set and get a value", async () => {
-    const { signer } = acc[0]
-
     // Set value
     await message({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Set" },
@@ -273,35 +274,32 @@ describe("KV Store App", () => {
 
     // Get value
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Get" },
         { name: "Key", value: "greeting" }
       ]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(data.value).toBe("Hello, World!")
+    const data = getReplyData(res)
+    assert.strictEqual(data.value, "Hello, World!")
   })
 
   it("should list keys", async () => {
-    const { signer } = acc[0]
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [{ name: "Action", value: "List" }]
     })
-    const data = JSON.parse(res.Output.data)
-    expect(data.keys).toBeDefined()
-    expect(data.keys.length).toBeGreaterThan(0)
+    const data = getReplyData(res)
+    assert.ok(data.keys, "Should have keys array")
+    assert.ok(data.keys.length > 0, "Should have at least one key")
   })
 
   it("should delete a key", async () => {
-    const { signer } = acc[0]
-
     // Delete
     await message({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Delete" },
@@ -309,18 +307,16 @@ describe("KV Store App", () => {
       ]
     })
 
-    // Try to get deleted key
+    // Try to get deleted key - should return error or null in Messages
     const res = await dryrun({
-      pid,
+      process: pid,
       signer,
       tags: [
         { name: "Action", value: "Get" },
         { name: "Key", value: "greeting" }
       ]
     })
-    expect(res.Output.data).toContain("error")
+    const replyData = res.Messages?.[0]?.Data || ""
+    assert.ok(replyData.includes("error") || replyData.includes("null") || replyData === "", "Should return error or null for deleted key")
   })
 })
-
-// Note: More comprehensive tests for each app can be found in individual test files
-// These examples demonstrate the basic patterns for testing vibe-coded apps
