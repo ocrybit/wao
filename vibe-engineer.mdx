@@ -20,7 +20,7 @@ This is the **democratization of decentralized compute**. With WAO + Claude Code
 - 📚 **270KB+ of documentation** - Everything from basics to protocol internals
 - 📖 **32 book chapters** - Deep dives into building, devices, and HyperBEAM
 - 🔧 **13 ready-to-use apps** - DeFi, NFTs, DAOs, social, gaming examples
-- ⚙️ **4 infrastructure devices** - Rate limiting, access control, analytics, logging
+- ⚙️ **5 Erlang device examples** - KV store, gateway, processor, data platform, JS integration
 - 🧪 **1000x faster testing** - In-memory execution for instant feedback
 - 🤖 **93KB LLM reference** - Claude has complete HyperBEAM knowledge
 
@@ -458,14 +458,19 @@ The `/vibe` folder contains exhaustive working examples you can learn from and e
 | **[Escrow](/vibe/apps/escrow.lua)** | Secure trades, disputes, arbitration | "Build an escrow service for peer-to-peer trades" |
 | **[AMM DEX](/vibe/apps/amm-dex.lua)** | Liquidity pools, swaps, constant product | "Build a Uniswap-style DEX with liquidity pools" |
 
-### Devices (4 Infrastructure Examples)
+### Erlang Devices (in `/tutorial-devices/`)
 
-| Device | What It Does | Vibe Prompt |
-|--------|--------------|-------------|
-| **[Rate Limiter](/vibe/devices/rate-limiter.lua)** | Throttle messages per address | "Create a device that rate limits incoming messages" |
-| **[Access Control](/vibe/devices/access-control.lua)** | Roles, permissions, hierarchy | "Create an access control device with roles and permissions" |
-| **[Analytics](/vibe/devices/analytics.lua)** | Track usage, generate reports | "Create an analytics device that tracks all message activity" |
-| **[Logger](/vibe/devices/logger.lua)** | Log levels, search, export | "Create a logging device with log levels and filtering" |
+Devices are HyperBEAM infrastructure components written in **Erlang**, not Lua. See `/tutorial-devices/` for examples:
+
+| Device | What It Does | File |
+|--------|--------------|------|
+| **dev_kv** | Key-value store device | `dev_kv.erl` |
+| **dev_gateway** | Gateway routing device | `dev_gateway.erl` |
+| **dev_processor** | Message processing device | `dev_processor.erl` |
+| **dev_dataplatform** | Data platform device | `dev_dataplatform.erl` |
+| **dev_aojs** | JavaScript integration | `dev_aojs.erl` |
+
+For device development tutorials, see `docs/docs/pages/book/dev*.mdx`.
 
 ### Using the Examples
 

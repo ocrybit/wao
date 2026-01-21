@@ -1,8 +1,10 @@
-# Vibe-Coded Examples
+# Vibe-Coded Apps
 
-This folder contains exhaustive examples of apps and devices built using natural language prompts with the WAO SDK. Each example demonstrates what's possible when you describe what you want to build in plain English.
+This folder contains Lua app examples built using natural language prompts with the WAO SDK. Each example demonstrates what's possible when you describe what you want to build in plain English.
 
-## Apps (10 Examples)
+> **Note:** Apps are Lua code running on AOS processes. For Erlang devices (HyperBEAM infrastructure), see `/tutorial-devices/`.
+
+## Apps (13 Examples)
 
 | App | Description | Vibe Prompt |
 |-----|-------------|-------------|
@@ -19,15 +21,6 @@ This folder contains exhaustive examples of apps and devices built using natural
 | [Lottery](./apps/lottery.lua) | Prize distribution | "Create a lottery with ticket purchasing, random drawing, and prize tiers." |
 | [Escrow](./apps/escrow.lua) | Secure trades | "Build an escrow service for peer-to-peer trades with dispute resolution." |
 | [AMM DEX](./apps/amm-dex.lua) | Decentralized exchange | "Build a Uniswap-style DEX with liquidity pools and the constant product formula." |
-
-## Devices (4 Examples)
-
-| Device | Description | Vibe Prompt |
-|--------|-------------|-------------|
-| [Rate Limiter](./devices/rate-limiter.lua) | Message throttling | "Create a device that rate limits incoming messages per address." |
-| [Access Control](./devices/access-control.lua) | Role-based permissions | "Create an access control device with roles, permissions, and hierarchy." |
-| [Analytics](./devices/analytics.lua) | Usage tracking | "Create an analytics device that tracks all message activity and generates reports." |
-| [Logger](./devices/logger.lua) | Debugging/auditing | "Create a logging device with log levels, filtering, and export." |
 
 ## How to Use These Examples
 
@@ -54,7 +47,7 @@ const result = await p.d("Get");
 console.log(result); // { count: 5 }
 ```
 
-### 2. Test with HyperBEAM (1000x faster)
+### 2. Test with HyperBEAM
 
 ```javascript
 import HyperBEAM from "wao/hyperbeam";
@@ -73,57 +66,25 @@ await hb.hb.eval({ pid, data: src });
 await hb.hb.message({ pid, tags: { Action: "Transfer", Recipient: "addr...", Quantity: "1000" } });
 ```
 
-### 3. Combine Apps and Devices
-
-Devices can wrap apps to add functionality:
-
-```lua
--- In your app, use the rate limiter device
-local rateLimiter = require("devices/rate-limiter")
-
--- The rate limiter will automatically throttle incoming messages
--- before they reach your app's handlers
-```
-
-## App Patterns Demonstrated
+## App Patterns
 
 ### State Management
-All apps demonstrate persistent state that survives across messages:
-- `Balances = Balances or {}` - Lazy initialization pattern
-- Global variables persist between handler calls
-
-### Handler Patterns
 ```lua
--- Tag-based routing
-Handlers.add("ActionName", "ActionName", function(msg)
-  -- Handle message
-  msg.reply({ Data = json.encode(result) })
-end)
-
--- Pattern matching
-Handlers.add("Transfer", function(msg)
-  return msg.Tags.Action == "Transfer" and msg.Tags.Quantity
-end, function(msg)
-  -- Handle transfer
-end)
+-- Lazy initialization - state persists between messages
+Balances = Balances or {}
+Owner = Owner or ao.env.Process.Owner
 ```
 
-### Message Patterns
+### Handler Pattern
 ```lua
--- Reply to sender
-msg.reply({ Data = "response" })
-
--- Send to another process
-ao.send({
-  Target = recipient,
-  Tags = { Action = "Notify" },
-  Data = json.encode(data)
-})
+Handlers.add("ActionName", "ActionName", function(msg)
+  -- Validate, execute, reply
+  msg.reply({ Data = json.encode(result) })
+end)
 ```
 
 ### Access Control
 ```lua
--- Owner-only actions
 if msg.From ~= Owner then
   msg.reply({ Tags = { Error = "Unauthorized" } })
   return
@@ -132,13 +93,6 @@ end
 
 ### Error Handling
 ```lua
--- Validate inputs
-if not amount or amount <= 0 then
-  msg.reply({ Tags = { Error = "Invalid-Amount" }, Data = "Valid amount required" })
-  return
-end
-
--- Check conditions
 if balance < amount then
   msg.reply({
     Tags = { Error = "Insufficient-Balance" },
@@ -148,67 +102,23 @@ if balance < amount then
 end
 ```
 
-## Device Patterns Demonstrated
-
-### Middleware Pattern
-Devices can intercept messages before they reach handlers:
-```lua
-Handlers.add("Intercept", function(msg)
-  return msg.Action ~= nil  -- Match all actions
-end, function(msg)
-  -- Check rate limit, permissions, etc.
-  if not allowed then
-    msg.reply({ Tags = { Error = "Blocked" } })
-    return  -- Stop processing
-  end
-  -- Allow message through to next handler
-end)
-```
-
-### Configuration Pattern
-```lua
-Config = Config or {
-  defaultLimit = 10,
-  window = 60
-}
-
--- Owner can update config
-Handlers.add("Configure", "Configure", function(msg)
-  if msg.From ~= Owner then return end
-  if msg.Tags.Limit then Config.defaultLimit = tonumber(msg.Tags.Limit) end
-end)
-```
-
-### Indexing Pattern
-For efficient queries on large datasets:
-```lua
-LogIndex = LogIndex or {}
-LogIndex.level = LogIndex.level or {}
-LogIndex.level[entry.levelName] = LogIndex.level[entry.levelName] or {}
-table.insert(LogIndex.level[entry.levelName], entryIndex)
-```
-
 ## What You Can Build
-
-These examples demonstrate that you can build virtually any application:
 
 - **DeFi**: Tokens, DEXs, lending, staking, yield farming
 - **NFTs**: Collections, marketplaces, royalties
 - **DAOs**: Governance, voting, treasury management
 - **Social**: Feeds, messaging, reputation systems
 - **Gaming**: Lotteries, auctions, tournaments
-- **Infrastructure**: Databases, analytics, access control
-- **And more**: If you can describe it, you can build it
+- **Infrastructure**: Databases, oracles, bridges
 
-## Contributing
+If you can describe it, you can build it!
 
-Add your own vibe-coded examples! Follow the pattern:
+## Erlang Devices
 
-1. Start with a clear "Vibe Prompt" comment describing what you want
-2. Implement the Lua handlers
-3. Document all actions in the header comment
-4. Add to this README
+For HyperBEAM device development (Erlang), see:
+- `/tutorial-devices/` - Example device implementations
+- `/docs/docs/pages/book/dev*.mdx` - Device development tutorials
 
 ---
 
-Built with ❤️ using the WAO SDK
+Built with the WAO SDK

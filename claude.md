@@ -263,9 +263,8 @@ const { pid } = await hb.hb.spawnAOS(imageId)
 │   ├── hb.js              # HyperBEAM module
 │   └── test.js            # Testing utilities
 ├── vibe/                   # Vibe-coded examples
-│   ├── apps/              # 13 Lua app examples
-│   └── devices/           # 4 device examples
-├── tutorial-devices/       # Erlang device examples
+│   └── apps/              # 13 Lua app examples
+├── tutorial-devices/       # Erlang device examples (5 devices)
 ├── docs/docs/pages/        # Documentation
 │   ├── book/              # 32 tutorial chapters
 │   └── src/               # 50+ device docs
