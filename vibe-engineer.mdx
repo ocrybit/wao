@@ -1,754 +1,131 @@
-# Vibe Engineer's Guide to AO Development
+# Vibe Engineer's Guide to AO
 
-Welcome to vibe engineering! This guide shows you how to build real applications on the AO hypercomputer by simply describing what you want. No coding experience required - just open [Claude Code](https://claude.ai/code) and start talking.
+Build AO apps by describing what you want. No coding required.
 
-## The Vision: Build Anything in Minutes
+## Quick Start
 
-This is the **democratization of decentralized compute**. With WAO + Claude Code, the barrier to building on AO went from "blockchain developer with months of learning" to "anyone who can describe what they want."
-
-**What used to take weeks now takes minutes:**
-
-| Before | After |
-|--------|-------|
-| Learn Lua, AO architecture, message passing | Describe what you want in plain English |
-| Understand HyperBEAM, devices, schedulers | Claude handles the technical details |
-| Debug cryptic errors manually | Claude reads errors and fixes them |
-| Days/weeks to build an app | Minutes to working prototype |
-| Only developers could participate | Anyone with ideas can build |
-
-**The complete stack is here:**
-- 📚 **270KB+ of documentation** - Everything from basics to protocol internals
-- 📖 **32 book chapters** - Deep dives into building, devices, and HyperBEAM
-- 🔧 **13 ready-to-use apps** - DeFi, NFTs, DAOs, social, gaming examples
-- ⚙️ **5 Erlang device examples** - KV store, gateway, processor, data platform, JS integration
-- 🧪 **1000x faster testing** - In-memory execution for instant feedback
-- 🤖 **93KB LLM reference** - Claude has complete HyperBEAM knowledge
-
-**Build a DEX in minutes. Launch a DAO before lunch. Ship an NFT marketplace by end of day.**
-
-## What is Vibe Engineering?
-
-Vibe engineering is building software by describing what you want in plain English. You tell Claude what to build, and it writes the code, runs the tests, and fixes any issues. Your job is to have ideas and give feedback.
-
-## What You'll Build
-
-By the end of this guide, you'll have created:
-- **Counter** - A simple app that counts up and down
-- **Token** - A cryptocurrency with transfers and minting
-- **Messenger** - A chat system where processes talk to each other
-
-All running on AO's decentralized hypercomputer.
-
----
-
-## Getting Started
-
-### Step 1: Open Claude Code
-
-Go to [claude.ai/code](https://claude.ai/code) and start a new session.
-
-### Step 2: Install the Environment
-
-Tell Claude:
-
-```
-Clone the WAO repository and set up the development environment.
-I want to build AO apps with full testing support.
-```
-
-Claude will:
-- Clone the WAO SDK
-- Install dependencies
-- Set up the testing environment
-
-### Step 3: Verify It Works
-
-Tell Claude:
-
-```
-Run the counter tests to make sure everything is working.
-```
-
-You should see all tests pass.
-
----
-
-## Understanding the Three Execution Modes
-
-AO has three ways to run your code:
-
-### 1. In-Memory (ArMem) - For Development
-
-**What it is:** A fast JavaScript emulator that runs AO locally in memory.
-
-**Best for:** Development, testing, rapid iteration.
-
-**Speed:** 1000x faster than network testing.
-
-**Tell Claude:**
-```
-Build me a counter app with in-memory tests using ArMem.
-```
-
-### 2. HyperBEAM Test Device - For SDK Validation
-
-**What it is:** A local HyperBEAM node with basic validation (no Lua execution).
-
-**Best for:** Testing SDK operations (spawn, schedule, message signing).
-
-**Speed:** Moderate (requires starting local node).
-
-**Tell Claude:**
-```
-Create HyperBEAM tests for my counter app using test-device@1.0.
-```
-
-### 3. Full Execution Modes - For Production
-
-These require a properly configured HyperBEAM installation:
-
-| Mode | Execution Device | Requirements |
-|------|-----------------|--------------|
-| **HyperAOS** | `lua@5.3a` | Lua device module |
-| **Legacynet** | `genesis-wasm@1.0` | External CU server |
-| **Mainnet WASM** | `stack@1.0` with device-stack | WASI, WASM-64 modules |
-
-**Tell Claude:**
-```
-What do I need to set up for full HyperAOS execution with lua@5.3a?
-```
-
----
-
-## Building Your First App: Counter
-
-### What It Does
-
-A counter that can:
-- Show the current count
-- Go up by 1
-- Go down by 1
-- Add any number
-- Reset to zero
-
-### How to Build It
-
-Tell Claude:
-
-```
-Build me a counter app for AO.
-
-It should:
-- Start at 0
-- Have handlers for: Get (show count), Inc (add 1), Dec (subtract 1), Add (add any number), Reset (back to 0)
-- Return the new count after each operation
-
-Create both in-memory tests and HyperBEAM tests.
-Run all tests to verify it works.
-```
-
-Claude will create:
-- `counter.lua` - The counter logic
-- `counter.test.js` - In-memory tests (full Lua execution)
-- `counter.hyperbeam.test.js` - HyperBEAM tests (SDK validation)
-
-### Understanding What Claude Built
-
-Ask Claude:
-
-```
-Explain the counter code to me like I'm a beginner.
-What is a handler? What is state? How do messages work?
-```
-
-Key concepts:
-- **State** - Variables that persist between messages (`local count = 0`)
-- **Handlers** - Functions that respond to actions
-- **Messages** - State-changing operations
-- **Dryruns** - Read-only queries
-
----
-
-## Building a Token: Your Own Cryptocurrency
-
-### What It Does
-
-A real token with:
-- Balances for each holder
-- Transfers between people
-- Minting (creating new tokens)
-- Burning (destroying tokens)
-- Allowances (letting others spend your tokens)
-
-### How to Build It
-
-Tell Claude:
-
-```
-Build me a token app that follows the ao Standard Token Specification.
-
-It should have:
-- Name: "My Token", Ticker: "MTK"
-- Handlers for: Info, Balance, Balances, Transfer, Mint, Burn, Approve, Allowance, Transfer-From
-- Only the owner can mint new tokens
-- Transfers should send Debit-Notice and Credit-Notice to the parties involved
-
-Use big integers for precise math.
-Write comprehensive in-memory tests.
-Run all the tests.
-```
-
-### Test the Token
-
-After tests pass, try:
-
-```
-Walk me through a scenario:
-1. Mint 1 million tokens to the owner
-2. Transfer 10,000 to Alice
-3. Alice approves Bob to spend 5,000
-4. Bob transfers 2,500 from Alice to himself
-5. Show me all the balances at the end
-```
-
-### Customize Your Token
-
-```
-Change the token name to "Awesome Coin" with ticker "AWE".
-Add a max supply of 100 million that can never be exceeded.
-Run the tests again.
-```
-
----
-
-## Building a Messenger: Processes Talking to Each Other
-
-### What It Does
-
-A messaging system where:
-- Each user has their own process
-- Users can register with a name
-- Add contacts (other processes)
-- Send messages between processes
-- Broadcast to all contacts
-
-### How to Build It
-
-Tell Claude:
-
-```
-Build me a messenger app that demonstrates inter-process communication on AO.
-
-It should have:
-- Registration (set your display name)
-- Contact management (add contacts, list them)
-- Messaging (send to specific contact, receive messages)
-- Inbox and outbox to track messages
-- Broadcast (send to all contacts at once)
-
-Use Send() for delivering messages to other processes via push@1.0.
-
-Write in-memory tests with two processes (Alice and Bob) that:
-- Both register with names
-- Add each other as contacts
-- Exchange messages
-- Alice broadcasts to all contacts
-
-Run all tests.
-```
-
-### Watch Processes Talk
-
-```
-Show me the message flow when Alice sends "Hello!" to Bob.
-What happens step by step?
-```
-
-### The Magic of Inter-Process Communication
-
-```
-Explain how Send() and push@1.0 work.
-How does a message get from Alice's process to Bob's process?
-```
-
----
-
-## Testing Strategy
-
-### Two-Tier Testing
-
-1. **In-Memory Tests** (`.test.js`)
-   - Fast development iteration
-   - Full Lua execution
-   - All business logic validation
-
-2. **HyperBEAM Tests** (`.hyperbeam.test.js`)
-   - SDK operation validation
-   - HTTP signature testing
-   - Process lifecycle verification
-
-### Run Tests
-
-Tell Claude:
-
-```
-Run all my in-memory tests.
-```
-
-```
-Run my HyperBEAM tests.
-```
-
-```
-Run all tests and show me a summary.
-```
-
----
-
-## Three Types of AOS Apps
-
-### 1. Stateful Apps (Counter Pattern)
-
-Simple state that changes over time.
-
-```
-Build me an app that tracks a shopping cart.
-Users can add items, remove items, and checkout.
-```
-
-### 2. Financial Apps (Token Pattern)
-
-Complex state with validation and notifications.
-
-```
-Build me an NFT collection where:
-- Each NFT has a unique ID and metadata
-- Owners can transfer NFTs
-- There's a minting limit of 1000
-```
-
-### 3. Communication Apps (Messenger Pattern)
-
-Multiple processes working together.
-
-```
-Build me a voting system where:
-- There's a main process for proposals
-- Each voter has their own process
-- Voters can submit votes that get tallied
-- Results are broadcast when voting ends
-```
-
----
-
-## Project Structure
-
-Tell Claude:
-
-```
-Organize my apps into a proper project structure with:
-- Source files in src/
-- Tests in test/
-- Separate in-memory and HyperBEAM tests
-- NPM scripts to run different test suites
-```
-
----
-
-## Quick Prompts Reference
-
-### Starting Fresh
-
-```
-Set up a new AO project with WAO SDK.
-```
-
-### Building Apps
-
-```
-Build me an AO app that [describe what you want].
-Write tests and run them.
-```
-
-### Testing
-
-```
-Run my in-memory tests.
-Run my HyperBEAM tests.
-Run all tests.
-```
-
-### Debugging
-
-```
-The tests are failing. Figure out what's wrong and fix it.
-```
-
-### Learning
-
-```
-Explain [concept] to me like I'm a beginner.
-Show me an example of [pattern].
-Walk me through what happens when [action].
-```
-
-### Customizing
-
-```
-Change [thing] to [new behavior].
-Add [feature] to my [app].
-Run the tests to make sure it still works.
-```
-
----
-
-## Common Requests
-
-### "Make it more secure"
-
-```
-Review my token app for security issues.
-Add input validation and error handling.
-Make sure only authorized users can do sensitive operations.
-```
-
-### "Add a feature"
-
-```
-Add a history feature to my counter that tracks the last 10 operations.
-Add a transfer fee to my token (1% goes to the owner).
-Add read receipts to my messenger.
-```
-
-### "Explain what's happening"
-
-```
-Add detailed logging to my app so I can see what's happening.
-Explain each step when I run this test.
-```
-
-### "Fix this error"
-
-```
-I'm getting this error: [paste error]
-Figure out what's wrong and fix it.
-```
-
----
-
-## Vibe-Coded Examples
-
-The `/vibe` folder contains exhaustive working examples you can learn from and extend. Each example includes the original "vibe prompt" that describes what it does.
-
-### Apps (13 Ready-to-Use Examples)
-
-| App | What It Does | Vibe Prompt |
-|-----|--------------|-------------|
-| **[Counter](/vibe/apps/counter.lua)** | Increment, decrement, reset with history | "Build me a simple counter that tracks who made each change" |
-| **[Token](/vibe/apps/token.lua)** | Fungible token with transfers, minting, burning | "Create a fungible token called VibeToken with 12 decimals" |
-| **[Chatroom](/vibe/apps/chatroom.lua)** | Rooms, members, private messages | "Build a chatroom where users can join rooms and send messages" |
-| **[Todo](/vibe/apps/todo.lua)** | Tasks with priorities, categories, stats | "Create a todo app with priorities and productivity stats" |
-| **[Voting DAO](/vibe/apps/voting-dao.lua)** | Proposals, voting, execution | "Build a DAO where token holders can create proposals and vote" |
-| **[Auction](/vibe/apps/auction.lua)** | English & Dutch auctions, escrow | "Create an auction house with automatic settlement" |
-| **[NFT Collection](/vibe/apps/nft-collection.lua)** | Mint, transfer, metadata, royalties | "Build an NFT collection with minting and transfers" |
-| **[Staking Pool](/vibe/apps/staking-pool.lua)** | Stake, earn, compound rewards | "Create a staking pool with compound interest" |
-| **[KV Store](/vibe/apps/kv-store.lua)** | Namespaces, TTL, access control | "Build a key-value database with TTL and access control" |
-| **[Social Feed](/vibe/apps/social-feed.lua)** | Posts, follows, likes, comments | "Build a Twitter-like social feed" |
-| **[Lottery](/vibe/apps/lottery.lua)** | Tickets, random drawing, prize tiers | "Create a lottery with automatic prize distribution" |
-| **[Escrow](/vibe/apps/escrow.lua)** | Secure trades, disputes, arbitration | "Build an escrow service for peer-to-peer trades" |
-| **[AMM DEX](/vibe/apps/amm-dex.lua)** | Liquidity pools, swaps, constant product | "Build a Uniswap-style DEX with liquidity pools" |
-
-### Erlang Devices (in `/tutorial-devices/`)
-
-Devices are HyperBEAM infrastructure components written in **Erlang**, not Lua. See `/tutorial-devices/` for examples:
-
-| Device | What It Does | File |
-|--------|--------------|------|
-| **dev_kv** | Key-value store device | `dev_kv.erl` |
-| **dev_gateway** | Gateway routing device | `dev_gateway.erl` |
-| **dev_processor** | Message processing device | `dev_processor.erl` |
-| **dev_dataplatform** | Data platform device | `dev_dataplatform.erl` |
-| **dev_aojs** | JavaScript integration | `dev_aojs.erl` |
-
-For device development tutorials, see `docs/docs/pages/book/dev*.mdx`.
-
-### Using the Examples
-
-**Copy and customize:**
-```
-Take the voting-dao.lua example and customize it:
-- Rename it to "Project Governance"
-- Change quorum to 20%
-- Add a proposal deposit of 1000 tokens
-- Run tests to verify it works
-```
-
-**Combine examples:**
-```
-Build me an NFT marketplace by combining:
-- The NFT collection for tokens
-- The auction system for sales
-- The escrow for secure trades
-Add a 2.5% marketplace fee on all sales.
-```
-
-**Learn patterns:**
 ```
-Show me how the staking pool calculates compound interest.
-Explain the access control device's role hierarchy.
+Read claude.md then build me a counter app with tests.
 ```
 
----
+That's it. Claude handles the rest.
 
 ## What You Can Build
 
-With vibe coding, you can build virtually any application:
+| Category | Examples |
+|----------|----------|
+| **DeFi** | Token, AMM DEX, Staking, Lending |
+| **NFTs** | Collections, Marketplace, Royalties |
+| **DAOs** | Voting, Proposals, Treasury |
+| **Social** | Feed, Chat, Follows |
+| **Gaming** | Lottery, Auction, Leaderboards |
 
-### DeFi (Decentralized Finance)
-- Tokens, stablecoins, wrapped assets
-- AMM DEXs (Uniswap-style)
-- Lending protocols
-- Yield farming, staking pools
-- Options, futures, derivatives
+## 13 Ready-to-Use Apps
 
-### NFTs & Digital Assets
-- Art collections with royalties
-- Gaming items with attributes
-- Membership passes
-- Domain names
+All in `/vibe/apps/`:
 
-### DAOs & Governance
-- Proposal systems
-- Voting with token weight
-- Treasury management
-- Multi-sig wallets
+| App | Description |
+|-----|-------------|
+| `counter.lua` | Increment/decrement with history |
+| `token.lua` | Fungible token (transfers, mint, burn) |
+| `chatroom.lua` | Rooms, members, messages |
+| `todo.lua` | Tasks with priorities |
+| `voting-dao.lua` | Proposals, voting |
+| `nft-collection.lua` | Mint, transfer, metadata |
+| `kv-store.lua` | Key-value database |
+| `amm-dex.lua` | Liquidity pools, swaps |
+| `social-feed.lua` | Posts, follows, likes |
+| `lottery.lua` | Tickets, random drawing |
+| `escrow.lua` | Secure trades |
+| `auction.lua` | English/Dutch auctions |
+| `staking-pool.lua` | Stake, earn rewards |
 
-### Social Applications
-- Social feeds, microblogging
-- Messaging, chatrooms
-- Reputation systems
-- Content moderation
+## Testing
 
-### Gaming
-- Lotteries, raffles
-- Auctions, bidding wars
-- Turn-based games
-- Tournaments, leaderboards
+### HyperBEAM (Recommended)
 
-### Infrastructure
-- Databases (key-value stores)
-- Analytics, logging
-- Rate limiting, access control
-- Oracles, bridges
+Native Lua execution via `lua@5.3a`. No external CU needed.
 
-**Just describe what you want and Claude will build it!**
-
----
-
-## Ideas to Build
-
-### Beginner Projects
-- **Tip Jar** - Accept token tips and track donors
-- **Scoreboard** - Track high scores for a game
-- **Poll** - Quick voting on multiple options
-- **Guestbook** - Leave messages with timestamps
-
-### Intermediate Projects
-- **Subscription Service** - Recurring token payments
-- **Crowdfunding** - Fund projects with milestones
-- **Loyalty Points** - Earn and redeem rewards
-- **Referral System** - Track and reward referrals
-
-### Advanced Projects
-- **Prediction Market** - Bet on outcomes
-- **Bonding Curve Token** - Price based on supply
-- **Flash Loans** - Borrow within a single transaction
-- **Cross-chain Bridge** - Move assets between chains
-
----
-
-## Deployment
-
-When you're ready to go live:
-
-```
-Help me deploy my token app to AO mainnet.
-I have my Arweave wallet ready.
+```bash
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 ```
 
----
+### In-Memory (ArMem)
 
-## Getting Help
+Fast but behavior may differ from real execution.
 
-### If You're Stuck
-
-```
-I'm trying to [goal] but [problem].
-What should I do?
+```bash
+npm test -- vibe/apps/tests/armem.test.js
 ```
 
-### If Tests Fail
+## Lua App Pattern
 
-```
-These tests are failing. Read the error messages and fix the issues.
-```
-
-### If You're Confused
-
-```
-I don't understand [concept].
-Explain it with a simple example.
-```
-
----
-
-## Common Patterns in Vibe-Coded Apps
-
-### State Management Pattern
 ```lua
--- Lazy initialization - state persists between messages
-Balances = Balances or {}
-Config = Config or { fee = 100, owner = ao.env.Process.Owner }
-```
+-- State persists between messages
+Count = Count or 0
+Owner = Owner or ao.env.Process.Owner
 
-### Handler Pattern
-```lua
--- Tag-based routing
-Handlers.add("Transfer", "Transfer", function(msg)
-  -- Validate inputs
-  if not msg.Tags.Recipient then
-    msg.reply({ Tags = { Error = "Recipient-Required" } })
-    return
-  end
-  -- Execute logic
-  -- Reply with result
-  msg.reply({ Data = json.encode({ success = true }) })
+-- Handler pattern
+Handlers.add("Inc", "Inc", function(msg)
+  Count = Count + 1
+  msg.reply({ Data = tostring(Count) })
+end)
+
+Handlers.add("Get", "Get", function(msg)
+  msg.reply({ Data = tostring(Count) })
 end)
 ```
 
-### Access Control Pattern
-```lua
--- Owner-only actions
-Owner = Owner or ao.env.Process.Owner
+## Common Prompts
 
-if msg.From ~= Owner then
-  msg.reply({ Tags = { Error = "Unauthorized" } })
-  return
-end
+**Build an app:**
+```
+Build me an AO app that [description]. Write tests and run them.
 ```
 
-### Notification Pattern
-```lua
--- Notify other processes
-ao.send({
-  Target = recipient,
-  Tags = { Action = "Credit-Notice", Amount = quantity },
-  Data = json.encode({ from = sender, amount = quantity })
-})
+**Add a feature:**
+```
+Add [feature] to my [app]. Run tests to verify.
 ```
 
-### Error Handling Pattern
-```lua
--- Validate and return structured errors
-if balance < amount then
-  msg.reply({
-    Tags = { Error = "Insufficient-Balance" },
-    Data = json.encode({ have = balance, need = amount })
-  })
-  return
-end
+**Fix an issue:**
+```
+The tests are failing. Read the errors and fix them.
 ```
 
----
-
-## The Complete Documentation Stack
-
-Everything you need to go from idea to production is already here:
-
-### Quick Reference (Root Files)
-
-| File | Size | What It Contains |
-|------|------|------------------|
-| `README.md` | 46KB | WAO SDK overview, API reference, quick start |
-| `llms.txt` | 93KB | Complete HyperBEAM reference for Claude |
-| `ao-core.md` | 64KB | AO protocol internals and architecture |
-| `install.md` | 33KB | Full installation guide |
-| `aos-dev.md` | 11KB | AOS development patterns |
-
-### The Book (32 Chapters)
-
-Located in `docs/docs/pages/book/`:
-
-- **build1-5.mdx** - Building apps from scratch (178KB)
-- **dev1-9.mdx** - Creating custom devices (200KB)
-- **hb1-11.mdx** - HyperBEAM deep dives (240KB)
-- **erlang.mdx** - Erlang fundamentals (46KB)
-- **ar.mdx** - Arweave basics (19KB)
-
-### Source Documentation (50+ Files)
-
-Every HyperBEAM device documented in `docs/docs/pages/src/`:
-- `dev_scheduler.mdx`, `dev_wasm.mdx`, `dev_p4.mdx`
-- `dev_codec_httpsig.mdx`, `dev_codec_ans104.mdx`
-- And 45+ more...
-
-### Tutorials
-
-- Creating devices in **Erlang**, **C++**, **Rust**
-- Running **LLMs on AO** (with waollama)
-- Deploying to **mainnet** and **legacynet**
-
-### Example Devices (Erlang)
-
-Real-world device implementations in `tutorial-devices/`:
-- `dev_aojs.erl` - JavaScript integration (22KB)
-- `dev_dataplatform.erl` - Data platform (17KB)
-- `dev_gateway.erl` - Gateway device (16KB)
-- `dev_kv.erl` - Key-value store (6KB)
-
-**This means:**
-- **Minutes:** Describe an app → Get working Lua code
-- **Hours:** Learn from the book → Build custom devices
-- **Days:** Master the protocol → Create novel infrastructure
-
----
-
-## Summary
-
-| Testing Mode | Speed | Execution | Best For |
-|--------------|-------|-----------|----------|
-| In-Memory (ArMem) | Fastest | Full Lua | Development |
-| HyperBEAM test-device | Moderate | Validation only | SDK testing |
-| Full HyperBEAM | Slower | Full execution | Production |
-
-**Recommended workflow:**
-1. Build and test with in-memory (ArMem) for fast iteration
-2. Validate SDK operations with HyperBEAM test-device
-3. Deploy to mainnet when ready
-
-**Explore the examples:**
-- Browse `/vibe/apps/` for 13 ready-to-use applications
-- Browse `/vibe/devices/` for 4 infrastructure components
-- Each example includes the original vibe prompt that created it
-
-**Go deeper:**
-- Read `llms.txt` for Claude's complete HyperBEAM knowledge
-- Explore the book chapters for comprehensive tutorials
-- Check `tutorial-devices/` for real Erlang device examples
-
----
-
-## Start Building Now
-
+**Explain code:**
 ```
-Clone WAO and build me a [your idea here].
-Run tests to make sure it works.
+Explain how [component] works.
 ```
 
-That's it. No prerequisites. No learning curve. Just describe what you want.
+## Execution Modes
 
-**100x more experiments. Faster iteration. More discovery.**
+| Mode | Device | CU Required | Use Case |
+|------|--------|-------------|----------|
+| **HyperAOS** | `lua@5.3a` | No | Local dev (luerl) |
+| Legacynet | `genesis-wasm@1.0` | Yes | External CU |
+| Mainnet | `stack@1.0` | Yes | Production |
 
-The future of decentralized compute is vibe-coded.
+## File Structure
 
-Open [Claude Code](https://claude.ai/code) and start vibing!
+```
+wao/
+├── vibe/apps/           # 13 Lua apps
+│   ├── counter.lua
+│   ├── token.lua
+│   └── tests/
+│       └── hyperbeam.test.js
+├── tutorial-devices/    # 5 Erlang devices
+├── src/                 # WAO SDK
+└── claude.md           # Read this first!
+```
+
+## The Workflow
+
+1. **Describe** what you want
+2. **Claude builds** the Lua code
+3. **Tests run** on HyperBEAM
+4. **Iterate** until it works
+5. **Deploy** to mainnet
+
+That's vibe engineering. Start building!

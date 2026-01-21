@@ -1,282 +1,215 @@
-# Claude's Guide to Building on AO
+# WAO SDK - Claude Guide
 
-This document is for Claude (the AI assistant) when helping users build on AO/Arweave using the WAO SDK.
+Read this file at the start of every session.
 
-## Two Development Paths
+## What is WAO?
 
-### Path 1: Build AOS Apps (Lua)
+WAO is an SDK for building on AO (the hypercomputer on Arweave). It provides:
+- **Lua apps** - Stateful processes (tokens, DAOs, games)
+- **HyperBEAM testing** - Local node for development
+- **13 example apps** - Ready-to-use templates
 
-**What:** Stateful applications running on the AO hypercomputer.
+## File Structure
 
-**Workflow:**
 ```
-1. Write Lua code (handlers, state, messages)
-2. Test with HyperBEAM (real behavior verification)
-3. Deploy to network
+wao/
+├── vibe/apps/              # 13 Lua apps (examples)
+│   ├── counter.lua         # Simple counter
+│   ├── token.lua           # Fungible token
+│   ├── amm-dex.lua         # Uniswap-style DEX
+│   ├── voting-dao.lua      # DAO with voting
+│   └── tests/
+│       └── hyperbeam.test.js  # HyperBEAM tests (30 pass)
+├── src/
+│   ├── hb.js               # HyperBEAM client (HB class)
+│   ├── ao.js               # AO process management
+│   └── hyperbeam.js        # Local HyperBEAM manager
+├── tutorial-devices/       # 5 Erlang devices
+├── llms.txt                # Full HyperBEAM reference (93KB)
+└── lua-report.md           # Test results summary
 ```
 
-**⚠️ IMPORTANT: Always test with HyperBEAM, not just ArMem!**
+## Testing Lua Apps
 
-ArMem (in-memory) is fast but behavior may differ from real execution. HyperBEAM is the source of truth.
+### HyperBEAM Tests (Recommended)
 
-| Testing Method | Speed | Fidelity | When to Use |
-|----------------|-------|----------|-------------|
-| ArMem (in-memory) | Fastest | Lower | Quick iteration, syntax checking |
-| **HyperBEAM** | Fast | **High** | **Always before deploy - real behavior** |
+Uses native `lua@5.3a` device - runs Lua via luerl directly in HyperBEAM. **No external CU required.**
 
-**Target Networks:**
+```bash
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+```
 
-| Network | Execution Device | Use Case |
-|---------|------------------|----------|
-| HyperAOS | `lua@5.3a` | Local development, fastest |
-| Legacynet | `genesis-wasm@1.0` | Testing with external CU |
-| Mainnet | `stack@1.0` + device-stack | Production deployment |
-
-**Testing Strategy:**
-
+**Test pattern:**
 ```javascript
-// ArMem - Quick iteration (behavior may differ!)
-import { connect, acc } from "wao/test"
-const { spawn, message, dryrun } = connect()
+import HyperBEAM from "../../../src/hyperbeam.js"
 
-// HyperBEAM - Real behavior verification (USE THIS!)
-import HyperBEAM from "wao/hyperbeam"
-const hb = await new HyperBEAM({ reset: true }).ready()
+// Start HyperBEAM
+const hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+const hb = hbeam.hb
 
-// Spawn processes - test all execution modes
-await hb.hb.spawnLua()      // HyperAOS (lua@5.3a)
-await hb.hb.spawnLegacy()   // Legacynet (genesis-wasm@1.0)
-await hb.hb.spawnAOS()      // Mainnet (stack@1.0 + wasi/wasm-64)
+// Spawn Lua process with code
+const moduleId = await hb.getLua()  // Cache Lua runtime
+const tags = {
+  "execution-device": "lua@5.3a",
+  module: moduleId,
+  type: "Process",
+  device: "process@1.0",
+  scheduler: hb.addr,
+}
+if (luaCode) tags.data = luaCode
+
+const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(await hb.commit(tags, { path: false })),
+})
+const pid = response.headers.get("process")
+
+// Schedule message
+const msgTags = { type: "Message", target: pid, Action: "Inc" }
+const msgResponse = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(await hb.commit(msgTags, { path: false })),
+})
+const slot = msgResponse.headers.get("slot")
+
+// Compute
+const result = await hb.g(`/${pid}~process@1.0/compute`, { slot: parseInt(slot) })
+
+// Cleanup
+hbeam.kill()
 ```
 
-**Key Files:**
-- `/vibe/apps/` - 13 example apps (token, DEX, DAO, NFT, etc.)
-- `/src/ao.js` - AO module for process management
-- `/src/hb.js` - HyperBEAM module for local testing
-- `llms.txt` - Complete HyperBEAM reference
+### In-Memory Tests (ArMem)
 
-**Example App Structure:**
+Fast but behavior may differ from real execution.
+
+```bash
+npm test -- vibe/apps/tests/armem.test.js
+```
+
+## Lua App Pattern
+
 ```lua
--- State (persists between messages)
-Balances = Balances or {}
+-- State (lazy initialization)
+Count = Count or 0
 Owner = Owner or ao.env.Process.Owner
 
--- Handler pattern
-Handlers.add("ActionName", "ActionName", function(msg)
-  -- Validate
-  if not msg.Tags.Required then
-    msg.reply({ Tags = { Error = "Required-Missing" } })
+-- Handler
+Handlers.add("Inc", "Inc", function(msg)
+  Count = Count + 1
+  msg.reply({ Data = tostring(Count) })
+end)
+
+-- Read-only query
+Handlers.add("Get", "Get", function(msg)
+  msg.reply({ Data = tostring(Count) })
+end)
+
+-- Owner-only action
+Handlers.add("Reset", "Reset", function(msg)
+  if msg.From ~= Owner then
+    msg.reply({ Tags = { Error = "Unauthorized" } })
     return
   end
-
-  -- Execute
-  -- ...
-
-  -- Reply
-  msg.reply({ Data = json.encode(result) })
+  Count = 0
+  msg.reply({ Data = "reset" })
 end)
 ```
 
----
+## Execution Devices
 
-### Path 2: Build Devices (Erlang)
+| Device | Description | CU Required |
+|--------|-------------|-------------|
+| `lua@5.3a` | Native Lua via luerl | No |
+| `genesis-wasm@1.0` | Legacy WASM | Yes |
+| `stack@1.0` | Mainnet WASM stack | Yes |
 
-**What:** Infrastructure components that extend HyperBEAM's capabilities.
+**For development, use `lua@5.3a`** - fastest, no external dependencies.
 
-**Workflow:**
-```
-1. Write Erlang module (dev_*.erl)
-2. Test with eunit (Erlang unit tests)
-3. Integration test with WAO SDK
-```
-
-**Device Structure:**
-```erlang
--module(dev_mydevice).
--export([info/0, compute/3]).
-
-%% Device metadata
-info() ->
-    #{
-        name => <<"My Device">>,
-        version => <<"1.0">>,
-        exports => [compute]
-    }.
-
-%% Main compute function
-compute(Msg, State, Opts) ->
-    %% Process message, return new state
-    {ok, NewState}.
-```
-
-**Testing:**
-```erlang
-%% eunit tests in dev_mydevice_tests.erl
--module(dev_mydevice_tests).
--include_lib("eunit/include/eunit.hrl").
-
-basic_test() ->
-    ?assertEqual(expected, dev_mydevice:compute(msg, state, opts)).
-```
-
-**Integration Testing with WAO:**
-```javascript
-// After device is compiled and loaded into HyperBEAM
-const hb = await new HyperBEAM({ reset: true }).ready()
-
-// Test device via HTTP API
-const result = await hb.hb.g("/~mydevice@1.0/endpoint")
-```
-
-**Key Files:**
-- `/tutorial-devices/` - Example Erlang devices
-- `/docs/docs/pages/book/dev1-9.mdx` - Device development tutorials
-- `/docs/docs/pages/tutorials/creating-devices.mdx` - Getting started
-
----
-
-## Quick Reference
-
-### WAO SDK Modules
-
-| Module | Import | Purpose |
-|--------|--------|---------|
-| AO | `import { AO } from "wao"` | Process management, deployment |
-| AR | `import { AR } from "wao"` | Arweave transactions |
-| HB | `import HyperBEAM from "wao/hyperbeam"` | Local HyperBEAM testing |
-| GQL | `import { GQL } from "wao"` | GraphQL queries |
-| Test | `import { connect, acc } from "wao/test"` | In-memory testing |
-
-### Common Operations
+## HB Class Methods
 
 ```javascript
-// Deploy a process
-const ao = await new AO().init(jwk)
-const { pid, p } = await ao.deploy({ src_data: luaCode })
-
-// Send message
-await p.m("Action", { Tag: "value" })
-
-// Dry run (read-only)
-const result = await p.d("Query")
-
 // HyperBEAM operations
-const hb = await new HyperBEAM({ reset: true }).ready()
-await hb.hb.spawnLua()
-await hb.hb.message({ pid, tags: { Action: "Test" } })
-await hb.hb.compute({ pid })
+hb.g(path, params)          // GET request
+hb.p(path, body)            // POST request
+hb.commit(tags, opts)       // Sign and commit message
+hb.getLua()                 // Cache and get Lua module ID
+
+// High-level helpers
+hb.spawn(tags)              // Spawn process
+hb.schedule({ pid, ... })   // Schedule message
+hb.now({ pid })             // Get current state
 ```
 
-### Test Commands
+## Test Commands
 
 ```bash
-# Run all in-memory tests
+# Lua apps on HyperBEAM (30 tests)
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+
+# All beta3 tests
+HB_TIMEOUT=60 node --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
+
+# In-memory tests
 npm test
-
-# Run specific test file
-npm test -- test/counter.test.js
-
-# Run HyperBEAM tests (requires running HyperBEAM)
-npm run test:hyperbeam
-
-# Run with verbose output
-npm test -- --reporter=verbose
 ```
 
----
+## Key Environment Variables
 
-## Documentation Map
-
-| Need | Read |
-|------|------|
-| SDK API reference | `README.md` (46KB) |
-| Protocol internals | `ao-core.md` (64KB) |
-| HyperBEAM architecture | `llms.txt` (93KB) |
-| Installation | `install.md` (33KB) |
-| AOS patterns | `aos-dev.md` (11KB) |
-| Building apps | `docs/docs/pages/book/build*.mdx` |
-| Building devices | `docs/docs/pages/book/dev*.mdx` |
-| Device reference | `docs/docs/pages/src/dev_*.mdx` |
-
----
-
-## Execution Modes Cheat Sheet
-
-### HyperAOS (Lua)
-```javascript
-const { pid } = await hb.hb.spawnLua()
-// Uses: lua@5.3a
-// Best for: Local development, testing
+```bash
+HB_TIMEOUT=120              # Auto-kill HyperBEAM after N seconds
+HB_REBAR3=false             # Use direct erl mode (mandatory)
+ARWEAVE_GATEWAY=...         # Arweave proxy URL
 ```
 
-### Legacynet (Genesis WASM)
-```javascript
-const { pid } = await hb.hb.spawnLegacy({
-  module: "WASM_MODULE_ID"
-})
-// Uses: genesis-wasm@1.0
-// Best for: Testing with legacy CU
+## Troubleshooting
+
+**Tests hang:**
+```bash
+export HB_REBAR3=false
+pkill -9 -f beam.smp
 ```
 
-### Mainnet (WASI Stack)
-```javascript
-const { pid } = await hb.hb.spawnAOS(imageId)
-// Uses: stack@1.0 + device-stack (wasi, json-iface, wasm-64, patch, multipass)
-// Best for: Production deployment
+**Port in use:**
+```bash
+pkill -9 -f beam.smp && pkill -9 -f epmd
 ```
 
----
+## Example Apps (in `/vibe/apps/`)
 
-## When Helping Users
+| App | Description | Key Handlers |
+|-----|-------------|--------------|
+| `counter.lua` | Simple counter | Inc, Dec, Get, Reset |
+| `token.lua` | Fungible token | Transfer, Balance, Mint |
+| `kv-store.lua` | Key-value DB | Set, Get, Delete |
+| `todo.lua` | Task manager | Add, List, Complete |
+| `chatroom.lua` | Chat rooms | Register, Send, Info |
+| `voting-dao.lua` | DAO voting | CreateProposal, Vote |
+| `nft-collection.lua` | NFT collection | Mint, Transfer, Info |
+| `amm-dex.lua` | DEX | AddLiquidity, Swap |
+| `social-feed.lua` | Social feed | CreatePost, GetFeed |
 
-1. **For app development:**
-   - Start with `/vibe/apps/` examples
-   - **Always test with HyperBEAM** - ArMem behavior may differ!
-   - ArMem is OK for quick syntax checks only
+## Building New Apps
 
-2. **For device development:**
-   - Start with `/tutorial-devices/` examples
-   - Read `docs/docs/pages/book/dev*.mdx` tutorials
-   - Use eunit for unit tests, **WAO + HyperBEAM for integration**
+1. **Write Lua code** following the handler pattern
+2. **Add to** `vibe/apps/[name].lua`
+3. **Add tests** to `vibe/apps/tests/hyperbeam.test.js`
+4. **Run tests:** `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
 
-3. **For debugging:**
-   - Check `llms.txt` for HyperBEAM internals
-   - Use `hb.hb.compute()` to see execution results
-   - Check message tags for error responses
+## When Asked to Build
 
-4. **For deployment:**
-   - **Must pass HyperBEAM tests first** (not just ArMem)
-   - Use `ao.deploy()` for mainnet
-   - Verify with dry runs before state-changing messages
+1. Check existing apps in `/vibe/apps/` for patterns
+2. Write Lua code using handlers
+3. Test with HyperBEAM (not just ArMem)
+4. If tests fail, read errors and fix
 
-**⚠️ Golden Rule: If it works in ArMem but not HyperBEAM, the HyperBEAM behavior is correct.**
+## Deep Dive Resources
 
----
-
-## File Locations
-
-```
-/home/user/wao/
-├── src/                    # WAO SDK source
-│   ├── ao.js              # AO module
-│   ├── ar.js              # Arweave module
-│   ├── hb.js              # HyperBEAM module
-│   └── test.js            # Testing utilities
-├── vibe/                   # Vibe-coded examples
-│   └── apps/              # 13 Lua app examples
-├── tutorial-devices/       # Erlang device examples (5 devices)
-├── docs/docs/pages/        # Documentation
-│   ├── book/              # 32 tutorial chapters
-│   └── src/               # 50+ device docs
-├── test/                   # Test files
-├── hbsig/                  # HTTP signature library
-├── llms.txt               # LLM reference (93KB)
-├── README.md              # SDK overview (46KB)
-├── ao-core.md             # Protocol docs (64KB)
-├── install.md             # Installation guide (33KB)
-└── vibe-engineer.mdx      # Vibe coding guide
-```
-
----
-
-The goal: **Make building on AO as easy as describing what you want.**
+| File | Content |
+|------|---------|
+| `llms.txt` | Complete HyperBEAM reference (93KB) |
+| `lua-report.md` | Test results and architecture |
+| `README.md` | Full SDK documentation |
+| `ao-core.md` | AO protocol internals |
