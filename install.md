@@ -14,6 +14,9 @@ cd /home/user/wao && tar -xJf /home/user/wao/installation/wao-node-modules.tar.x
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
+# Rebuild hbsig (local dependency)
+cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
+
 # Configure environment
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev

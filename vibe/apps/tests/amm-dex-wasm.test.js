@@ -4,10 +4,15 @@
  * Tests the Uniswap-style AMM DEX using ArMem (in-memory AOS with WASM).
  *
  * Available WASM modules:
- * - aos2_0_6 (latest, variant ao.TN.1) - has state persistence issues
+ * - aos2_0_6 (latest) - BREAKING: lowercases custom tag names (TokenA → Tokena)
  * - aos2_0_3
- * - aos2_0_1 (stable, used by default)
+ * - aos2_0_1 (stable) - preserves tag case, recommended for existing Lua code
  * - aos2_0_4_32 (wasm32 format)
+ *
+ * aos2_0_6 Tag Case Issue:
+ *   aos2_0_1: msg.Tags.TokenA = "VALUE"   (preserved)
+ *   aos2_0_6: msg.Tags.Tokena = "VALUE"   (lowercased)
+ *   Reserved tags like "Action" stay capitalized in both.
  *
  * Test Flow:
  * 1. Write Lua code (amm-dex.lua)
