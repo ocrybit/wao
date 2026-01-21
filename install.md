@@ -885,15 +885,13 @@ Located in `installation/` folder:
 | `hyperbeam-wao-ready.tar.xz` | **HyperBEAM + wao@1.0 + genesis-wasm (fully compiled)** | ~37MB |
 | `wao-node-modules.tar.xz` | **Pre-built node_modules + hbsig** | ~65MB |
 
-### Standard Setup (Build from source)
+### Reference Files
 
-| File | Description | Size |
-|------|-------------|------|
-| `hyperbeam-v0.9-m3-b1-compiled.tar.xz` | Pre-compiled HyperBEAM beta1 | ~38MB |
-| `hyperbeam-v0.9-m3-b3-compiled.tar.xz` | Pre-compiled HyperBEAM beta3 (latest) | ~40MB |
-| `hyperbeam_rebar_beta1.config` | Patched rebar config for beta1 | - |
-| `dev_genesis_wasm.erl` | Patched genesis-wasm with proxy support | - |
-| `genesis-wasm-server-precompiled.tar.xz` | Pre-compiled CU server | ~15MB |
+| File | Description |
+|------|-------------|
+| `hyperbeam_rebar.config` | Patched rebar config for beta3 |
+| `hyperbeam_rebar_beta1.config` | Patched rebar config for beta1 |
+| `dev_genesis_wasm.erl` | Patched genesis-wasm with proxy support |
 
 ---
 
