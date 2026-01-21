@@ -95,7 +95,7 @@ class HB {
 
   async getLua() {
     const lua = Buffer.from(hyper_aos, "base64")
-    const id = await this.cacheScript(lua, "application/lua")
+    const id = await this.cacheBinary(lua, "application/lua")
     this.lua ??= id
     return id
   }
