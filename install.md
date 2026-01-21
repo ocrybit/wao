@@ -1,5 +1,55 @@
 # WAO + HyperBEAM Installation Guide
 
+## ⚡ Ultra-Fast Setup (30 seconds)
+
+**Everything pre-compiled. No build steps. Just extract and run.**
+
+```bash
+# 1. Extract Erlang + HyperBEAM (fully configured with wao@1.0)
+cd ~
+tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
+tar -xJf /path/to/wao/installation/hyperbeam-wao-ready.tar.xz
+. ~/.asdf/asdf.sh
+asdf global erlang 27.3.4.6
+asdf global rebar 3.26.0
+
+# 2. Extract pre-built WAO dependencies
+cd /path/to/wao
+tar -xJf installation/wao-node-modules.tar.xz
+
+# 3. Set environment
+echo '. ~/.asdf/asdf.sh' >> ~/.bashrc
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+GATEWAY_URL=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+
+# 4. Run tests!
+HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/simple.test.js
+```
+
+**What's included in `hyperbeam-wao-ready.tar.xz`:**
+- ✅ HyperBEAM beta3 fully compiled
+- ✅ `wao@1.0` device registered and compiled
+- ✅ `dev_genesis_wasm.erl` patched for proxy
+- ✅ Native drivers (`hb_beamr.so`, `hb_keccak.so`)
+- ✅ Genesis-WASM server with node_modules
+- ✅ Pre-generated wallet file
+
+**What's included in `wao-node-modules.tar.xz`:**
+- ✅ All npm dependencies installed
+- ✅ hbsig pre-built (`hbsig/dist/`)
+- ✅ Ready to use immediately
+
+| File | Size | Contents |
+|------|------|----------|
+| `asdf-erlang-rebar.tar.xz` | ~23MB | Erlang 27.3.4.6 + rebar3 |
+| `hyperbeam-wao-ready.tar.xz` | ~37MB | HyperBEAM + wao@1.0 + genesis-wasm |
+| `wao-node-modules.tar.xz` | ~65MB | node_modules + hbsig/dist |
+
+---
+
 ## ⚠️ IMPORTANT: Test Command Reference
 
 **Always use this exact test command format (with HB_TIMEOUT to prevent hangs):**
@@ -813,9 +863,18 @@ rebar3 as test compile
 
 Located in `installation/` folder:
 
+### ⚡ Ultra-Fast Setup (Recommended)
+
 | File | Description | Size |
 |------|-------------|------|
 | `asdf-erlang-rebar.tar.xz` | Pre-compiled Erlang 27.3.4.6 + rebar3 | ~23MB |
+| `hyperbeam-wao-ready.tar.xz` | **HyperBEAM + wao@1.0 + genesis-wasm (fully compiled)** | ~37MB |
+| `wao-node-modules.tar.xz` | **Pre-built node_modules + hbsig** | ~65MB |
+
+### Standard Setup (Build from source)
+
+| File | Description | Size |
+|------|-------------|------|
 | `hyperbeam-v0.9-m3-b1-compiled.tar.xz` | Pre-compiled HyperBEAM beta1 | ~38MB |
 | `hyperbeam-v0.9-m3-b3-compiled.tar.xz` | Pre-compiled HyperBEAM beta3 (latest) | ~40MB |
 | `hyperbeam_rebar_beta1.config` | Patched rebar config for beta1 | - |
