@@ -85,7 +85,6 @@ function parseStructuredFieldList(str) {
  *
  * Pattern examples:
  * - "value1", "value2" (quoted strings separated by comma-space)
- * - "wasi@1.0", "json-iface@1.0" (device stack)
  * - 123, 456 (numbers)
  * - ?0, ?1 (booleans)
  */
@@ -98,7 +97,6 @@ function isStructuredFieldList(str) {
   const trimmed = str.trim()
 
   // Check for quoted string list pattern: "value1", "value2"
-  // This is the most common case for device-stack arrays
   // Use a more permissive regex that handles various characters in values
   if (/^"[^"]*"(\s*,\s*"[^"]*")+$/.test(trimmed)) {
     return true
@@ -124,10 +122,62 @@ function isStructuredFieldList(str) {
 }
 
 /**
- * Known field names that are always arrays when encoded as structured field lists
- * These get converted regardless of pattern matching
+ * Check if a string looks like a structured field dictionary
+ * Dictionary format: 1="value1", 2="value2", 3="value3"
+ * Used for device-stack and similar fields
  */
-const KNOWN_ARRAY_FIELDS = new Set([
+function isStructuredFieldDictionary(str) {
+  if (!str || typeof str !== "string") return false
+
+  const trimmed = str.trim()
+
+  // Dictionary pattern: 1="value", 2="value" (numeric keys with quoted/unquoted values)
+  // Each item is: key=value where key is numeric
+  if (/^\d+=/.test(trimmed)) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Parse a structured field dictionary string into a numbered map
+ * Input: '1="wasi@1.0", 2="json-iface@1.0"'
+ * Output: {"1": "wasi@1.0", "2": "json-iface@1.0"}
+ */
+function parseStructuredFieldDictionary(str) {
+  if (!str || typeof str !== "string") return {}
+
+  const result = {}
+  // Match pattern: key=value where value can be quoted string, number, boolean, or binary
+  const regex = /(\d+)=(?:"([^"\\]*(?:\\.[^"\\]*)*)"|:([^:]+):|(\?[01])|(-?\d+(?:\.\d+)?))/g
+  let match
+
+  while ((match = regex.exec(str)) !== null) {
+    const key = match[1]
+    if (match[2] !== undefined) {
+      // Quoted string - unescape
+      result[key] = match[2].replace(/\\(.)/g, '$1')
+    } else if (match[3] !== undefined) {
+      // Binary (base64)
+      result[key] = Buffer.from(match[3], "base64")
+    } else if (match[4] !== undefined) {
+      // Boolean
+      result[key] = match[4] === "?1"
+    } else if (match[5] !== undefined) {
+      // Number
+      result[key] = match[5].includes(".") ? parseFloat(match[5]) : parseInt(match[5], 10)
+    }
+  }
+
+  return result
+}
+
+/**
+ * Known field names that should be sent as numbered maps (1-indexed)
+ * HyperBEAM expects these as maps like {"1": "val1", "2": "val2"}, not arrays
+ */
+const NUMBERED_MAP_FIELDS = new Set([
   "device-stack",
   "as", // genesis-wasm tag
 ])
@@ -262,20 +312,28 @@ export const commit = async (obj, opts) => {
       .map(([field, _]) => field)
   )
 
-  // Track which fields were converted from structured field lists to arrays
-  // These fields are NOT excluded from committedKeys (unlike explicit list fields)
+  // Track which fields were converted from structured field lists
   const detectedArrayFields = new Set()
 
-  // Convert ALL structured field list strings to proper arrays
-  // This handles:
-  // 1. Explicit list fields (marked in ao-types)
-  // 2. Known array fields (device-stack, as, etc.)
-  // 3. Arrays detected by pattern matching
+  // Convert structured field strings to proper format
+  // NUMBERED_MAP_FIELDS (like device-stack) are kept as dictionary strings in the JSON body
+  // This ensures the JSON value matches the signed header value for commitment verification
+  // HyperBEAM's structured codec will parse the dictionary string back to a map
+  // Other list fields get converted to arrays
   for (const [key, value] of Object.entries(body)) {
     if (typeof value === "string") {
+      // NUMBERED_MAP_FIELDS stay as dictionary strings - don't convert!
+      // The dictionary format (1="val1", 2="val2") is kept as-is so it matches
+      // the signed value. HyperBEAM's structured codec parses it to a map.
+      if (NUMBERED_MAP_FIELDS.has(key)) {
+        // Keep as string - don't convert to numbered map
+        // This ensures the JSON value matches the signed header value
+        continue
+      }
+
+      // Check if this should be converted to an array
       const shouldConvert =
         explicitListFields.has(key) ||
-        KNOWN_ARRAY_FIELDS.has(key) ||
         isStructuredFieldList(value)
 
       if (shouldConvert) {
@@ -299,8 +357,8 @@ export const commit = async (obj, opts) => {
   // "content-digest" conflicts when using commit + JSON POST (different HTTP body)
   const httpPseudoHeaders = new Set(["authority", "content-digest"])
 
-  // Check if ao-types contains any "list" declarations (from explicit or detected lists)
-  // If so, exclude ao-types from committed fields because HyperBEAM converts lists to +link references
+  // Check if ao-types contains any "list" declarations
+  // If so, exclude ao-types from committed fields because HyperBEAM may modify list values
   const hasListTypes = explicitListFields.size > 0 || detectedArrayFields.size > 0
 
   const committedKeys = components
@@ -312,6 +370,12 @@ export const commit = async (obj, opts) => {
       !httpPseudoHeaders.has(key) &&
       !(key === "ao-types" && hasListTypes)
     )
+
+  // NOTE: NUMBERED_MAP_FIELDS (device-stack, as) are now INCLUDED in committedKeys!
+  // They are encoded as dictionary strings (1="val1", 2="val2") without "map" type
+  // in ao-types, so they stay as strings and don't get linkified by HyperBEAM.
+  // The scheduler's with_only_committed will preserve them because they're in committed.
+  // dev_stack.erl will parse the dictionary string when it accesses device-stack.
 
   // Beta3: Create single RSA commitment
   // The HMAC signature is server-side only (for "constant:ao" keyid)

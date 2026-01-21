@@ -458,10 +458,13 @@ class HB {
   async spawnAOS(image) {
     await this.setInfo()
     image ??= this.image ?? (await this.getImage())
+    // Use commit + JSON POST pattern (same as spawn/spawnLegacy)
+    // This allows device-stack to be in committed keys without being signed
+    // HTTP Signature POST doesn't work because committed keys are derived from signature-input
     const tags = {
-      "Data-Protocol": "ao",
-      Variant: "ao.N.1",
-      Authority: this.operator,
+      "data-protocol": "ao",
+      variant: "ao.N.1",
+      authority: this.operator,
       image,
       "execution-device": "stack@1.0",
       "push-device": "push@1.0",
@@ -476,8 +479,28 @@ class HB {
       "patch-from": "/results/outbox",
       "patch-mode": "patches",
       passes: 2,
+      "random-seed": seed(16),
+      type: "Process",
+      device: "process@1.0",
+      scheduler: this.addr,
     }
-    return await this.spawn(tags)
+    const committed = await this.commit(tags, { path: false })
+    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(committed),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`SpawnAOS failed: ${response.status} - ${text.substring(0, 200)}`)
+    }
+
+    return {
+      pid: response.headers.get("process"),
+      slot: response.headers.get("slot"),
+      status: response.status,
+    }
   }
 
   async scheduleAOS({ action = "Eval", tags = {}, ...rest }) {

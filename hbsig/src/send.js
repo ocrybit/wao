@@ -54,7 +54,9 @@ export const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  return `http-sig-${hexString}`
+  // Beta3 HyperBEAM requires signature names to start with "comm-" prefix
+  // See dev_codec_httpsig_siginfo.erl lines 170-171
+  return `comm-${hexString}`
 }
 
 const toView = value => {

@@ -344,22 +344,31 @@ function from(msg) {
       continue
     }
 
+    // Fields that should be encoded as structured field dictionaries (not lists)
+    // These are encoded as dictionary strings (1="val1", 2="val2") but WITHOUT
+    // a "map" type in ao-types. This keeps them as strings so they don't get
+    // linkified by HyperBEAM and can be signed and verified correctly.
+    const dictionaryFields = new Set(["device-stack", "as"])
+
     // Handle arrays
     if (Array.isArray(value) && value.length > 0) {
-      if (shouldConvertToNumberedMap(value)) {
+      // Dictionary fields should be encoded as structured field dictionaries
+      // so that the signed value matches the JSON numbered map format
+      if (dictionaryFields.has(normKey)) {
+        // Encode as structured field dictionary: 1="val1", 2="val2"
+        // DON'T add "map" type - keep as plain string to avoid linkification
+        const encoded = encodeAsDictionary(value)
+        values.push([normKey, encoded])
+      } else if (shouldConvertToNumberedMap(value)) {
         // Convert to numbered map (1-based indexing)
         const numberedMap = {}
         value.forEach((item, idx) => {
           numberedMap[(idx + 1).toString()] = item
         })
-        // Add "list" type so HyperBEAM knows this is an array
-        // Arrays are excluded from signing (via knownArrayFields), so the +link
-        // conversion won't break commitment validation
         types.push([normKey, "list"])
         values.push([normKey, from(numberedMap)])
       } else {
         // Encode as list string
-        // Add "list" type so HyperBEAM stores this as an array
         const [_type, encoded] = encodeValue(value)
         types.push([normKey, "list"])
         values.push([normKey, encoded])
@@ -437,6 +446,35 @@ function shouldConvertToNumberedMap(arr) {
     hasEmptyArrays ||
     (allArrays && arr.length > 0 && arr.every(item => Array.isArray(item)))
   )
+}
+
+/**
+ * Encode array as structured field dictionary (1-indexed)
+ * Format: 1="value1", 2="value2", 3="value3"
+ * HyperBEAM parses this to a map that matches JSON {"1": "value1", "2": "value2"}
+ */
+function encodeAsDictionary(arr) {
+  return arr
+    .map((item, idx) => {
+      const key = idx + 1 // 1-indexed
+      if (typeof item === "string") {
+        // String values are quoted
+        return `${key}="${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+      } else if (typeof item === "number") {
+        // Numbers are bare
+        return `${key}=${item}`
+      } else if (typeof item === "boolean") {
+        // Booleans use ?0 or ?1
+        return `${key}=${item ? "?1" : "?0"}`
+      } else if (item instanceof Buffer) {
+        // Binary data as byte sequences
+        return `${key}=:${item.toString("base64")}:`
+      } else {
+        // Fallback
+        return `${key}="${String(item)}"`
+      }
+    })
+    .join(", ")
 }
 
 /**
