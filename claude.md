@@ -119,11 +119,29 @@ hbeam.kill()
 
 ### In-Memory Tests (ArMem)
 
-Fast but behavior may differ from real execution.
+Uses actual WASM execution via ArMem. Run with:
 
 ```bash
-npm test -- vibe/apps/tests/armem.test.js
+npm test -- vibe/apps/tests/amm-dex-wasm.test.js
 ```
+
+### WASM Module Versions
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| `aos2_0_6` | Latest | **BREAKING**: lowercases custom tag names |
+| `aos2_0_3` | Stable | |
+| `aos2_0_1` | Recommended | Preserves tag case |
+| `aos2_0_4_32` | wasm32 | Different format |
+
+**aos2_0_6 Breaking Change:**
+```lua
+-- aos2_0_1: msg.Tags.TokenA = "VALUE"  (preserved)
+-- aos2_0_6: msg.Tags.Tokena = "VALUE"  (lowercased!)
+-- Reserved tags like "Action" stay capitalized in both
+```
+
+Use `aos2_0_1` for existing Lua code, or update tag access to lowercase.
 
 ## Lua App Pattern
 
