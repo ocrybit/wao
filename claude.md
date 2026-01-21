@@ -8,27 +8,22 @@
 # 1. Source asdf if exists
 [ -f ~/.asdf/asdf.sh ] && . ~/.asdf/asdf.sh
 
-# 2. Check/install dependencies
-npm install
-[ -d hbsig/dist ] || (cd hbsig && npm install && npm run build && cd ..)
-npm install
-
-# 3. Check Erlang (skip if erl command works)
+# 2. Check Erlang (extract tarball if not installed)
 if ! command -v erl &> /dev/null; then
-  [ -d ~/.asdf ] || git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+  cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
   . ~/.asdf/asdf.sh
-  asdf plugin list | grep -q erlang || asdf plugin add erlang
-  asdf plugin list | grep -q rebar || asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
-  asdf list erlang 2>/dev/null | grep -q 27.3.4.6 || asdf install erlang 27.3.4.6
   asdf global erlang 27.3.4.6
-  asdf list rebar 2>/dev/null | grep -q 3.26.0 || asdf install rebar 3.26.0
   asdf global rebar 3.26.0
 fi
 
-# 4. Check HyperBEAM (skip if exists)
+# 3. Check HyperBEAM (extract tarball if not exists)
 if [ ! -d ~/HyperBEAM ]; then
-  git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git ~/HyperBEAM
-  cd ~/HyperBEAM && rebar3 compile && cd -
+  cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
+fi
+
+# 4. Check node_modules (extract tarball if not exists)
+if [ ! -d node_modules ]; then
+  tar -xJf /home/user/wao/installation/wao-node-modules.tar.xz
 fi
 
 # 5. Configure environment
