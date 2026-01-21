@@ -1,8 +1,8 @@
 # WAO SDK - Claude Guide
 
-Read this file at the start of every session.
+**Run the setup steps below, then verify with tests.**
 
-## Setup (Run Once)
+## Setup
 
 ```bash
 # 1. Install dependencies
