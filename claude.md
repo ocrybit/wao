@@ -2,6 +2,36 @@
 
 Read this file at the start of every session.
 
+## Setup (Run Once)
+
+```bash
+# 1. Install dependencies
+npm install
+cd hbsig && npm install && npm run build && cd ..
+npm install
+
+# 2. Setup Erlang via asdf
+git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+. ~/.asdf/asdf.sh
+asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
+asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6
+asdf install rebar 3.26.0 && asdf global rebar 3.26.0
+
+# 3. Setup HyperBEAM
+git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git ~/HyperBEAM
+cd ~/HyperBEAM && rebar3 compile
+cd -
+
+# 4. Configure environment
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+
+# 5. Verify (30 tests should pass)
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+```
+
 ## What is WAO?
 
 WAO is an SDK for building on AO (the hypercomputer on Arweave). It provides:
