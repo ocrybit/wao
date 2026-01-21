@@ -3,82 +3,96 @@
 ## Overview
 
 This report covers testing of both:
-- **Lua Apps** - AOS processes running on the AO hypercomputer
+- **Lua Apps** - AOS processes running on HyperBEAM via genesis-wasm
 - **Erlang Devices** - HyperBEAM infrastructure components
 
 ## Summary
 
 | Category | Environment | Status | Tests |
 |----------|-------------|--------|-------|
-| **Lua Apps** | ArMem (In-Memory) | ✅ PASS | 14/14 |
-| **Lua Apps** | HyperBEAM (lua@5.3a) | ❌ FAIL | 0/14 |
+| **Lua Apps** | HyperBEAM (genesis-wasm) | ✅ PASS | 22/22 |
 | **Erlang Devices** | Eunit | ✅ READY | 8 devices |
 | **Erlang Devices** | WAO/HyperBEAM | 📋 READY | Tests written |
 
 ---
 
-## Part 1: Lua Apps (ArMem Tests)
+## Part 1: Lua Apps (HyperBEAM Tests)
 
 ### Test Results
 
-All 14 tests pass using the in-memory ArMem testing environment.
+All 22 tests pass using HyperBEAM with genesis-wasm execution device.
 
-#### Counter App
-- ✅ should start at 0
-- ✅ should increment
-- ✅ should increment by amount
-- ✅ should decrement
-- ✅ should reset
+**Run time:** ~84 seconds (includes HyperBEAM startup)
 
-#### Token App
-- ✅ should have token info
-- ✅ should have initial balance for owner
-- ✅ should transfer tokens
+#### Basic Apps (5 apps, 17 tests)
 
-#### Todo App
-- ✅ should add a todo
-- ✅ should list todos
-- ✅ should complete a todo
+| App | Tests | Status |
+|-----|-------|--------|
+| Counter | 5 | ✅ PASS |
+| Token | 3 | ✅ PASS |
+| Todo | 2 | ✅ PASS |
+| Chatroom | 2 | ✅ PASS |
+| KV Store | 2 | ✅ PASS |
 
-#### KV Store App
-- ✅ should set and get a value
-- ✅ should list keys
-- ✅ should delete a key
+#### Advanced Apps (6 apps, 8 tests)
+
+| App | Tests | Status |
+|-----|-------|--------|
+| Voting DAO | 2 | ✅ PASS |
+| NFT Collection | 1 | ✅ PASS |
+| AMM DEX | 1 | ✅ PASS |
+| Lottery | 1 | ✅ PASS |
+| Escrow | 1 | ✅ PASS |
+| Social Feed | 2 | ✅ PASS |
 
 ### Running Lua App Tests
 
 ```bash
-node --test vibe/tests/example-usage.test.js
+HB_TIMEOUT=180 node --experimental-wasm-memory64 --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 ```
 
-### Issues Fixed
+### Architecture
 
-#### 1. Response Structure
-**Problem**: Tests expected data in `res.Output.data` but `msg.reply()` puts data in `res.Messages[0].Data`.
+The tests use:
+1. **HyperBEAM** - Process spawning and message scheduling
+2. **genesis-wasm@1.0** - Execution device for Lua/WASM
+3. **Direct CU calls** - Compute and dry-run queries (bypasses beta3 prometheus bug)
 
-**Solution**: Added `getReplyData()` helper:
+```
+┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
+│   Test Suite     │───▶│   HyperBEAM     │───▶│   CU Server  │
+│                  │    │   (spawn/sched) │    │   (compute)  │
+└──────────────────┘    └─────────────────┘    └──────────────┘
+         │                                              ▲
+         └──────────────────────────────────────────────┘
+                        Direct CU calls
+```
+
+### Test Pattern
+
 ```javascript
-const getReplyData = (res) => {
-  if (res.Messages && res.Messages.length > 0 && res.Messages[0].Data) {
-    return JSON.parse(res.Messages[0].Data)
-  }
-  throw new Error("No reply data found")
-}
+// Spawn process
+const { pid } = await hb.spawnLegacy()
+
+// Load Lua code
+const { slot } = await hb.scheduleLegacy({ pid, data: luaCode })
+await cuCompute(hb, pid, slot)  // Direct CU call
+
+// Send action and get result
+const { slot: slot2 } = await hb.scheduleLegacy({ pid, action: "Inc" })
+await cuCompute(hb, pid, slot2)
+
+// Query current state
+const result = await cuDryrun(hb, pid, "Get")
 ```
 
-#### 2. AOS Global Collision
-**Problem**: Token app's `Name` collided with AOS runtime's `Name = "aos"`.
+### Known Issues
 
-**Solution**: Renamed to `TokenName`, `TokenTicker`, etc.
+#### Beta3 Prometheus Bug
+HyperBEAM beta3's relay/compute has a bug in `prometheus_http:status_class` that crashes when processing CU responses. **Workaround:** Direct CU calls using `cuCompute()` and `cuDryrun()`.
 
-### HyperBEAM Lua Issues
-
-The `lua@5.3a` execution device returns 500 errors during compute:
-- Process spawn: ✅ Works
-- Schedule message: ✅ Works
-- Compute results: ❌ 500 error
-
-This is an environment/initialization issue, not a problem with the Lua app logic.
+#### lua@5.3a Not Working
+The native `lua@5.3a` execution device (luerl) returns 500 errors during compute. Use `genesis-wasm@1.0` instead.
 
 ---
 
@@ -223,7 +237,7 @@ wao/
 │   │   ├── token.lua
 │   │   └── ...
 │   └── tests/
-│       └── example-usage.test.js  # ArMem tests (14 tests)
+│       └── hyperbeam.test.js    # HyperBEAM tests (22 tests)
 │
 ├── tutorial-devices/            # 8 Erlang devices
 │   ├── dev_kv.erl              # Existing
@@ -245,8 +259,9 @@ wao/
 
 ## Recommendations
 
-1. **Lua Apps**: Use ArMem for development, HyperBEAM for production verification
-2. **Erlang Devices**: Use eunit for unit tests, WAO for integration tests
-3. **Avoid AOS Globals**: Use prefixed names (e.g., `TokenName` not `Name`)
-4. **Response Format**: Lua apps use `msg.reply({ Data = json.encode(...) })`
-5. **Device Installation**: Copy to HyperBEAM src and add to `hb_opts.erl`
+1. **Lua Apps**: Test with HyperBEAM + genesis-wasm for production verification
+2. **Direct CU Calls**: Use `cuCompute()` and `cuDryrun()` to bypass beta3 bugs
+3. **Erlang Devices**: Use eunit for unit tests, WAO for integration tests
+4. **Avoid AOS Globals**: Use prefixed names (e.g., `TokenName` not `Name`)
+5. **Response Format**: Lua apps use `msg.reply({ Data = json.encode(...) })`
+6. **Device Installation**: Copy to HyperBEAM src and add to `hb_opts.erl`
