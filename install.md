@@ -14,9 +14,6 @@ cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
-
-# 4. Verify (1 test should pass)
-. ~/.asdf/asdf.sh && HB_TIMEOUT=30 node --test install.test.js
 ```
 
 See `claude.md` for full documentation.

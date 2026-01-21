@@ -18,9 +18,6 @@ cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
-
-# 4. Verify (1 test should pass)
-. ~/.asdf/asdf.sh && HB_TIMEOUT=30 node --test install.test.js
 ```
 
 ## What is WAO?
@@ -167,9 +164,6 @@ hb.now({ pid })             // Get current state
 ## Test Commands
 
 ```bash
-# Quick install verification (1 test)
-. ~/.asdf/asdf.sh && HB_TIMEOUT=30 node --test install.test.js
-
 # Lua apps on HyperBEAM (30 tests)
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 
