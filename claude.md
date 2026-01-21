@@ -267,3 +267,88 @@ pkill -9 -f beam.smp && pkill -9 -f epmd
 | `lua-report.md` | Test results and architecture |
 | `README.md` | Full SDK documentation |
 | `ao-core.md` | AO protocol internals |
+
+---
+
+## Implementation Notes (For Claude)
+
+### Testing Workflow
+
+When asked to build/test for "mainnet WASM" (not `lua@5.3a`):
+
+1. **Write Lua** - Create/modify `vibe/apps/[name].lua`
+2. **Test ArMem (in-memory WASM)** - `npm test -- vibe/apps/tests/[name].test.js`
+3. **Test HyperBEAM** - `. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
+
+**Always run BOTH tests** when user asks about mainnet WASM testing.
+
+### Critical Gotchas
+
+1. **Kill lingering processes before HyperBEAM tests:**
+   ```bash
+   pkill -9 -f beam.smp 2>/dev/null; pkill -9 -f epmd 2>/dev/null
+   ```
+   HyperBEAM tests fail with "fetch failed" if old processes are running.
+
+2. **Use absolute paths in setup scripts:**
+   After `cd ~`, relative paths like `installation/...` won't work. Use `/home/user/wao/installation/...`.
+
+3. **aos2_0_6 lowercases custom tags:**
+   - `msg.Tags.TokenA` becomes `msg.Tags.Tokena`
+   - Reserved tags (`Action`, `Data`, etc.) stay capitalized
+   - Use `aos2_0_1` for existing Lua code
+
+4. **Rebuild hbsig after tarball extraction:**
+   ```bash
+   cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
+   ```
+
+### ArMem Test Pattern
+
+```javascript
+import { ArMem, connect, acc, scheduler } from "../../../src/test.js"
+
+const mem = new ArMem()
+const { spawn, message, dryrun } = connect(mem)
+
+// Use aos2_0_1 (stable), NOT aos2_0_6 (breaks tag case)
+const pid = await spawn({
+  signer: acc[0].signer,
+  scheduler,
+  module: mem.modules.aos2_0_1,
+})
+
+// Load Lua code
+await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: luaCode })
+
+// Send message
+await message({ process: pid, signer, tags: [{ name: "Action", value: "MyAction" }] })
+
+// Query state (read-only)
+const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Query" }] })
+const data = JSON.parse(res.Messages[0].Data)
+```
+
+### Debugging WASM Module Issues
+
+If WASM tests fail mysteriously, check tag case handling:
+```javascript
+// Debug test to check tag structure
+await message({
+  process: pid,
+  signer,
+  tags: [
+    { name: "Action", value: "Debug" },
+    { name: "TokenA", value: "VALUE-A" },  // Will this become "Tokena"?
+  ]
+})
+```
+
+### Key Files for Reference
+
+| File | Purpose |
+|------|---------|
+| `src/armem-base.js` | WASM module definitions (aos2_0_1, aos2_0_6, etc.) |
+| `src/test.js` | ArMem test utilities (connect, acc, scheduler) |
+| `src/hyperbeam.js` | HyperBEAM manager class |
+| `vibe/apps/tests/amm-dex-wasm.test.js` | ArMem WASM test example |
