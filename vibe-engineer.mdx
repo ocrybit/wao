@@ -2,6 +2,30 @@
 
 Welcome to vibe engineering! This guide shows you how to build real applications on the AO hypercomputer by simply describing what you want. No coding experience required - just open [Claude Code](https://claude.ai/code) and start talking.
 
+## The Vision: Build Anything in Minutes
+
+This is the **democratization of decentralized compute**. With WAO + Claude Code, the barrier to building on AO went from "blockchain developer with months of learning" to "anyone who can describe what they want."
+
+**What used to take weeks now takes minutes:**
+
+| Before | After |
+|--------|-------|
+| Learn Lua, AO architecture, message passing | Describe what you want in plain English |
+| Understand HyperBEAM, devices, schedulers | Claude handles the technical details |
+| Debug cryptic errors manually | Claude reads errors and fixes them |
+| Days/weeks to build an app | Minutes to working prototype |
+| Only developers could participate | Anyone with ideas can build |
+
+**The complete stack is here:**
+- 📚 **270KB+ of documentation** - Everything from basics to protocol internals
+- 📖 **32 book chapters** - Deep dives into building, devices, and HyperBEAM
+- 🔧 **13 ready-to-use apps** - DeFi, NFTs, DAOs, social, gaming examples
+- ⚙️ **4 infrastructure devices** - Rate limiting, access control, analytics, logging
+- 🧪 **1000x faster testing** - In-memory execution for instant feedback
+- 🤖 **93KB LLM reference** - Claude has complete HyperBEAM knowledge
+
+**Build a DEX in minutes. Launch a DAO before lunch. Ship an NFT marketplace by end of day.**
+
 ## What is Vibe Engineering?
 
 Vibe engineering is building software by describing what you want in plain English. You tell Claude what to build, and it writes the code, runs the tests, and fixes any issues. Your job is to have ideas and give feedback.
@@ -632,6 +656,59 @@ end
 
 ---
 
+## The Complete Documentation Stack
+
+Everything you need to go from idea to production is already here:
+
+### Quick Reference (Root Files)
+
+| File | Size | What It Contains |
+|------|------|------------------|
+| `README.md` | 46KB | WAO SDK overview, API reference, quick start |
+| `llms.txt` | 93KB | Complete HyperBEAM reference for Claude |
+| `ao-core.md` | 64KB | AO protocol internals and architecture |
+| `protocol.md` | 26KB | Message format, devices, resolution |
+| `install.md` | 33KB | Full installation guide |
+| `aos-dev.md` | 11KB | AOS development patterns |
+
+### The Book (32 Chapters)
+
+Located in `docs/docs/pages/book/`:
+
+- **build1-5.mdx** - Building apps from scratch (178KB)
+- **dev1-9.mdx** - Creating custom devices (200KB)
+- **hb1-11.mdx** - HyperBEAM deep dives (240KB)
+- **erlang.mdx** - Erlang fundamentals (46KB)
+- **ar.mdx** - Arweave basics (19KB)
+
+### Source Documentation (50+ Files)
+
+Every HyperBEAM device documented in `docs/docs/pages/src/`:
+- `dev_scheduler.mdx`, `dev_wasm.mdx`, `dev_p4.mdx`
+- `dev_codec_httpsig.mdx`, `dev_codec_ans104.mdx`
+- And 45+ more...
+
+### Tutorials
+
+- Creating devices in **Erlang**, **C++**, **Rust**
+- Running **LLMs on AO** (with waollama)
+- Deploying to **mainnet** and **legacynet**
+
+### Example Devices (Erlang)
+
+Real-world device implementations in `tutorial-devices/`:
+- `dev_aojs.erl` - JavaScript integration (22KB)
+- `dev_dataplatform.erl` - Data platform (17KB)
+- `dev_gateway.erl` - Gateway device (16KB)
+- `dev_kv.erl` - Key-value store (6KB)
+
+**This means:**
+- **Minutes:** Describe an app → Get working Lua code
+- **Hours:** Learn from the book → Build custom devices
+- **Days:** Master the protocol → Create novel infrastructure
+
+---
+
 ## Summary
 
 | Testing Mode | Speed | Execution | Best For |
@@ -650,4 +727,24 @@ end
 - Browse `/vibe/devices/` for 4 infrastructure components
 - Each example includes the original vibe prompt that created it
 
-Open [Claude Code](https://claude.ai/code), describe what you want to create, and start vibing!
+**Go deeper:**
+- Read `llms.txt` for Claude's complete HyperBEAM knowledge
+- Explore the book chapters for comprehensive tutorials
+- Check `tutorial-devices/` for real Erlang device examples
+
+---
+
+## Start Building Now
+
+```
+Clone WAO and build me a [your idea here].
+Run tests to make sure it works.
+```
+
+That's it. No prerequisites. No learning curve. Just describe what you want.
+
+**100x more experiments. Faster iteration. More discovery.**
+
+The future of decentralized compute is vibe-coded.
+
+Open [Claude Code](https://claude.ai/code) and start vibing!
