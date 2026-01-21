@@ -5,35 +5,39 @@
 ## Setup
 
 ```bash
-# 1. Check/install dependencies
+# 1. Source asdf if exists
+[ -f ~/.asdf/asdf.sh ] && . ~/.asdf/asdf.sh
+
+# 2. Check/install dependencies
 npm install
 [ -d hbsig/dist ] || (cd hbsig && npm install && npm run build && cd ..)
 npm install
 
-# 2. Check Erlang (skip if exists)
+# 3. Check Erlang (skip if erl command works)
 if ! command -v erl &> /dev/null; then
-  git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+  [ -d ~/.asdf ] || git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
   . ~/.asdf/asdf.sh
-  asdf plugin add erlang && asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
-  asdf install erlang 27.3.4.6 && asdf global erlang 27.3.4.6
-  asdf install rebar 3.26.0 && asdf global rebar 3.26.0
+  asdf plugin list | grep -q erlang || asdf plugin add erlang
+  asdf plugin list | grep -q rebar || asdf plugin add rebar https://github.com/Stratus3D/asdf-rebar.git
+  asdf list erlang 2>/dev/null | grep -q 27.3.4.6 || asdf install erlang 27.3.4.6
+  asdf global erlang 27.3.4.6
+  asdf list rebar 2>/dev/null | grep -q 3.26.0 || asdf install rebar 3.26.0
+  asdf global rebar 3.26.0
 fi
-[ -f ~/.asdf/asdf.sh ] && . ~/.asdf/asdf.sh
 
-# 3. Check HyperBEAM (skip if exists)
+# 4. Check HyperBEAM (skip if exists)
 if [ ! -d ~/HyperBEAM ]; then
   git clone --depth 1 --branch v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git ~/HyperBEAM
-  cd ~/HyperBEAM && rebar3 compile
-  cd -
+  cd ~/HyperBEAM && rebar3 compile && cd -
 fi
 
-# 4. Configure environment
+# 5. Configure environment
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
-# 5. Verify (30 tests should pass)
+# 6. Verify (30 tests should pass)
 HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
 ```
 
