@@ -1,0 +1,1884 @@
+# Vibe Engineer's Guide to AO Development
+
+Welcome to the world of AO development! This guide is designed for complete beginners - you don't need any programming experience. We'll use Claude Code as your AI pair programmer to build real applications on the AO hypercomputer.
+
+## What You'll Learn
+
+By the end of this guide, you'll be able to:
+- Set up a complete development environment
+- Build 3 types of AO applications (Counter, Token, Messenger)
+- Create custom HyperBEAM devices
+- Test everything locally before deploying
+
+## What is AO?
+
+AO is a decentralized hypercomputer built on Arweave. Think of it as a global computer where:
+- **Processes** are like apps that run forever
+- **Messages** are how you interact with processes
+- **Handlers** are functions that respond to messages
+- **State** is the memory that persists between messages
+
+## What is WAO?
+
+WAO (Web AO) is a JavaScript SDK that makes AO development fast and easy. It includes:
+- **In-memory testing** - Test your apps 1000x faster than on mainnet
+- **HyperBEAM integration** - Test with real beta3 infrastructure locally
+- **Simple APIs** - Write less code, do more
+
+---
+
+## Part 1: Setting Up Your Environment
+
+### Step 1: Install Node.js
+
+Node.js is the JavaScript runtime we'll use. Open Claude Code and say:
+
+```
+Help me install Node.js version 22 or later on my system
+```
+
+Claude will detect your operating system and guide you through installation.
+
+### Step 2: Create Your Project
+
+Ask Claude:
+
+```
+Create a new AO project called "my-ao-apps" with WAO SDK installed
+```
+
+Claude will run these commands for you:
+
+```bash
+mkdir my-ao-apps
+cd my-ao-apps
+npm init -y
+npm install wao
+```
+
+### Step 3: Configure Your Project
+
+Ask Claude:
+
+```
+Set up my package.json for ES modules and add a test script for AO development
+```
+
+Your `package.json` should look like:
+
+```json
+{
+  "name": "my-ao-apps",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-wasm-memory64 --test --test-concurrency=1"
+  },
+  "dependencies": {
+    "wao": "latest"
+  }
+}
+```
+
+### Step 4: Verify Installation
+
+Ask Claude:
+
+```
+Create a simple test to verify WAO is working
+```
+
+Create `verify.test.js`:
+
+```javascript
+import { describe, it } from "node:test"
+import assert from "node:assert"
+import { ArMem, connect, acc } from "wao/test"
+
+describe("WAO Installation", () => {
+  it("should connect to in-memory AO", async () => {
+    const mem = new ArMem()
+    const { spawn } = connect(mem)
+
+    const pid = await spawn({
+      signer: acc[0].signer,
+      module: mem.modules.aos2_0_1,
+    })
+
+    assert.ok(pid, "Process ID should be returned")
+    console.log("WAO is working! Process ID:", pid)
+  })
+})
+```
+
+Run it:
+
+```bash
+npm test verify.test.js
+```
+
+If you see "WAO is working!" - congratulations! You're ready to build.
+
+---
+
+## Part 2: Your First AO App - Counter
+
+The Counter app teaches you the fundamentals: handlers, state, and messages.
+
+### What We're Building
+
+A simple counter that can:
+- Get the current count
+- Increment (+1)
+- Decrement (-1)
+- Add any number
+- Reset to zero
+
+### Step 1: Write the Lua Script
+
+Ask Claude:
+
+```
+Create a counter.lua file with handlers for Get, Inc, Dec, Add, and Reset
+```
+
+Create `counter.lua`:
+
+```lua
+--[[
+  Counter App
+  A simple stateful counter demonstrating AO handler patterns
+]]
+
+-- State: the current count
+local count = 0
+
+-- Get: return current count (read-only)
+Handlers.add("Get", "Get", function(msg)
+  msg.reply({ Data = tostring(count) })
+end)
+
+-- Inc: increment by 1
+Handlers.add("Inc", "Inc", function(msg)
+  count = count + 1
+  msg.reply({ Data = tostring(count) })
+end)
+
+-- Dec: decrement by 1
+Handlers.add("Dec", "Dec", function(msg)
+  count = count - 1
+  msg.reply({ Data = tostring(count) })
+end)
+
+-- Add: add a specific number
+Handlers.add("Add", "Add", function(msg)
+  local value = tonumber(msg.Tags.Value) or 0
+  count = count + value
+  msg.reply({ Data = tostring(count) })
+end)
+
+-- Reset: set count back to 0
+Handlers.add("Reset", "Reset", function(msg)
+  count = 0
+  msg.reply({ Data = tostring(count) })
+end)
+
+-- Info: return app information
+Handlers.add("Info", "Info", function(msg)
+  msg.reply({
+    Data = "Counter App v1.0",
+    Tags = {
+      Count = tostring(count),
+      Version = "1.0"
+    }
+  })
+end)
+```
+
+### Understanding the Code
+
+Let's break down what each part does:
+
+```lua
+local count = 0
+```
+This creates a **state variable**. It starts at 0 and persists between messages.
+
+```lua
+Handlers.add("Inc", "Inc", function(msg)
+```
+This registers a **handler** named "Inc" that triggers when a message has `Action = "Inc"`.
+
+```lua
+msg.reply({ Data = tostring(count) })
+```
+This sends a **response** back to whoever sent the message.
+
+### Step 2: Write Tests
+
+Ask Claude:
+
+```
+Create counter.test.js to test all the counter handlers
+```
+
+Create `counter.test.js`:
+
+```javascript
+import { describe, it, before } from "node:test"
+import assert from "node:assert"
+import { readFileSync } from "fs"
+import { ArMem, connect, acc } from "wao/test"
+
+// Load the Lua script
+const counterScript = readFileSync("counter.lua", "utf8")
+
+describe("Counter App", () => {
+  let mem, message, dryrun, pid
+
+  before(async () => {
+    // Create in-memory AO environment
+    mem = new ArMem()
+    const connected = connect(mem)
+    message = connected.message
+    dryrun = connected.dryrun
+
+    // Spawn a new process
+    pid = await connected.spawn({
+      signer: acc[0].signer,
+      module: mem.modules.aos2_0_1,
+    })
+
+    // Load our counter script into the process
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: counterScript,
+    })
+
+    console.log("Counter process spawned:", pid)
+  })
+
+  it("should start at 0", async () => {
+    const result = await dryrun({
+      process: pid,
+      tags: [{ name: "Action", value: "Get" }],
+    })
+
+    assert.equal(result.Messages[0].Data, "0")
+    console.log("Initial count: 0")
+  })
+
+  it("should increment", async () => {
+    // Send Inc message (changes state)
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Inc" }],
+    })
+
+    // Check new value (dryrun doesn't change state)
+    const result = await dryrun({
+      process: pid,
+      tags: [{ name: "Action", value: "Get" }],
+    })
+
+    assert.equal(result.Messages[0].Data, "1")
+    console.log("After Inc: 1")
+  })
+
+  it("should decrement", async () => {
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Dec" }],
+    })
+
+    const result = await dryrun({
+      process: pid,
+      tags: [{ name: "Action", value: "Get" }],
+    })
+
+    assert.equal(result.Messages[0].Data, "0")
+    console.log("After Dec: 0")
+  })
+
+  it("should add specific value", async () => {
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [
+        { name: "Action", value: "Add" },
+        { name: "Value", value: "100" },
+      ],
+    })
+
+    const result = await dryrun({
+      process: pid,
+      tags: [{ name: "Action", value: "Get" }],
+    })
+
+    assert.equal(result.Messages[0].Data, "100")
+    console.log("After Add 100: 100")
+  })
+
+  it("should reset to zero", async () => {
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Reset" }],
+    })
+
+    const result = await dryrun({
+      process: pid,
+      tags: [{ name: "Action", value: "Get" }],
+    })
+
+    assert.equal(result.Messages[0].Data, "0")
+    console.log("After Reset: 0")
+  })
+})
+```
+
+### Step 3: Run Your Tests
+
+```bash
+npm test counter.test.js
+```
+
+You should see all tests pass with output like:
+
+```
+Counter process spawned: abc123...
+Initial count: 0
+After Inc: 1
+After Dec: 0
+After Add 100: 100
+After Reset: 0
+✔ Counter App (5 tests, 0 failures)
+```
+
+### Key Concepts Learned
+
+1. **State** - Variables that persist between messages (`local count = 0`)
+2. **Handlers** - Functions that respond to specific actions
+3. **Messages** - State-changing operations (`message()`)
+4. **Dryruns** - Read-only queries (`dryrun()`)
+5. **Tags** - How you pass parameters (`{ name: "Value", value: "100" }`)
+
+---
+
+## Part 3: Building a Token - The ao Standard
+
+The Token app implements the official ao token specification. This is how real tokens work on AO.
+
+### What We're Building
+
+A complete token with:
+- Balances for each holder
+- Transfers between accounts
+- Minting (creating new tokens)
+- Burning (destroying tokens)
+- Allowances (approve others to spend)
+
+### Step 1: Write the Token Script
+
+Ask Claude:
+
+```
+Create token.lua implementing the ao Standard Token Specification with Transfer, Balance, Mint, Burn, and Allowance handlers
+```
+
+Create `token.lua`:
+
+```lua
+--[[
+  Token App - ao Standard Token Specification
+  Implements: Info, Balance, Balances, Transfer, Mint, Burn, Approve, Allowance, Transfer-From
+]]
+
+local bint = require('.bint')(256)  -- Big integers for precise math
+
+-- Token Configuration
+Name = Name or "My Token"
+Ticker = Ticker or "MTK"
+Logo = Logo or "optional-arweave-tx-id"
+Denomination = Denomination or 12  -- Decimal places
+TotalSupply = TotalSupply or bint(0)
+
+-- State Tables
+Balances = Balances or {}      -- { [address] = amount }
+Allowances = Allowances or {}  -- { [owner] = { [spender] = amount } }
+
+-- The process owner (who can mint)
+Owner = Owner or ao.id
+
+-- Helper: Check if value is positive
+local function isPositive(value)
+  return bint.__lt(0, bint(value))
+end
+
+-- Helper: Get balance (returns "0" if not found)
+local function getBalance(addr)
+  return Balances[addr] or "0"
+end
+
+-- Info: Return token metadata
+Handlers.add("Info", "Info", function(msg)
+  msg.reply({
+    Tags = {
+      Name = Name,
+      Ticker = Ticker,
+      Logo = Logo,
+      Denomination = tostring(Denomination),
+      ["Total-Supply"] = tostring(TotalSupply)
+    }
+  })
+end)
+
+-- Balance: Get balance of an address
+Handlers.add("Balance", "Balance", function(msg)
+  local target = msg.Tags.Target or msg.From
+  local balance = getBalance(target)
+
+  msg.reply({
+    Data = balance,
+    Tags = {
+      Balance = balance,
+      Target = target,
+      Ticker = Ticker
+    }
+  })
+end)
+
+-- Balances: Get all balances
+Handlers.add("Balances", "Balances", function(msg)
+  msg.reply({
+    Data = require('json').encode(Balances)
+  })
+end)
+
+-- Transfer: Send tokens to another address
+Handlers.add("Transfer", "Transfer", function(msg)
+  local recipient = msg.Tags.Recipient
+  local quantity = msg.Tags.Quantity
+
+  -- Validate inputs
+  assert(recipient, "Recipient is required")
+  assert(quantity, "Quantity is required")
+  assert(isPositive(quantity), "Quantity must be positive")
+
+  local senderBalance = bint(getBalance(msg.From))
+  local transferAmount = bint(quantity)
+
+  -- Check sufficient balance
+  assert(bint.__le(transferAmount, senderBalance), "Insufficient balance")
+
+  -- Perform transfer
+  Balances[msg.From] = tostring(bint.__sub(senderBalance, transferAmount))
+  Balances[recipient] = tostring(bint.__add(bint(getBalance(recipient)), transferAmount))
+
+  -- Send notifications
+  -- Debit notice to sender
+  ao.send({
+    Target = msg.From,
+    Action = "Debit-Notice",
+    Tags = {
+      Recipient = recipient,
+      Quantity = quantity
+    }
+  })
+
+  -- Credit notice to recipient
+  ao.send({
+    Target = recipient,
+    Action = "Credit-Notice",
+    Tags = {
+      Sender = msg.From,
+      Quantity = quantity
+    }
+  })
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      ["New-Balance"] = Balances[msg.From]
+    }
+  })
+end)
+
+-- Mint: Create new tokens (owner only)
+Handlers.add("Mint", "Mint", function(msg)
+  assert(msg.From == Owner, "Only owner can mint")
+
+  local quantity = msg.Tags.Quantity
+  local recipient = msg.Tags.Recipient or Owner
+
+  assert(quantity, "Quantity is required")
+  assert(isPositive(quantity), "Quantity must be positive")
+
+  local mintAmount = bint(quantity)
+
+  -- Add to recipient balance
+  Balances[recipient] = tostring(bint.__add(bint(getBalance(recipient)), mintAmount))
+
+  -- Update total supply
+  TotalSupply = bint.__add(TotalSupply, mintAmount)
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      ["Minted-To"] = recipient,
+      Quantity = quantity,
+      ["New-Balance"] = Balances[recipient],
+      ["Total-Supply"] = tostring(TotalSupply)
+    }
+  })
+end)
+
+-- Burn: Destroy tokens
+Handlers.add("Burn", "Burn", function(msg)
+  local quantity = msg.Tags.Quantity
+
+  assert(quantity, "Quantity is required")
+  assert(isPositive(quantity), "Quantity must be positive")
+
+  local burnAmount = bint(quantity)
+  local balance = bint(getBalance(msg.From))
+
+  assert(bint.__le(burnAmount, balance), "Insufficient balance to burn")
+
+  -- Subtract from balance
+  Balances[msg.From] = tostring(bint.__sub(balance, burnAmount))
+
+  -- Update total supply
+  TotalSupply = bint.__sub(TotalSupply, burnAmount)
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      Quantity = quantity,
+      ["New-Balance"] = Balances[msg.From],
+      ["Total-Supply"] = tostring(TotalSupply)
+    }
+  })
+end)
+
+-- Approve: Allow another address to spend your tokens
+Handlers.add("Approve", "Approve", function(msg)
+  local spender = msg.Tags.Spender
+  local quantity = msg.Tags.Quantity
+
+  assert(spender, "Spender is required")
+  assert(quantity, "Quantity is required")
+
+  -- Initialize allowances table for owner if needed
+  Allowances[msg.From] = Allowances[msg.From] or {}
+  Allowances[msg.From][spender] = quantity
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      Spender = spender,
+      Allowance = quantity
+    }
+  })
+end)
+
+-- Allowance: Check spending allowance
+Handlers.add("Allowance", "Allowance", function(msg)
+  local owner = msg.Tags.Owner or msg.From
+  local spender = msg.Tags.Spender
+
+  assert(spender, "Spender is required")
+
+  local allowance = "0"
+  if Allowances[owner] then
+    allowance = Allowances[owner][spender] or "0"
+  end
+
+  msg.reply({
+    Data = allowance,
+    Tags = {
+      Owner = owner,
+      Spender = spender,
+      Allowance = allowance
+    }
+  })
+end)
+
+-- Transfer-From: Spend tokens on behalf of another (requires approval)
+Handlers.add("Transfer-From", "Transfer-From", function(msg)
+  local owner = msg.Tags.Owner
+  local recipient = msg.Tags.Recipient
+  local quantity = msg.Tags.Quantity
+
+  assert(owner, "Owner is required")
+  assert(recipient, "Recipient is required")
+  assert(quantity, "Quantity is required")
+  assert(isPositive(quantity), "Quantity must be positive")
+
+  -- Check allowance
+  local allowance = bint((Allowances[owner] or {})[msg.From] or "0")
+  local transferAmount = bint(quantity)
+
+  assert(bint.__le(transferAmount, allowance), "Insufficient allowance")
+
+  -- Check owner's balance
+  local ownerBalance = bint(getBalance(owner))
+  assert(bint.__le(transferAmount, ownerBalance), "Insufficient balance")
+
+  -- Perform transfer
+  Balances[owner] = tostring(bint.__sub(ownerBalance, transferAmount))
+  Balances[recipient] = tostring(bint.__add(bint(getBalance(recipient)), transferAmount))
+
+  -- Reduce allowance
+  Allowances[owner][msg.From] = tostring(bint.__sub(allowance, transferAmount))
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      Owner = owner,
+      Recipient = recipient,
+      Quantity = quantity
+    }
+  })
+end)
+```
+
+### Step 2: Write Token Tests
+
+Ask Claude:
+
+```
+Create token.test.js to test minting, transfers, and allowances
+```
+
+Create `token.test.js`:
+
+```javascript
+import { describe, it, before } from "node:test"
+import assert from "node:assert"
+import { readFileSync } from "fs"
+import { ArMem, connect, acc } from "wao/test"
+
+const tokenScript = readFileSync("token.lua", "utf8")
+
+describe("Token App", () => {
+  let mem, message, dryrun, pid
+
+  // acc[0] = owner, acc[1] = alice, acc[2] = bob
+  const owner = acc[0]
+  const alice = acc[1]
+  const bob = acc[2]
+
+  before(async () => {
+    mem = new ArMem()
+    const connected = connect(mem)
+    message = connected.message
+    dryrun = connected.dryrun
+
+    pid = await connected.spawn({
+      signer: owner.signer,
+      module: mem.modules.aos2_0_1,
+    })
+
+    await message({
+      process: pid,
+      signer: owner.signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: tokenScript,
+    })
+
+    console.log("Token process spawned:", pid)
+    console.log("Owner:", owner.addr)
+    console.log("Alice:", alice.addr)
+    console.log("Bob:", bob.addr)
+  })
+
+  describe("Token Info", () => {
+    it("should return token metadata", async () => {
+      const result = await dryrun({
+        process: pid,
+        tags: [{ name: "Action", value: "Info" }],
+      })
+
+      const tags = result.Messages[0].Tags
+      const name = tags.find(t => t.name === "Name")?.value
+      const ticker = tags.find(t => t.name === "Ticker")?.value
+
+      assert.equal(name, "My Token")
+      assert.equal(ticker, "MTK")
+      console.log("Token:", name, "(", ticker, ")")
+    })
+  })
+
+  describe("Minting", () => {
+    it("should mint tokens to owner", async () => {
+      await message({
+        process: pid,
+        signer: owner.signer,
+        tags: [
+          { name: "Action", value: "Mint" },
+          { name: "Quantity", value: "1000000" },
+        ],
+      })
+
+      const result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Balance" },
+          { name: "Target", value: owner.addr },
+        ],
+      })
+
+      assert.equal(result.Messages[0].Data, "1000000")
+      console.log("Owner balance after mint: 1000000")
+    })
+
+    it("should reject minting from non-owner", async () => {
+      const result = await dryrun({
+        process: pid,
+        signer: alice.signer,
+        tags: [
+          { name: "Action", value: "Mint" },
+          { name: "Quantity", value: "1000" },
+        ],
+      })
+
+      // Should have an error
+      assert.ok(result.Error || result.Messages[0]?.Data?.includes("owner"))
+      console.log("Non-owner mint rejected")
+    })
+  })
+
+  describe("Transfers", () => {
+    it("should transfer tokens", async () => {
+      await message({
+        process: pid,
+        signer: owner.signer,
+        tags: [
+          { name: "Action", value: "Transfer" },
+          { name: "Recipient", value: alice.addr },
+          { name: "Quantity", value: "5000" },
+        ],
+      })
+
+      // Check Alice's balance
+      const result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Balance" },
+          { name: "Target", value: alice.addr },
+        ],
+      })
+
+      assert.equal(result.Messages[0].Data, "5000")
+      console.log("Alice received: 5000")
+    })
+
+    it("should reject transfer with insufficient balance", async () => {
+      const result = await dryrun({
+        process: pid,
+        signer: alice.signer,
+        tags: [
+          { name: "Action", value: "Transfer" },
+          { name: "Recipient", value: bob.addr },
+          { name: "Quantity", value: "999999999" },  // More than Alice has
+        ],
+      })
+
+      assert.ok(result.Error)
+      console.log("Insufficient balance rejected")
+    })
+  })
+
+  describe("Allowances", () => {
+    it("should approve spending allowance", async () => {
+      // Alice approves Bob to spend 1000
+      await message({
+        process: pid,
+        signer: alice.signer,
+        tags: [
+          { name: "Action", value: "Approve" },
+          { name: "Spender", value: bob.addr },
+          { name: "Quantity", value: "1000" },
+        ],
+      })
+
+      // Check allowance
+      const result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Allowance" },
+          { name: "Owner", value: alice.addr },
+          { name: "Spender", value: bob.addr },
+        ],
+      })
+
+      assert.equal(result.Messages[0].Data, "1000")
+      console.log("Bob's allowance from Alice: 1000")
+    })
+
+    it("should transfer using allowance", async () => {
+      // Bob transfers 500 from Alice to himself
+      await message({
+        process: pid,
+        signer: bob.signer,
+        tags: [
+          { name: "Action", value: "Transfer-From" },
+          { name: "Owner", value: alice.addr },
+          { name: "Recipient", value: bob.addr },
+          { name: "Quantity", value: "500" },
+        ],
+      })
+
+      // Check Bob's balance
+      const result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Balance" },
+          { name: "Target", value: bob.addr },
+        ],
+      })
+
+      assert.equal(result.Messages[0].Data, "500")
+      console.log("Bob's balance after Transfer-From: 500")
+    })
+  })
+
+  describe("Burning", () => {
+    it("should burn tokens", async () => {
+      // Get owner's current balance
+      let result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Balance" },
+          { name: "Target", value: owner.addr },
+        ],
+      })
+      const beforeBurn = result.Messages[0].Data
+
+      // Burn 1000 tokens
+      await message({
+        process: pid,
+        signer: owner.signer,
+        tags: [
+          { name: "Action", value: "Burn" },
+          { name: "Quantity", value: "1000" },
+        ],
+      })
+
+      // Check new balance
+      result = await dryrun({
+        process: pid,
+        tags: [
+          { name: "Action", value: "Balance" },
+          { name: "Target", value: owner.addr },
+        ],
+      })
+
+      const afterBurn = parseInt(result.Messages[0].Data)
+      assert.equal(afterBurn, parseInt(beforeBurn) - 1000)
+      console.log("Burned 1000 tokens. New balance:", afterBurn)
+    })
+  })
+})
+```
+
+### Step 3: Run Token Tests
+
+```bash
+npm test token.test.js
+```
+
+### Key Concepts Learned
+
+1. **Big Integers** - Use `bint` for precise financial math
+2. **State Tables** - `Balances = {}` stores data by address
+3. **Authorization** - Check `msg.From == Owner` for permissions
+4. **Notifications** - Use `ao.send()` to notify other processes
+5. **Assertions** - Use `assert()` to validate inputs
+
+---
+
+## Part 4: Building a Messenger - Inter-Process Communication
+
+The Messenger app demonstrates how AO processes communicate with each other using the `push@1.0` device.
+
+### What We're Building
+
+A messaging system where:
+- Users can register with a name
+- Add contacts (other processes)
+- Send messages between processes
+- Broadcast to all contacts
+- Ping/pong for health checks
+
+### Step 1: Write the Messenger Script
+
+Ask Claude:
+
+```
+Create messenger.lua with Register, AddContact, SendMessage, GetInbox, Broadcast, and Ping handlers using Send() for inter-process messaging
+```
+
+Create `messenger.lua`:
+
+```lua
+--[[
+  Messenger App - Inter-Process Communication
+  Uses push@1.0 device via Send() for message delivery between processes
+]]
+
+-- State
+Name = Name or "Anonymous"
+Contacts = Contacts or {}      -- { [pid] = name }
+Inbox = Inbox or {}            -- Received messages
+Outbox = Outbox or {}          -- Sent messages
+MessageCount = MessageCount or 0
+
+-- Register: Set your display name
+Handlers.add("Register", "Register", function(msg)
+  local newName = msg.Tags.Name
+  assert(newName and #newName > 0, "Name is required")
+
+  Name = newName
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      Name = Name
+    }
+  })
+end)
+
+-- WhoAmI: Get your registration info
+Handlers.add("WhoAmI", "WhoAmI", function(msg)
+  msg.reply({
+    Data = Name,
+    Tags = {
+      Name = Name,
+      ProcessId = ao.id,
+      MessageCount = tostring(MessageCount)
+    }
+  })
+end)
+
+-- AddContact: Add another process as a contact
+Handlers.add("AddContact", "AddContact", function(msg)
+  local contactPid = msg.Tags.Contact
+  local contactName = msg.Tags.Name or "Unknown"
+
+  assert(contactPid, "Contact process ID is required")
+
+  Contacts[contactPid] = contactName
+
+  msg.reply({
+    Tags = {
+      Status = "Success",
+      Contact = contactPid,
+      Name = contactName
+    }
+  })
+end)
+
+-- ListContacts: Get all contacts
+Handlers.add("ListContacts", "ListContacts", function(msg)
+  local contactList = {}
+  for pid, name in pairs(Contacts) do
+    table.insert(contactList, { pid = pid, name = name })
+  end
+
+  msg.reply({
+    Data = require('json').encode(contactList),
+    Tags = {
+      Count = tostring(#contactList)
+    }
+  })
+end)
+
+-- SendMessage: Send a message to another process
+-- This uses Send() which writes to /results/outbox
+-- The push@1.0 device delivers it to the target process
+Handlers.add("SendMessage", "SendMessage", function(msg)
+  local recipient = msg.Tags.Recipient
+  local content = msg.Data or msg.Tags.Content
+
+  assert(recipient, "Recipient is required")
+  assert(content, "Message content is required")
+
+  MessageCount = MessageCount + 1
+  local messageId = tostring(MessageCount)
+
+  -- Store in outbox
+  table.insert(Outbox, {
+    id = messageId,
+    to = recipient,
+    content = content,
+    timestamp = msg.Timestamp or os.time()
+  })
+
+  -- Send to recipient via push@1.0
+  -- This is delivered asynchronously by the push device
+  Send({
+    Target = recipient,
+    Action = "ReceiveMessage",
+    Tags = {
+      ["Message-Id"] = messageId,
+      Sender = ao.id,
+      ["Sender-Name"] = Name
+    },
+    Data = content
+  })
+
+  msg.reply({
+    Tags = {
+      Status = "Sent",
+      ["Message-Id"] = messageId,
+      Recipient = recipient
+    }
+  })
+end)
+
+-- ReceiveMessage: Handle incoming messages (called by push@1.0)
+Handlers.add("ReceiveMessage", "ReceiveMessage", function(msg)
+  local messageId = msg.Tags["Message-Id"] or tostring(#Inbox + 1)
+  local sender = msg.Tags.Sender or msg.From
+  local senderName = msg.Tags["Sender-Name"] or "Unknown"
+  local content = msg.Data
+
+  -- Store in inbox
+  table.insert(Inbox, {
+    id = messageId,
+    from = sender,
+    fromName = senderName,
+    content = content,
+    timestamp = msg.Timestamp or os.time()
+  })
+
+  -- Optional: Send delivery confirmation
+  Send({
+    Target = sender,
+    Action = "MessageDelivered",
+    Tags = {
+      ["Message-Id"] = messageId,
+      Status = "Delivered"
+    }
+  })
+
+  msg.reply({
+    Tags = {
+      Status = "Received",
+      ["Message-Id"] = messageId
+    }
+  })
+end)
+
+-- GetInbox: Get all received messages
+Handlers.add("GetInbox", "GetInbox", function(msg)
+  msg.reply({
+    Data = require('json').encode(Inbox),
+    Tags = {
+      Count = tostring(#Inbox)
+    }
+  })
+end)
+
+-- GetOutbox: Get all sent messages
+Handlers.add("GetOutbox", "GetOutbox", function(msg)
+  msg.reply({
+    Data = require('json').encode(Outbox),
+    Tags = {
+      Count = tostring(#Outbox)
+    }
+  })
+end)
+
+-- Broadcast: Send message to all contacts
+Handlers.add("Broadcast", "Broadcast", function(msg)
+  local content = msg.Data or msg.Tags.Content
+  assert(content, "Broadcast content is required")
+
+  local sentCount = 0
+
+  for pid, name in pairs(Contacts) do
+    MessageCount = MessageCount + 1
+
+    Send({
+      Target = pid,
+      Action = "ReceiveMessage",
+      Tags = {
+        ["Message-Id"] = tostring(MessageCount),
+        Sender = ao.id,
+        ["Sender-Name"] = Name,
+        Type = "Broadcast"
+      },
+      Data = content
+    })
+
+    sentCount = sentCount + 1
+  end
+
+  msg.reply({
+    Tags = {
+      Status = "Broadcast-Sent",
+      Recipients = tostring(sentCount)
+    }
+  })
+end)
+
+-- Ping: Health check - responds with Pong
+Handlers.add("Ping", "Ping", function(msg)
+  local requester = msg.From
+
+  Send({
+    Target = requester,
+    Action = "Pong",
+    Tags = {
+      ["Original-Sender"] = requester,
+      Responder = ao.id,
+      ["Responder-Name"] = Name
+    }
+  })
+
+  msg.reply({
+    Tags = {
+      Status = "Pong-Sent",
+      To = requester
+    }
+  })
+end)
+
+-- Pong: Receive ping response
+Handlers.add("Pong", "Pong", function(msg)
+  local responder = msg.Tags.Responder or msg.From
+  local responderName = msg.Tags["Responder-Name"] or "Unknown"
+
+  msg.reply({
+    Tags = {
+      Status = "Pong-Received",
+      From = responder,
+      Name = responderName
+    }
+  })
+end)
+
+-- Info: Get messenger status
+Handlers.add("Info", "Info", function(msg)
+  local contactCount = 0
+  for _ in pairs(Contacts) do contactCount = contactCount + 1 end
+
+  msg.reply({
+    Data = require('json').encode({
+      name = Name,
+      processId = ao.id,
+      contacts = contactCount,
+      inboxCount = #Inbox,
+      outboxCount = #Outbox,
+      totalMessages = MessageCount
+    })
+  })
+end)
+```
+
+### Step 2: Write Messenger Tests
+
+Create `messenger.test.js`:
+
+```javascript
+import { describe, it, before } from "node:test"
+import assert from "node:assert"
+import { readFileSync } from "fs"
+import { ArMem, connect, acc } from "wao/test"
+
+const messengerScript = readFileSync("messenger.lua", "utf8")
+
+describe("Messenger App", () => {
+  let mem, message, dryrun
+  let alicePid, bobPid
+
+  before(async () => {
+    mem = new ArMem()
+    const connected = connect(mem)
+    message = connected.message
+    dryrun = connected.dryrun
+
+    // Spawn Alice's messenger process
+    alicePid = await connected.spawn({
+      signer: acc[0].signer,
+      module: mem.modules.aos2_0_1,
+    })
+    await message({
+      process: alicePid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: messengerScript,
+    })
+
+    // Spawn Bob's messenger process
+    bobPid = await connected.spawn({
+      signer: acc[1].signer,
+      module: mem.modules.aos2_0_1,
+    })
+    await message({
+      process: bobPid,
+      signer: acc[1].signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: messengerScript,
+    })
+
+    console.log("Alice's process:", alicePid)
+    console.log("Bob's process:", bobPid)
+  })
+
+  describe("Registration", () => {
+    it("should register Alice", async () => {
+      await message({
+        process: alicePid,
+        signer: acc[0].signer,
+        tags: [
+          { name: "Action", value: "Register" },
+          { name: "Name", value: "Alice" },
+        ],
+      })
+
+      const result = await dryrun({
+        process: alicePid,
+        tags: [{ name: "Action", value: "WhoAmI" }],
+      })
+
+      assert.equal(result.Messages[0].Data, "Alice")
+      console.log("Alice registered")
+    })
+
+    it("should register Bob", async () => {
+      await message({
+        process: bobPid,
+        signer: acc[1].signer,
+        tags: [
+          { name: "Action", value: "Register" },
+          { name: "Name", value: "Bob" },
+        ],
+      })
+
+      const result = await dryrun({
+        process: bobPid,
+        tags: [{ name: "Action", value: "WhoAmI" }],
+      })
+
+      assert.equal(result.Messages[0].Data, "Bob")
+      console.log("Bob registered")
+    })
+  })
+
+  describe("Contacts", () => {
+    it("should add Bob as Alice's contact", async () => {
+      await message({
+        process: alicePid,
+        signer: acc[0].signer,
+        tags: [
+          { name: "Action", value: "AddContact" },
+          { name: "Contact", value: bobPid },
+          { name: "Name", value: "Bob" },
+        ],
+      })
+
+      const result = await dryrun({
+        process: alicePid,
+        tags: [{ name: "Action", value: "ListContacts" }],
+      })
+
+      const contacts = JSON.parse(result.Messages[0].Data)
+      assert.equal(contacts.length, 1)
+      assert.equal(contacts[0].name, "Bob")
+      console.log("Bob added to Alice's contacts")
+    })
+
+    it("should add Alice as Bob's contact", async () => {
+      await message({
+        process: bobPid,
+        signer: acc[1].signer,
+        tags: [
+          { name: "Action", value: "AddContact" },
+          { name: "Contact", value: alicePid },
+          { name: "Name", value: "Alice" },
+        ],
+      })
+
+      const result = await dryrun({
+        process: bobPid,
+        tags: [{ name: "Action", value: "ListContacts" }],
+      })
+
+      const contacts = JSON.parse(result.Messages[0].Data)
+      assert.equal(contacts.length, 1)
+      console.log("Alice added to Bob's contacts")
+    })
+  })
+
+  describe("Messaging", () => {
+    it("should send message from Alice to Bob", async () => {
+      await message({
+        process: alicePid,
+        signer: acc[0].signer,
+        tags: [
+          { name: "Action", value: "SendMessage" },
+          { name: "Recipient", value: bobPid },
+        ],
+        data: "Hello Bob! This is Alice.",
+      })
+
+      // Check Alice's outbox
+      const aliceResult = await dryrun({
+        process: alicePid,
+        tags: [{ name: "Action", value: "GetOutbox" }],
+      })
+
+      const outbox = JSON.parse(aliceResult.Messages[0].Data)
+      assert.equal(outbox.length, 1)
+      assert.equal(outbox[0].content, "Hello Bob! This is Alice.")
+      console.log("Message sent from Alice")
+    })
+
+    it("should receive message at Bob's inbox", async () => {
+      // Simulate the message delivery (in real HyperBEAM, push@1.0 does this)
+      await message({
+        process: bobPid,
+        signer: acc[0].signer,  // The message comes from Alice
+        tags: [
+          { name: "Action", value: "ReceiveMessage" },
+          { name: "Message-Id", value: "1" },
+          { name: "Sender", value: alicePid },
+          { name: "Sender-Name", value: "Alice" },
+        ],
+        data: "Hello Bob! This is Alice.",
+      })
+
+      // Check Bob's inbox
+      const bobResult = await dryrun({
+        process: bobPid,
+        tags: [{ name: "Action", value: "GetInbox" }],
+      })
+
+      const inbox = JSON.parse(bobResult.Messages[0].Data)
+      assert.equal(inbox.length, 1)
+      assert.equal(inbox[0].content, "Hello Bob! This is Alice.")
+      assert.equal(inbox[0].fromName, "Alice")
+      console.log("Message received by Bob")
+    })
+  })
+
+  describe("Broadcast", () => {
+    it("should broadcast from Bob to all contacts", async () => {
+      const result = await message({
+        process: bobPid,
+        signer: acc[1].signer,
+        tags: [{ name: "Action", value: "Broadcast" }],
+        data: "Broadcast message from Bob!",
+      })
+
+      // Check that broadcast was queued
+      const outboxResult = await dryrun({
+        process: bobPid,
+        tags: [{ name: "Action", value: "GetOutbox" }],
+      })
+
+      const outbox = JSON.parse(outboxResult.Messages[0].Data)
+      // Bob should have messages in outbox now
+      console.log("Broadcast sent to", outbox.length, "recipients")
+    })
+  })
+
+  describe("Info", () => {
+    it("should return messenger status", async () => {
+      const result = await dryrun({
+        process: alicePid,
+        tags: [{ name: "Action", value: "Info" }],
+      })
+
+      const info = JSON.parse(result.Messages[0].Data)
+      assert.equal(info.name, "Alice")
+      assert.equal(info.contacts, 1)
+      console.log("Alice's messenger info:", info)
+    })
+  })
+})
+```
+
+### Step 3: Run Messenger Tests
+
+```bash
+npm test messenger.test.js
+```
+
+### Key Concepts Learned
+
+1. **Multiple Processes** - Each user has their own process
+2. **Send()** - Queues messages for `push@1.0` to deliver
+3. **Inbox/Outbox** - Store sent and received messages
+4. **Inter-Process Communication** - Processes can message each other
+5. **Event-Driven** - Handlers respond to incoming messages
+
+---
+
+## Part 5: Testing with HyperBEAM (Beta3)
+
+HyperBEAM is the production-grade AO execution environment. Testing with HyperBEAM ensures your app works in the real world.
+
+### What is HyperBEAM?
+
+HyperBEAM is a distributed hypercomputer node that:
+- Runs actual WASM execution
+- Handles HTTP message signatures
+- Manages device composition
+- Provides the beta3 protocol
+
+### Setting Up HyperBEAM Testing
+
+Ask Claude:
+
+```
+Help me set up HyperBEAM testing for my AO apps
+```
+
+First, ensure you have the HyperBEAM binary. If using WAO's test helper:
+
+Create `.env.hyperbeam`:
+
+```bash
+HB_PORT=10001
+HB_TIMEOUT=120
+```
+
+### Writing HyperBEAM Tests
+
+Create `counter.hyperbeam.test.js`:
+
+```javascript
+import { describe, it, before, after } from "node:test"
+import assert from "node:assert"
+import { readFileSync } from "fs"
+import { HyperBEAM } from "wao/test"
+
+const counterScript = readFileSync("counter.lua", "utf8")
+
+describe("Counter App (HyperBEAM Beta3)", () => {
+  let hbeam, hb, pid
+
+  before(async () => {
+    // Start a local HyperBEAM node
+    hbeam = await new HyperBEAM({
+      port: 10001,
+      reset: true,      // Fresh state each run
+      timeout: 120,     // 2 minute timeout
+    }).ready()
+
+    hb = hbeam.hb
+    console.log("HyperBEAM ready at", hbeam.url)
+    console.log("Operator:", hb.operator)
+  })
+
+  after(() => {
+    if (hbeam) hbeam.kill()
+  })
+
+  describe("Process Lifecycle", () => {
+    it("should spawn a process", async () => {
+      // Spawn using test-device@1.0 (simple, no WASM)
+      const result = await hb.spawn({
+        name: "counter-process",
+      })
+
+      pid = result.pid
+      assert.ok(pid, "Process ID should be returned")
+      console.log("Spawned process:", pid)
+    })
+
+    it("should load the counter script", async () => {
+      const { slot } = await hb.schedule({
+        pid,
+        tags: {
+          action: "Eval",
+        },
+        data: counterScript,
+      })
+
+      assert.ok(slot !== undefined)
+      console.log("Script loaded at slot:", slot)
+    })
+  })
+
+  describe("Counter Operations", () => {
+    it("should schedule Inc action", async () => {
+      const { slot } = await hb.schedule({
+        pid,
+        tags: { action: "Inc" },
+      })
+
+      assert.ok(slot !== undefined)
+      console.log("Inc scheduled at slot:", slot)
+    })
+
+    it("should schedule multiple operations", async () => {
+      // Schedule Add 100
+      const { slot: s1 } = await hb.schedule({
+        pid,
+        tags: { action: "Add", Value: "100" },
+      })
+
+      // Schedule Dec
+      const { slot: s2 } = await hb.schedule({
+        pid,
+        tags: { action: "Dec" },
+      })
+
+      assert.ok(s1 !== undefined)
+      assert.ok(s2 !== undefined)
+      console.log("Operations scheduled at slots:", s1, s2)
+    })
+
+    it("should get process info", async () => {
+      const info = await hb.g(`/${pid}~process@1.0/info`)
+      assert.ok(info, "Process info should be returned")
+      console.log("Process info available")
+    })
+  })
+})
+```
+
+### Running HyperBEAM Tests
+
+```bash
+npm test counter.hyperbeam.test.js
+```
+
+### Understanding Beta3 Concepts
+
+**Devices** are composable units that add functionality:
+
+```
+┌─────────────────────────────────────────────┐
+│               Device Stack                   │
+├─────────────────────────────────────────────┤
+│  process@1.0    - Process management         │
+│  scheduler@1.0  - Message scheduling         │
+│  push@1.0       - Inter-process delivery     │
+│  json-iface@1.0 - JSON interface             │
+│  wasm-64@1.0    - 64-bit WASM execution      │
+│  patch@1.0      - State patching             │
+│  multipass@1.0  - Multi-pass execution       │
+└─────────────────────────────────────────────┘
+```
+
+**HTTP Signatures** authenticate messages:
+
+```javascript
+// WAO handles signing automatically
+const { slot } = await hb.schedule({
+  pid,
+  tags: { action: "Inc" },
+})
+// Internally creates HTTP-signature headers for beta3
+```
+
+**Slots** track message order:
+
+```
+Slot 0: Process spawn
+Slot 1: Load script (Eval)
+Slot 2: First Inc
+Slot 3: Add 100
+Slot 4: Dec
+...
+```
+
+---
+
+## Part 6: Building Custom HyperBEAM Devices
+
+Devices extend HyperBEAM's capabilities. Let's create a simple logging device.
+
+### Understanding Devices
+
+Devices are Erlang modules that:
+- Handle specific paths (e.g., `/log`)
+- Transform data
+- Add new functionality
+
+For JavaScript testing, we can create device-like behavior using WAO's codec system.
+
+### Example: Custom Codec
+
+Create `custom-codec.test.js`:
+
+```javascript
+import { describe, it, before, after } from "node:test"
+import assert from "node:assert"
+import { HyperBEAM } from "wao/test"
+
+describe("Custom Codec Example", () => {
+  let hbeam, hb
+
+  before(async () => {
+    hbeam = await new HyperBEAM({
+      port: 10001,
+      reset: true,
+    }).ready()
+    hb = hbeam.hb
+  })
+
+  after(() => hbeam?.kill())
+
+  it("should use structured codec for complex data", async () => {
+    // Spawn a process
+    const { pid } = await hb.spawn({ name: "codec-test" })
+
+    // Schedule with structured data
+    const { slot } = await hb.schedule({
+      pid,
+      tags: {
+        action: "Store",
+        "data-type": "json",
+        items: ["apple", "banana", "cherry"],  // Array support
+      },
+    })
+
+    assert.ok(slot !== undefined)
+    console.log("Structured data scheduled at slot:", slot)
+  })
+
+  it("should handle HTTP signatures correctly", async () => {
+    // The HB class automatically signs all requests
+    // This demonstrates the beta3 signing flow
+
+    const { pid } = await hb.spawn({ name: "signed-test" })
+
+    // Get process info (signed GET request)
+    const info = await hb.g(`/${pid}~process@1.0/info`)
+
+    assert.ok(info)
+    console.log("Signed request successful")
+  })
+})
+```
+
+### Device Composition Patterns
+
+```javascript
+// Basic process (test-device)
+const { pid } = await hb.spawn({
+  name: "basic-process",
+})
+
+// Full WASM process (mainnet-style)
+// This uses spawnAOS which sets up the full device stack:
+// wasi@1.0 + json-iface@1.0 + wasm-64@1.0 + patch@1.0 + multipass@1.0
+const { pid: wasmPid } = await hb.spawnAOS({
+  name: "wasm-process",
+})
+```
+
+---
+
+## Part 7: Complete Project Structure
+
+Here's how to organize a production-ready AO project:
+
+```
+my-ao-project/
+├── package.json
+├── .env.hyperbeam          # HyperBEAM config
+│
+├── src/                    # Lua source files
+│   ├── counter.lua
+│   ├── token.lua
+│   └── messenger.lua
+│
+├── test/                   # Test files
+│   ├── counter.test.js           # In-memory tests
+│   ├── counter.hyperbeam.test.js # HyperBEAM tests
+│   ├── token.test.js
+│   ├── token.hyperbeam.test.js
+│   ├── messenger.test.js
+│   └── messenger.hyperbeam.test.js
+│
+└── scripts/                # Deployment scripts
+    └── deploy.js
+```
+
+### Package.json
+
+```json
+{
+  "name": "my-ao-project",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-wasm-memory64 --test --test-concurrency=1",
+    "test:inmem": "npm test -- test/*.test.js",
+    "test:hb": "npm test -- test/*.hyperbeam.test.js",
+    "test:all": "npm test -- test/"
+  },
+  "dependencies": {
+    "wao": "latest"
+  }
+}
+```
+
+---
+
+## Part 8: Deployment Guide
+
+### Deploying to Mainnet
+
+Ask Claude:
+
+```
+Help me deploy my counter app to AO mainnet
+```
+
+Create `scripts/deploy.js`:
+
+```javascript
+import { AO } from "wao"
+import { readFileSync } from "fs"
+import Arweave from "arweave"
+
+// Your wallet keyfile
+const wallet = JSON.parse(readFileSync("wallet.json", "utf8"))
+
+async function deploy() {
+  // Connect to mainnet
+  const ao = new AO()
+
+  // Load your script
+  const script = readFileSync("src/counter.lua", "utf8")
+
+  console.log("Deploying Counter to AO mainnet...")
+
+  // Deploy (spawn + load script)
+  const { pid, mid } = await ao.deploy({
+    wallet,
+    src: script,
+  })
+
+  console.log("Deployed!")
+  console.log("Process ID:", pid)
+  console.log("Message ID:", mid)
+  console.log("")
+  console.log("Interact with your process:")
+  console.log(`  aos --process ${pid}`)
+}
+
+deploy().catch(console.error)
+```
+
+Run deployment:
+
+```bash
+node scripts/deploy.js
+```
+
+---
+
+## Quick Reference
+
+### WAO Imports
+
+```javascript
+// In-memory testing
+import { ArMem, connect, acc } from "wao/test"
+
+// HyperBEAM testing
+import { HyperBEAM } from "wao/test"
+
+// Mainnet deployment
+import { AO } from "wao"
+```
+
+### Common Patterns
+
+```javascript
+// Spawn a process
+const pid = await spawn({ signer: acc[0].signer, module: mem.modules.aos2_0_1 })
+
+// Load a script
+await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: script })
+
+// Send a message (changes state)
+await message({ process: pid, signer, tags: [{ name: "Action", value: "Inc" }] })
+
+// Query state (read-only)
+const result = await dryrun({ process: pid, tags: [{ name: "Action", value: "Get" }] })
+
+// Get response data
+const data = result.Messages[0].Data
+```
+
+### Lua Handler Pattern
+
+```lua
+Handlers.add("HandlerName", "ActionPattern", function(msg)
+  -- Read input from msg.Tags.Key or msg.Data
+  -- Modify state
+  -- Send response
+  msg.reply({ Data = "response", Tags = { Key = "value" } })
+end)
+```
+
+### Test Command
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test
+npm test counter.test.js
+
+# Run with timeout
+HB_TIMEOUT=120 npm test
+```
+
+---
+
+## Troubleshooting
+
+### "Module not found"
+
+Make sure you're using ES modules:
+```json
+{ "type": "module" }
+```
+
+### "WASM memory error"
+
+Add the flag:
+```bash
+node --experimental-wasm-memory64 --test
+```
+
+### "Test timeout"
+
+Increase timeout:
+```bash
+HB_TIMEOUT=180 npm test
+```
+
+### "Assertion failed"
+
+Check your Lua script for:
+- Missing `msg.reply()`
+- Incorrect tag names (case-sensitive!)
+- State not initialized
+
+---
+
+## Next Steps
+
+1. **Experiment** - Modify the examples and see what happens
+2. **Read the docs** - Check `/app/public/docs/` for detailed API reference
+3. **Join the community** - Get help and share your creations
+4. **Build something cool** - The hypercomputer awaits!
+
+Welcome to AO development. Happy vibing!
