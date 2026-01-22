@@ -1,14 +1,24 @@
 # WAO SDK - Claude Guide
 
-**IMPORTANT: Blindly run setup commands. Do NOT run verification tests after install.**
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| **HyperBEAM tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js` |
+| **ArMem tests** | `npm test -- vibe/apps/tests/amm-dex-wasm.test.js` |
+| **Kill stuck processes** | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
+| **Erlang device tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js` |
+
+---
 
 ## Setup
 
+**IMPORTANT: Run setup commands without verification tests.**
+
 ```bash
-# Measure start time
 START=$SECONDS
 
-# Extract all tarballs (no checks, just extract)
+# Extract tarballs
 cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
 cd /home/user/wao && tar -xJf /home/user/wao/installation/wao-node-modules.tar.xz
@@ -16,7 +26,7 @@ cd /home/user/wao && tar -xJf /home/user/wao/installation/wao-node-modules.tar.x
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# Rebuild hbsig (local dependency)
+# Rebuild hbsig
 cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
 
 # Configure environment
@@ -25,81 +35,122 @@ ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
-# Report installation time
 echo "Installation complete in $((SECONDS - START)) seconds"
 ```
 
-## After Installation
+After installation, report time and offer: build Lua app, run tests, or explore examples.
 
-Report to user: **"Installation complete in X seconds"**
-
-Next options:
-1. **Build a Lua app** - Create apps in `/vibe/apps/`
-2. **Run tests** - `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
-3. **Explore examples** - See 13 apps in `/vibe/apps/`
-
-## What is WAO?
-
-WAO is an SDK for building on AO (the hypercomputer on Arweave). It provides:
-- **Lua apps** - Stateful processes (tokens, DAOs, games)
-- **HyperBEAM testing** - Local node for development
-- **13 example apps** - Ready-to-use templates
+---
 
 ## File Structure
 
 ```
 wao/
-├── vibe/apps/              # Lua apps + frontends
-│   ├── counter.lua         # Simple counter
-│   ├── token.lua           # Fungible token
-│   ├── amm-dex.lua         # Uniswap-style DEX (Lua)
-│   ├── voting-dao.lua      # DAO with voting
-│   ├── amm-dex-ui/         # Lua DEX frontend (Vite + React)
-│   ├── erlang-dex-ui/      # Erlang DEX frontend (Vite + React)
+├── vibe/apps/                  # Lua apps + frontends
+│   ├── counter.lua             # Simple counter
+│   ├── token.lua               # Fungible token
+│   ├── amm-dex.lua             # DEX (Lua)
+│   ├── amm-dex-ui/             # Lua DEX frontend
+│   ├── erlang-dex-ui/          # Erlang DEX frontend
 │   └── tests/
-│       ├── hyperbeam.test.js  # HyperBEAM tests (30 pass)
-│       └── dev-dex.test.js    # Erlang DEX device tests (14 pass)
+│       ├── hyperbeam.test.js   # Lua tests (30 pass)
+│       └── dev-dex.test.js     # Erlang tests (14 pass)
+├── tutorial-devices/           # Erlang devices
+│   ├── dev_dex.erl             # AMM DEX device
+│   └── dev_kv.erl              # Key-value store
 ├── src/
-│   ├── hb.js               # HyperBEAM client (HB class)
-│   ├── ao.js               # AO process management
-│   └── hyperbeam.js        # Local HyperBEAM manager
-├── tutorial-devices/       # Erlang devices
-│   ├── dev_dex.erl         # AMM DEX device
-│   ├── dev_kv.erl          # Key-value store
-│   └── README.md           # Device development guide
-├── llms.txt                # Full HyperBEAM reference (93KB)
-└── lua-report.md           # Test results summary
+│   ├── hb.js                   # HB class (HyperBEAM client)
+│   ├── hyperbeam.js            # HyperBEAM node manager
+│   ├── ao.js                   # AO process client
+│   ├── test.js                 # ArMem utilities
+│   └── server.js               # WAO Server
+├── llms.txt                    # HyperBEAM internals (READ FOR DEVICES)
+└── ao-core.md                  # Protocol specification
 ```
 
-## Testing Lua Apps
+---
 
-### HyperBEAM Tests (Recommended)
+## Deep Dive Resources
 
-Uses native `lua@5.3a` device - runs Lua via luerl directly in HyperBEAM. **No external CU required.**
+| File | When to Read |
+|------|--------------|
+| **`llms.txt`** | **MANDATORY for Erlang devices** - TABM format, device callbacks, key resolution |
+| `ao-core.md` | Protocol work - TypeScript types, cryptographic operations |
+| `aos-dev.md` | Development workflows - 4 tracks with execution devices |
 
-```bash
-HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+---
+
+## Part 1: Lua Apps
+
+### Lua Handler Pattern
+
+```lua
+-- State
+Count = Count or 0
+Balances = Balances or {}
+Owner = Owner or ao.env.Process.Owner
+
+-- Simple action
+Handlers.add("Inc", "Inc", function(msg)
+  Count = Count + 1
+  msg.reply({ Data = tostring(Count) })
+end)
+
+-- Multi-user state
+Handlers.add("Mint", "Mint", function(msg)
+  local amount = tonumber(msg.Tags.Amount) or 0
+  Balances[msg.From] = (Balances[msg.From] or 0) + amount
+  msg.reply({ Data = json.encode({ balance = Balances[msg.From] }) })
+end)
+
+-- Owner-only with error
+Handlers.add("Reset", "Reset", function(msg)
+  if msg.From ~= Owner then
+    msg.reply({ Data = json.encode({ error = "Unauthorized" }) })
+    return
+  end
+  Count = 0
+  msg.reply({ Data = json.encode({ success = true }) })
+end)
+
+-- Query with JSON response
+Handlers.add("GetState", "GetState", function(msg)
+  msg.reply({ Data = json.encode({
+    count = Count,
+    balance = Balances[msg.From] or 0
+  }) })
+end)
 ```
 
-**Test pattern:**
+### Tag Naming (aos2_0_6)
+
+**aos2_0_6 lowercases custom tags.** This is expected behavior.
+
+| Tag Type | JavaScript | Lua |
+|----------|------------|-----|
+| Custom | `{ name: "Tokena", value: "X" }` | `msg.Tags.Tokena` |
+| Reserved | `{ name: "Action", value: "Swap" }` | `msg.Tags.Action` |
+
+Reserved tags that stay capitalized: `Action`, `Data`, `From`, `Target`, `Owner`, `Module`, `Scheduler`
+
+### HyperBEAM Test Pattern (lua@5.3a)
+
 ```javascript
 import HyperBEAM from "../../../src/hyperbeam.js"
 
-// Start HyperBEAM
 const hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
 const hb = hbeam.hb
 
-// Spawn Lua process with code
-const moduleId = await hb.getLua()  // Cache Lua runtime
+// Spawn process
+const moduleId = await hb.getLua()
 const tags = {
   "execution-device": "lua@5.3a",
   module: moduleId,
   type: "Process",
   device: "process@1.0",
   scheduler: hb.addr,
+  data: luaCode,  // Lua source
 }
-if (luaCode) tags.data = luaCode
-
 const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -107,7 +158,7 @@ const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
 })
 const pid = response.headers.get("process")
 
-// Schedule message
+// Send message
 const msgTags = { type: "Message", target: pid, Action: "Inc" }
 const msgResponse = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
   method: "POST",
@@ -116,223 +167,24 @@ const msgResponse = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
 })
 const slot = msgResponse.headers.get("slot")
 
-// Compute
+// Compute result
 const result = await hb.g(`/${pid}~process@1.0/compute`, { slot: parseInt(slot) })
 
 // Cleanup
 hbeam.kill()
 ```
 
-### In-Memory Tests (ArMem)
-
-Uses actual WASM execution via ArMem. Run with:
-
-```bash
-npm test -- vibe/apps/tests/amm-dex-wasm.test.js
-```
-
-### WASM Module Versions
-
-| Module | Status | Notes |
-|--------|--------|-------|
-| `aos2_0_6` | **Default** | Use this. Lowercases custom tag names |
-| `aos2_0_3` | Legacy | |
-| `aos2_0_1` | Legacy | Preserves tag case (don't use) |
-| `aos2_0_4_32` | wasm32 | Different format |
-
-**aos2_0_6 Tag Case Rule:**
-```lua
--- Custom tags are lowercased: TokenA → Tokena, PoolId → Poolid
--- Reserved tags stay capitalized: Action, Data, From, Target, etc.
--- Always use lowercase in Lua: msg.Tags.Tokena (not msg.Tags.TokenA)
-```
-
-## Lua App Pattern
-
-```lua
--- State (lazy initialization)
-Count = Count or 0
-Owner = Owner or ao.env.Process.Owner
-
--- Handler
-Handlers.add("Inc", "Inc", function(msg)
-  Count = Count + 1
-  msg.reply({ Data = tostring(Count) })
-end)
-
--- Read-only query
-Handlers.add("Get", "Get", function(msg)
-  msg.reply({ Data = tostring(Count) })
-end)
-
--- Owner-only action
-Handlers.add("Reset", "Reset", function(msg)
-  if msg.From ~= Owner then
-    msg.reply({ Tags = { Error = "Unauthorized" } })
-    return
-  end
-  Count = 0
-  msg.reply({ Data = "reset" })
-end)
-```
-
-## Execution Devices
-
-| Device | Description | CU Required |
-|--------|-------------|-------------|
-| `lua@5.3a` | Native Lua via luerl | No |
-| `genesis-wasm@1.0` | Legacy WASM | Yes |
-| `stack@1.0` | Mainnet WASM stack | Yes |
-
-**For development, use `lua@5.3a`** - fastest, no external dependencies.
-
-## HB Class Methods
-
-```javascript
-// HyperBEAM operations
-hb.g(path, params)          // GET request
-hb.p(path, body)            // POST request
-hb.commit(tags, opts)       // Sign and commit message
-hb.getLua()                 // Cache and get Lua module ID
-
-// High-level helpers
-hb.spawn(tags)              // Spawn process
-hb.schedule({ pid, ... })   // Schedule message
-hb.now({ pid })             // Get current state
-```
-
-## Test Commands
-
-```bash
-# Lua apps on HyperBEAM (30 tests)
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
-
-# All beta3 tests
-. ~/.asdf/asdf.sh && HB_TIMEOUT=60 node --test --test-concurrency=1 test/hyperbeam/hb-success-beta3/*.test.js
-
-# In-memory tests
-npm test
-```
-
-## Key Environment Variables
-
-```bash
-HB_TIMEOUT=120              # Auto-kill HyperBEAM after N seconds
-HB_REBAR3=false             # Use direct erl mode (mandatory)
-ARWEAVE_GATEWAY=...         # Arweave proxy URL
-```
-
-## Troubleshooting
-
-**Tests hang:**
-```bash
-export HB_REBAR3=false
-pkill -9 -f beam.smp
-```
-
-**Port in use:**
-```bash
-pkill -9 -f beam.smp && pkill -9 -f epmd
-```
-
-## Example Apps (in `/vibe/apps/`)
-
-| App | Description | Key Handlers |
-|-----|-------------|--------------|
-| `counter.lua` | Simple counter | Inc, Dec, Get, Reset |
-| `token.lua` | Fungible token | Transfer, Balance, Mint |
-| `kv-store.lua` | Key-value DB | Set, Get, Delete |
-| `todo.lua` | Task manager | Add, List, Complete |
-| `chatroom.lua` | Chat rooms | Register, Send, Info |
-| `voting-dao.lua` | DAO voting | CreateProposal, Vote |
-| `nft-collection.lua` | NFT collection | Mint, Transfer, Info |
-| `amm-dex.lua` | DEX | AddLiquidity, Swap |
-| `social-feed.lua` | Social feed | CreatePost, GetFeed |
-
-## Building New Apps
-
-1. **Write Lua code** following the handler pattern
-2. **Add to** `vibe/apps/[name].lua`
-3. **Add tests** to `vibe/apps/tests/hyperbeam.test.js`
-4. **Run tests:** `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
-
-## When Asked to Build
-
-1. Check existing apps in `/vibe/apps/` for patterns
-2. Write Lua code using handlers
-3. Test with HyperBEAM (not just ArMem)
-4. If tests fail, read errors and fix
-
-## Deep Dive Resources
-
-| File | Content | When to Use |
-|------|---------|-------------|
-| `llms.txt` | HyperBEAM LLM Reference (93KB) - Architecture, source structure, TABM format, key resolution, device patterns | **Use first** - Practical guide for understanding codebase and building devices |
-| `ao-core.md` | AO-Core Protocol Specification - TypeScript interfaces, cryptographic operations, scheduler, codecs | **Use for protocol** - When implementing new protocol features or deep understanding |
-| `aos-dev.md` | AO Development Guide - Lua + Erlang workflows, environment setup, testing patterns | **Use for development** - Step-by-step guide for building apps |
-| `vibe-engineer.mdx` | Vibe Engineer's Guide - AI-assisted and manual development workflows | **Use for overview** - Quick reference for both AI and human developers |
-| `lua-report.md` | Test results and architecture | Debugging test failures |
-| `README.md` | Full SDK documentation | Project overview |
-
-### Quick Reference: llms.txt vs ao-core.md
-
-**llms.txt** (Read first for most tasks):
-- Erlang source file locations and line numbers
-- Device implementation patterns with code examples
-- Practical "how to" for building HyperBEAM devices
-- Architecture diagrams and directory structure
-
-**ao-core.md** (Read for protocol work):
-- Complete TypeScript type definitions
-- Cryptographic algorithms (RSA-PSS, SHA-256, Deep Hash)
-- TABM binary format specification
-- Scheduler hash chain computation
-- HTTP API message format
-
----
-
-## Implementation Notes (For Claude)
-
-### Testing Workflow
-
-When asked to build/test for "mainnet WASM" (not `lua@5.3a`):
-
-1. **Write Lua** - Create/modify `vibe/apps/[name].lua`
-2. **Test ArMem (in-memory WASM)** - `npm test -- vibe/apps/tests/[name].test.js`
-3. **Test HyperBEAM** - `. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
-
-**Always run BOTH tests** when user asks about mainnet WASM testing.
-
-### Critical Gotchas
-
-1. **Kill lingering processes before HyperBEAM tests:**
-   ```bash
-   pkill -9 -f beam.smp 2>/dev/null; pkill -9 -f epmd 2>/dev/null
-   ```
-   HyperBEAM tests fail with "fetch failed" if old processes are running.
-
-2. **Use absolute paths in setup scripts:**
-   After `cd ~`, relative paths like `installation/...` won't work. Use `/home/user/wao/installation/...`.
-
-3. **aos2_0_6 lowercases custom tags (this is expected):**
-   - `msg.Tags.TokenA` → `msg.Tags.Tokena`
-   - Reserved tags (`Action`, `Data`, etc.) stay capitalized
-   - Always write Lua code with lowercase: `msg.Tags.Tokena`
-
-4. **Rebuild hbsig after tarball extraction:**
-   ```bash
-   cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
-   ```
-
-### ArMem Test Pattern
+### ArMem Test Pattern (WASM)
 
 ```javascript
 import { ArMem, connect, acc, scheduler } from "../../../src/test.js"
+import { readFileSync } from "fs"
 
+const luaCode = readFileSync("vibe/apps/counter.lua", "utf-8")
 const mem = new ArMem()
 const { spawn, message, dryrun } = connect(mem)
 
-// Always use aos2_0_6 (latest)
+// Spawn with aos2_0_6 (default, lowercases tags)
 const pid = await spawn({
   signer: acc[0].signer,
   scheduler,
@@ -340,76 +192,226 @@ const pid = await spawn({
 })
 
 // Load Lua code
-await message({ process: pid, signer, tags: [{ name: "Action", value: "Eval" }], data: luaCode })
+await message({
+  process: pid,
+  signer: acc[0].signer,
+  tags: [{ name: "Action", value: "Eval" }],
+  data: luaCode,
+})
 
-// Send message - use lowercase for custom tags!
-await message({ process: pid, signer, tags: [
-  { name: "Action", value: "CreatePool" },
-  { name: "Tokena", value: "TOKEN-A" },  // lowercase!
-  { name: "Tokenb", value: "TOKEN-B" },
-]})
+// Send message (lowercase custom tags!)
+await message({
+  process: pid,
+  signer: acc[0].signer,
+  tags: [
+    { name: "Action", value: "CreatePool" },
+    { name: "Tokena", value: "TOKEN-A" },
+    { name: "Tokenb", value: "TOKEN-B" },
+  ],
+})
 
-// Query state (read-only)
-const res = await dryrun({ process: pid, signer, tags: [{ name: "Action", value: "Query" }] })
+// Query (read-only)
+const res = await dryrun({
+  process: pid,
+  signer: acc[0].signer,
+  tags: [{ name: "Action", value: "Get" }],
+})
 const data = JSON.parse(res.Messages[0].Data)
 ```
 
-### Tag Naming Convention (aos2_0_6)
+### Example Apps
 
-**In JavaScript (sending messages):**
-```javascript
-// Custom tags: use lowercase
-{ name: "Tokena", value: "TOKEN-A" }
-{ name: "Poolid", value: "TOKEN-A-TOKEN-B" }
-{ name: "Amountin", value: "1000" }
-
-// Reserved tags: use capitalized
-{ name: "Action", value: "Swap" }
-{ name: "Target", value: pid }
-```
-
-**In Lua (receiving messages):**
-```lua
-local tokenA = msg.Tags.Tokena      -- lowercase
-local poolId = msg.Tags.Poolid      -- lowercase
-local action = msg.Tags.Action      -- capitalized (reserved)
-```
-
-### Key Files for Reference
-
-| File | Purpose |
-|------|---------|
-| `src/armem-base.js` | WASM module definitions (aos2_0_1, aos2_0_6, etc.) |
-| `src/test.js` | ArMem test utilities (connect, acc, scheduler) |
-| `src/hyperbeam.js` | HyperBEAM manager class |
-| `src/server.js` | Local WAO Server (AR, MU, SU, CU endpoints) |
-| `src/ao.js` | AO client class for high-level operations |
-| `vibe/apps/tests/amm-dex-wasm.test.js` | ArMem WASM test example |
+| App | Handlers |
+|-----|----------|
+| `counter.lua` | Inc, Dec, Get, Reset |
+| `token.lua` | Transfer, Balance, Mint |
+| `kv-store.lua` | Set, Get, Delete |
+| `amm-dex.lua` | AddLiquidity, Swap, GetPool |
+| `voting-dao.lua` | CreateProposal, Vote, Execute |
 
 ---
 
-## Frontend Development Guide
+## Part 2: Erlang Devices
 
-### Vite + React Setup
+**BEFORE BUILDING ERLANG DEVICES: Read `llms.txt` for TABM format and device patterns.**
 
-Create frontend apps in `vibe/apps/[name]-ui/`:
+### When to Use Erlang vs Lua
 
-```bash
-cd /home/user/wao/vibe/apps
-npm create vite@latest [name]-ui -- --template react
-cd [name]-ui
-npm install
+| Feature | Lua (AO Process) | Erlang (HyperBEAM Device) |
+|---------|------------------|---------------------------|
+| State | Process memory | `persistent_term` |
+| Testing | ArMem or HyperBEAM | HyperBEAM only |
+| Use Case | User apps, tokens | Infrastructure, gateways |
+| Deployment | Arweave mainnet | HyperBEAM node |
+
+### Device File Template
+
+```erlang
+-module(dev_mydevice).
+-export([info/3, action/3, query/3]).
+-include("include/hb.hrl").
+
+-define(STATE_KEY, <<"mydevice-state">>).
+-define(BALANCES_KEY, <<"mydevice-balances">>).
+
+%%====================================================================
+%% Device Callbacks
+%%====================================================================
+
+%% GET /~mydevice@1.0/info
+info(_M1, _M2, _Opts) ->
+    {ok, #{<<"name">> => <<"mydevice">>, <<"version">> => <<"1.0">>}}.
+
+%% POST /~mydevice@1.0/action - with validation and error handling
+action(M1, M2, Opts) ->
+    From = get_from(M2),
+    Amount = get_int_param(M2, <<"amount">>, 0),
+
+    case Amount > 0 of
+        false ->
+            {error, #{<<"error">> => <<"invalid_amount">>}};
+        true ->
+            Balances = load_state(?BALANCES_KEY),
+            Current = maps:get(From, Balances, 0),
+            NewBalances = maps:put(From, Current + Amount, Balances),
+            save_state(?BALANCES_KEY, NewBalances),
+            {ok, #{<<"action">> => <<"done">>, <<"balance+integer">> => Current + Amount}}
+    end.
+
+%% GET /~mydevice@1.0/query
+query(_M1, M2, _Opts) ->
+    From = get_from(M2),
+    Balances = load_state(?BALANCES_KEY),
+    {ok, #{<<"user">> => From, <<"balance+integer">> => maps:get(From, Balances, 0)}}.
+
+%%====================================================================
+%% State Helpers
+%%====================================================================
+
+load_state(Key) ->
+    try persistent_term:get({?MODULE, Key})
+    catch error:badarg -> #{}
+    end.
+
+save_state(Key, State) ->
+    persistent_term:put({?MODULE, Key}, State).
+
+%%====================================================================
+%% Parameter Helpers
+%%====================================================================
+
+get_param(M2, Key, Default) ->
+    case maps:get(Key, M2, not_found) of
+        not_found -> Default;
+        Value -> Value
+    end.
+
+get_int_param(M2, Key, Default) ->
+    case get_param(M2, Key, not_found) of
+        not_found -> Default;
+        Value when is_integer(Value) -> Value;
+        Value when is_binary(Value) -> binary_to_integer(Value);
+        Value when is_list(Value) -> list_to_integer(Value)
+    end.
+
+get_from(M2) ->
+    maps:get(<<"from">>, M2, <<"anonymous">>).
 ```
 
-**Install WAO as local dependency:**
-```json
-// package.json
-{
-  "devDependencies": {
-    "wao": "file:../../.."
-  }
-}
+### TABM Type Annotations
+
+HyperBEAM uses Type-Annotated Binary Messages. Key suffixes:
+
+| Suffix | Type | Example |
+|--------|------|---------|
+| (none) | binary | `<<"hello">>` |
+| `+integer` | integer | `42` |
+| `+float` | float | `3.14` |
+| `+list` | list | `[1, 2, 3]` |
+
+```erlang
+%% Response with typed values
+{ok, #{
+    <<"count+integer">> => 42,
+    <<"ratio+float">> => 0.5,
+    <<"items+list">> => [<<"a">>, <<"b">>]
+}}.
 ```
+
+### Device Registration
+
+Add to `~/HyperBEAM/src/hb_opts.erl`:
+
+```erlang
+preloaded_devices => [
+    #{<<"name">> => <<"mydevice@1.0">>, <<"module">> => dev_mydevice}
+]
+```
+
+Then: `cd ~/HyperBEAM && rebar3 compile`
+
+### HTTP API Patterns
+
+```javascript
+// GET request
+const info = await hb.g('/~mydevice@1.0/info')
+const data = await hb.g('/~mydevice@1.0/query', { param: 'value' })
+
+// POST request
+const result = await hb.p('/~mydevice@1.0/action1', {
+  param: 'value',
+  amount: 100,
+})
+```
+
+**Key behaviors:**
+- HyperBEAM lowercases all response keys (`TOKEN-A` → `token-a`)
+- Numbers may return as strings (use `Number()` for comparisons)
+- Use lowercase param names in requests (`tokena` not `tokenA`)
+
+### Erlang Device Test Pattern (Vitest)
+
+```javascript
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from '../../../../../src/hyperbeam.js'
+
+describe('MyDevice', () => {
+  let hbeam, hb
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+  }, 120000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should return info', async () => {
+    const info = await hb.g('/~mydevice@1.0/info')
+    expect(info.name).toBe('mydevice')
+  })
+
+  it('should perform action', async () => {
+    const result = await hb.p('/~mydevice@1.0/action', { amount: 100, from: 'alice' })
+    expect(result.action).toBe('done')
+    expect(Number(result.balance)).toBe(100)  // Numbers may be strings
+  })
+
+  it('should reject invalid input', async () => {
+    await expect(
+      hb.p('/~mydevice@1.0/action', { amount: 0, from: 'bob' })
+    ).rejects.toThrow()
+  })
+
+  it('should query state', async () => {
+    const state = await hb.g('/~mydevice@1.0/query', { from: 'alice' })
+    expect(Number(state.balance)).toBe(100)
+  })
+})
+```
+
+---
+
+## Part 3: Frontend Development
 
 ### Vitest Configuration
 
@@ -422,439 +424,115 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    environment: 'node',  // Use node for WASM tests
+    environment: 'node',
     include: ['src/**/*.{test,spec}.{js,jsx}'],
     testTimeout: 120000,
-    pool: 'forks',  // Required for WASM execution
+    pool: 'forks',  // Required for WASM
   },
 })
 ```
 
-### Vitest + ArMem Test Pattern
+### WAO Server Ports
+
+`new Server({ port: N })` creates:
+- AR (Gateway): N
+- BD (Bundler): N+1
+- MU (Message Unit): N+2
+- SU (Scheduler Unit): N+3
+- CU (Compute Unit): N+4
+
+### Import Paths
 
 ```javascript
-// src/test/dex.test.js
-import { describe, it, expect, beforeAll } from 'vitest'
-import { readFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
-
-// Import from source path (local dev)
+// Local development (reliable)
 import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-
-describe('DEX Tests', () => {
-  let mem, message, dryrun, pid
-
-  beforeAll(async () => {
-    mem = new ArMem()
-    const connection = connect(mem)
-    message = connection.message
-    dryrun = connection.dryrun
-
-    // Spawn with aos2_0_6
-    pid = await connection.spawn({
-      signer: acc[0].signer,
-      scheduler,
-      module: mem.modules.aos2_0_6,
-    })
-
-    // Load Lua code
-    const luaCode = readFileSync(join(__dirname, '../../../app.lua'), 'utf-8')
-    await message({
-      process: pid,
-      signer: acc[0].signer,
-      tags: [{ name: 'Action', value: 'Eval' }],
-      data: luaCode,
-    })
-  }, 60000)
-
-  it('should work', async () => {
-    const res = await dryrun({
-      process: pid,
-      signer: acc[0].signer,
-      tags: [{ name: 'Action', value: 'Query' }],
-    })
-    expect(res.Messages[0].Data).toBeDefined()
-  })
-})
-```
-
-### Server + ArMem Test Pattern
-
-Test HTTP endpoints with shared ArMem backend:
-
-```javascript
-import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
+import HyperBEAM from '../../../../../src/hyperbeam.js'
 import Server from '../../../../../src/server.js'
 
-describe('Server Tests', () => {
-  let server, mem, message, dryrun, pid
-
-  beforeAll(async () => {
-    // Create shared ArMem
-    mem = new ArMem()
-    const connection = connect(mem)
-    message = connection.message
-    dryrun = connection.dryrun
-
-    // Start Server with same ArMem
-    server = new Server({ port: 7000, aoconnect: mem, log: false })
-
-    // Spawn process
-    pid = await connection.spawn({
-      signer: acc[0].signer,
-      scheduler,
-      module: mem.modules.aos2_0_6,
-    })
-  }, 120000)
-
-  afterAll(async () => {
-    await server.end()
-  })
-
-  it('should respond to HTTP endpoints', async () => {
-    // SU endpoint
-    const suRes = await fetch('http://localhost:7003')
-    expect(suRes.ok).toBe(true)
-
-    // CU status
-    const cuRes = await fetch('http://localhost:7004/status')
-    expect(cuRes.ok).toBe(true)
-  })
-})
-```
-
-### Server Port Configuration
-
-When creating `new Server({ port: N })`:
-- AR (Gateway): `N` (e.g., 7000)
-- BD (Bundler): `N+1` (e.g., 7001)
-- MU (Message Unit): `N+2` (e.g., 7002)
-- SU (Scheduler Unit): `N+3` (e.g., 7003)
-- CU (Compute Unit): `N+4` (e.g., 7004)
-
-### DexClient Pattern (Frontend)
-
-```javascript
-// src/lib/wao.js
-export class DexClient {
-  constructor(serverUrl = 'http://localhost:4000') {
-    this.serverUrl = serverUrl
-    this.pid = null
-  }
-
-  async connect(processId) {
-    this.pid = processId
-  }
-
-  async dryrun(action, tags = {}) {
-    const response = await fetch(`${this.serverUrl.replace(':4000', ':4004')}/dry-run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        process: this.pid,
-        tags: [
-          { name: 'Action', value: action },
-          ...Object.entries(tags).map(([k, v]) => ({ name: k, value: String(v) })),
-        ],
-      }),
-    })
-    return response.json()
-  }
-}
-```
-
-### Import Path Notes
-
-**For local development with `file:` link:**
-```javascript
-// Direct source import (works reliably)
-import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
-
-// Package export (requires built dist/)
+// Package imports (requires npm run build in wao root)
 import { ArMem, connect, acc, scheduler } from 'wao/test'
 ```
 
-The `wao/test` export requires the package to be built (`npm run build` in wao root). For local development, use the direct source path.
+---
 
-### Example Frontend App Structure
+## HB Class Reference
 
-**Lua DEX (AO Process via ArMem/Server):**
-```
-vibe/apps/amm-dex-ui/
-├── src/
-│   ├── components/
-│   │   ├── SwapPanel.jsx      # Token swap UI
-│   │   ├── PoolPanel.jsx      # Pool management
-│   │   ├── LiquidityPanel.jsx # Add/remove liquidity
-│   │   └── BalancePanel.jsx   # Token balances
-│   ├── lib/
-│   │   └── wao.js             # DexClient (MU/CU endpoints)
-│   ├── test/
-│   │   ├── dex.test.js        # ArMem tests (28 tests)
-│   │   └── dex-server.test.js # Server tests (9 tests)
-│   └── App.jsx
-├── vitest.config.js
-└── package.json
-```
+```javascript
+const hb = hbeam.hb
 
-**Erlang DEX (HyperBEAM Device via HTTP):**
-```
-vibe/apps/erlang-dex-ui/
-├── src/
-│   ├── components/
-│   │   ├── SwapPanel.jsx      # Same UI components
-│   │   ├── PoolPanel.jsx
-│   │   ├── LiquidityPanel.jsx
-│   │   └── BalancePanel.jsx
-│   ├── lib/
-│   │   └── DexClient.js       # HyperBEAM HTTP client
-│   ├── test/
-│   │   └── dex.test.js        # HyperBEAM tests (18 tests)
-│   └── App.jsx
-├── vitest.config.js
-└── package.json
-```
+// HTTP operations
+hb.g(path, params)              // GET request
+hb.p(path, body)                // POST request
+hb.commit(tags, opts)           // Sign message
 
-### Running Tests
-
-```bash
-# Run all tests
-cd vibe/apps/amm-dex-ui && npm test
-
-# Run specific test file
-npm test -- src/test/dex.test.js
-
-# Run with verbose output
-npm test -- --reporter=verbose
+// Helpers
+hb.getLua()                     // Get cached Lua module ID
+hb.spawn(tags)                  // Spawn process
+hb.schedule({ pid, ... })       // Schedule message
+hb.now({ pid })                 // Get current state
 ```
 
 ---
 
-## Erlang Device Development
+## Execution Devices
 
-### Overview
+| Device | Description | Stack Config |
+|--------|-------------|--------------|
+| `lua@5.3a` | Native luerl | Direct (no stack) |
+| `genesis-wasm@1.0` | Legacy WASM | `stack@1.0` + `device-stack` |
+| `wasm-64@1.0` | 64-bit WASM | `stack@1.0` + `device-stack` |
 
-Erlang devices extend HyperBEAM directly (unlike Lua apps which run in AO processes). They're useful for:
-- Custom HTTP endpoints
-- Server-side state management
-- Direct HyperBEAM integration
-
-**Location:** `tutorial-devices/` (copy to HyperBEAM/src/ to use)
-
-### Device Registration
-
-Add devices to `/root/HyperBEAM/src/hb_opts.erl`:
-
-```erlang
-preloaded_devices => [
-    #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex},
-    #{<<"name">> => <<"kv@1.0">>, <<"module">> => dev_kv}
-]
-```
-
-Then recompile: `rebar3 compile`
-
-### State Persistence
-
-Erlang devices use `persistent_term` for state (not `hb_private`/`hb_cache`):
-
-```erlang
-%% Store state
-persistent_term:put({dev_mydevice, key}, Value).
-
-%% Retrieve state
-try persistent_term:get({dev_mydevice, key})
-catch error:badarg -> DefaultValue
-end.
-```
-
-### HTTP API Patterns
-
-```javascript
-// GET request
-const info = await hb.g('/~device@1.0/info')
-const data = await hb.g('/~device@1.0/query', { param: 'value' })
-
-// POST request
-const result = await hb.p('/~device@1.0/action', {
-    param1: 'value1',
-    param2: 'value2'
-})
-```
-
-**Key Notes:**
-- HyperBEAM lowercases all response keys (`TOKEN-A` → `token-a`)
-- Nested maps become `+link` references (flatten responses when possible)
-- Numbers may be returned as strings (use `Number()` for comparisons)
-
-### DexClient Pattern (Erlang Device)
-
-```javascript
-// src/lib/DexClient.js
-export class DexClient {
-  constructor(hb) {
-    this.hb = hb
-  }
-
-  async info() {
-    return this.hb.g('/~dex@1.0/info')
-  }
-
-  async mint(token, amount, from) {
-    const params = { token, amount }
-    if (from) params.from = from
-    return this.hb.p('/~dex@1.0/mint', params)
-  }
-
-  async createPool(tokenA, tokenB, amountA, amountB, from) {
-    const params = {
-      tokena: tokenA,   // lowercase param names!
-      tokenb: tokenB,
-      amounta: amountA,
-      amountb: amountB,
-    }
-    if (from) params.from = from
-    return this.hb.p('/~dex@1.0/create_pool', params)
-  }
-
-  async swap(tokenIn, tokenOut, amountIn, minAmountOut = 0, from) {
-    const params = {
-      tokenin: tokenIn,
-      tokenout: tokenOut,
-      amountin: amountIn,
-      minamountout: minAmountOut,
-    }
-    if (from) params.from = from
-    return this.hb.p('/~dex@1.0/swap', params)
-  }
-}
-```
-
-### Vitest + HyperBEAM Test Pattern
-
-```javascript
-// src/test/dex.test.js
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import HyperBEAM from '../../../../../src/hyperbeam.js'
-import { DexClient } from '../lib/DexClient.js'
-
-describe('Erlang DEX Tests', () => {
-  let hbeam, hb, dex
-
-  beforeAll(async () => {
-    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
-    hb = hbeam.hb
-    dex = new DexClient(hb)
-  }, 120000)
-
-  afterAll(async () => {
-    if (hbeam) hbeam.kill()
-  })
-
-  it('should get device info', async () => {
-    const info = await dex.info()
-    expect(info.name).toBe('dex')
-  })
-
-  it('should mint tokens', async () => {
-    const result = await dex.mint('TOKEN-A', 100000, 'alice')
-    expect(result.action).toBe('minted')
-  })
-
-  it('should reject invalid operations', async () => {
-    await expect(
-      dex.swap('TOKEN-A', 'TOKEN-B', 999999, 0, 'broke_user')
-    ).rejects.toThrow()
-  })
-})
-```
-
-### Erlang DEX Frontend Structure
-
-```
-vibe/apps/erlang-dex-ui/
-├── src/
-│   ├── components/
-│   │   ├── SwapPanel.jsx
-│   │   ├── PoolPanel.jsx
-│   │   ├── LiquidityPanel.jsx
-│   │   └── BalancePanel.jsx
-│   ├── lib/
-│   │   └── DexClient.js      # HyperBEAM HTTP client
-│   ├── test/
-│   │   └── dex.test.js       # 18 Vitest tests
-│   ├── App.jsx
-│   └── main.jsx
-├── vitest.config.js          # pool: 'forks' for subprocess isolation
-└── package.json
-```
-
-### Running Erlang Device Tests
-
-```bash
-# Run Vitest tests (starts HyperBEAM automatically)
-cd vibe/apps/erlang-dex-ui
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 npm test
-
-# Run with verbose output
-npm test -- --reporter=verbose
-
-# Run existing dev-dex tests
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js
-```
-
-### Lua vs Erlang: When to Use Which
-
-| Feature | Lua (AO Process) | Erlang (HyperBEAM Device) |
-|---------|------------------|---------------------------|
-| State | Process memory | `persistent_term` |
-| Execution | WASM/luerl | Native Erlang |
-| Testing | ArMem or HyperBEAM | HyperBEAM only |
-| Use Case | User apps, tokens, DAOs | Infrastructure, gateways |
-| Deployment | Arweave (mainnet) | HyperBEAM node |
+**For development, use `lua@5.3a`** - fastest, no CU required.
 
 ---
 
-## Quick Reference
+## Module IDs
 
-### Module IDs
+| Name | Use |
+|------|-----|
+| `aos2_0_6` | **Default** - lowercases custom tags |
+| `aos2_0_1` | Legacy - preserves tag case (don't use) |
+| `sqlite` | SQLite support |
 
-| Name | ID | Notes |
-|------|-----|-------|
-| aos2_0_6 | `ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s` | Default, lowercases tags |
-| aos2_0_3 | `JArYBF-D8q2OmZ4Mok00sD2Y_6SYEQ7Hjx-6VZ_jl3g` | Legacy |
-| aos2_0_1 | `Do_Uc2Sju_ffp6Ev0AnLVdPtot15rvMjP-a9VVaA5fM` | Legacy, preserves case |
-| sqlite | `ghSkge2sIUD_F00ym5sEimC63BDBuBrq4b5OcwxOjiw` | SQLite support |
+---
 
-### Test Accounts
+## Troubleshooting
 
-```javascript
-import { acc } from '../../../../../src/test.js'
-
-const { signer, addr } = acc[0]  // First test account
-const { signer: signer2, addr: addr2 } = acc[1]  // Second account
+**Tests hang or "fetch failed":**
+```bash
+pkill -9 -f beam.smp; pkill -9 -f epmd
+export HB_REBAR3=false
 ```
 
-### Common Test Helpers
+**Environment not found:**
+```bash
+. ~/.asdf/asdf.sh
+```
 
-```javascript
-// Parse response data
-const getData = (res) => {
-  if (res.Messages?.[0]?.Data) {
-    try {
-      return JSON.parse(res.Messages[0].Data)
-    } catch {
-      return res.Messages[0].Data
-    }
-  }
-  return null
-}
+**hbsig errors:**
+```bash
+cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
+```
 
-// Check for errors
-const hasError = (res) => {
-  const tags = res.Messages?.[0]?.Tags || []
-  return tags.some((t) => t.name === 'Error' || t.name === 'error')
-}
+---
+
+## Building Workflow
+
+### Lua Apps
+1. Write Lua in `vibe/apps/[name].lua`
+2. Add tests to `vibe/apps/tests/hyperbeam.test.js`
+3. Run: `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
+
+### Erlang Devices
+1. **Read `llms.txt`** for TABM and device patterns
+2. Write device in `tutorial-devices/dev_[name].erl`
+3. Copy to `~/HyperBEAM/src/`
+4. Register in `~/HyperBEAM/src/hb_opts.erl`
+5. Recompile: `cd ~/HyperBEAM && rebar3 compile`
+6. Test with Vitest + HyperBEAM
+
+### Frontend Apps
+1. Create in `vibe/apps/[name]-ui/`
+2. Add `"wao": "file:../../.."` to package.json devDependencies
+3. Configure vitest with `pool: 'forks'`
+4. Import from source paths for local dev
