@@ -359,4 +359,276 @@ local action = msg.Tags.Action      -- capitalized (reserved)
 | `src/armem-base.js` | WASM module definitions (aos2_0_1, aos2_0_6, etc.) |
 | `src/test.js` | ArMem test utilities (connect, acc, scheduler) |
 | `src/hyperbeam.js` | HyperBEAM manager class |
+| `src/server.js` | Local WAO Server (AR, MU, SU, CU endpoints) |
+| `src/ao.js` | AO client class for high-level operations |
 | `vibe/apps/tests/amm-dex-wasm.test.js` | ArMem WASM test example |
+
+---
+
+## Frontend Development Guide
+
+### Vite + React Setup
+
+Create frontend apps in `vibe/apps/[name]-ui/`:
+
+```bash
+cd /home/user/wao/vibe/apps
+npm create vite@latest [name]-ui -- --template react
+cd [name]-ui
+npm install
+```
+
+**Install WAO as local dependency:**
+```json
+// package.json
+{
+  "devDependencies": {
+    "wao": "file:../../.."
+  }
+}
+```
+
+### Vitest Configuration
+
+```javascript
+// vitest.config.js
+import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'node',  // Use node for WASM tests
+    include: ['src/**/*.{test,spec}.{js,jsx}'],
+    testTimeout: 120000,
+    pool: 'forks',  // Required for WASM execution
+  },
+})
+```
+
+### Vitest + ArMem Test Pattern
+
+```javascript
+// src/test/dex.test.js
+import { describe, it, expect, beforeAll } from 'vitest'
+import { readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+
+// Import from source path (local dev)
+import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+describe('DEX Tests', () => {
+  let mem, message, dryrun, pid
+
+  beforeAll(async () => {
+    mem = new ArMem()
+    const connection = connect(mem)
+    message = connection.message
+    dryrun = connection.dryrun
+
+    // Spawn with aos2_0_6
+    pid = await connection.spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_6,
+    })
+
+    // Load Lua code
+    const luaCode = readFileSync(join(__dirname, '../../../app.lua'), 'utf-8')
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: 'Action', value: 'Eval' }],
+      data: luaCode,
+    })
+  }, 60000)
+
+  it('should work', async () => {
+    const res = await dryrun({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: 'Action', value: 'Query' }],
+    })
+    expect(res.Messages[0].Data).toBeDefined()
+  })
+})
+```
+
+### Server + ArMem Test Pattern
+
+Test HTTP endpoints with shared ArMem backend:
+
+```javascript
+import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
+import Server from '../../../../../src/server.js'
+
+describe('Server Tests', () => {
+  let server, mem, message, dryrun, pid
+
+  beforeAll(async () => {
+    // Create shared ArMem
+    mem = new ArMem()
+    const connection = connect(mem)
+    message = connection.message
+    dryrun = connection.dryrun
+
+    // Start Server with same ArMem
+    server = new Server({ port: 7000, aoconnect: mem, log: false })
+
+    // Spawn process
+    pid = await connection.spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_6,
+    })
+  }, 120000)
+
+  afterAll(async () => {
+    await server.end()
+  })
+
+  it('should respond to HTTP endpoints', async () => {
+    // SU endpoint
+    const suRes = await fetch('http://localhost:7003')
+    expect(suRes.ok).toBe(true)
+
+    // CU status
+    const cuRes = await fetch('http://localhost:7004/status')
+    expect(cuRes.ok).toBe(true)
+  })
+})
+```
+
+### Server Port Configuration
+
+When creating `new Server({ port: N })`:
+- AR (Gateway): `N` (e.g., 7000)
+- BD (Bundler): `N+1` (e.g., 7001)
+- MU (Message Unit): `N+2` (e.g., 7002)
+- SU (Scheduler Unit): `N+3` (e.g., 7003)
+- CU (Compute Unit): `N+4` (e.g., 7004)
+
+### DexClient Pattern (Frontend)
+
+```javascript
+// src/lib/wao.js
+export class DexClient {
+  constructor(serverUrl = 'http://localhost:4000') {
+    this.serverUrl = serverUrl
+    this.pid = null
+  }
+
+  async connect(processId) {
+    this.pid = processId
+  }
+
+  async dryrun(action, tags = {}) {
+    const response = await fetch(`${this.serverUrl.replace(':4000', ':4004')}/dry-run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        process: this.pid,
+        tags: [
+          { name: 'Action', value: action },
+          ...Object.entries(tags).map(([k, v]) => ({ name: k, value: String(v) })),
+        ],
+      }),
+    })
+    return response.json()
+  }
+}
+```
+
+### Import Path Notes
+
+**For local development with `file:` link:**
+```javascript
+// Direct source import (works reliably)
+import { ArMem, connect, acc, scheduler } from '../../../../../src/test.js'
+
+// Package export (requires built dist/)
+import { ArMem, connect, acc, scheduler } from 'wao/test'
+```
+
+The `wao/test` export requires the package to be built (`npm run build` in wao root). For local development, use the direct source path.
+
+### Example Frontend App Structure
+
+```
+vibe/apps/amm-dex-ui/
+├── src/
+│   ├── components/
+│   │   ├── SwapPanel.jsx      # Token swap UI
+│   │   ├── PoolPanel.jsx      # Pool management
+│   │   ├── LiquidityPanel.jsx # Add/remove liquidity
+│   │   └── BalancePanel.jsx   # Token balances
+│   ├── lib/
+│   │   └── wao.js             # DexClient class
+│   ├── test/
+│   │   ├── dex.test.js        # ArMem tests (28 tests)
+│   │   └── dex-server.test.js # Server tests (9 tests)
+│   ├── App.jsx
+│   └── main.jsx
+├── vitest.config.js
+└── package.json
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd vibe/apps/amm-dex-ui && npm test
+
+# Run specific test file
+npm test -- src/test/dex.test.js
+
+# Run with verbose output
+npm test -- --reporter=verbose
+```
+
+---
+
+## Quick Reference
+
+### Module IDs
+
+| Name | ID | Notes |
+|------|-----|-------|
+| aos2_0_6 | `ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s` | Default, lowercases tags |
+| aos2_0_3 | `JArYBF-D8q2OmZ4Mok00sD2Y_6SYEQ7Hjx-6VZ_jl3g` | Legacy |
+| aos2_0_1 | `Do_Uc2Sju_ffp6Ev0AnLVdPtot15rvMjP-a9VVaA5fM` | Legacy, preserves case |
+| sqlite | `ghSkge2sIUD_F00ym5sEimC63BDBuBrq4b5OcwxOjiw` | SQLite support |
+
+### Test Accounts
+
+```javascript
+import { acc } from '../../../../../src/test.js'
+
+const { signer, addr } = acc[0]  // First test account
+const { signer: signer2, addr: addr2 } = acc[1]  // Second account
+```
+
+### Common Test Helpers
+
+```javascript
+// Parse response data
+const getData = (res) => {
+  if (res.Messages?.[0]?.Data) {
+    try {
+      return JSON.parse(res.Messages[0].Data)
+    } catch {
+      return res.Messages[0].Data
+    }
+  }
+  return null
+}
+
+// Check for errors
+const hasError = (res) => {
+  const tags = res.Messages?.[0]?.Tags || []
+  return tags.some((t) => t.name === 'Error' || t.name === 'error')
+}
