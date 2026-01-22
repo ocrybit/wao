@@ -21,6 +21,20 @@ Simple stateful counter that can be incremented, decremented, and reset.
 node --test workspaces/counter/app.test.js
 ```
 
+## Frontend
+A Vite web app for interacting with the counter process.
+
+```bash
+cd workspaces/counter/frontend
+npm run dev
+```
+
+Features:
+- Connect to any deployed counter process by ID
+- Increment/decrement with buttons
+- Custom amount input
+- Requires ArConnect wallet for write operations
+
 ## Notes
 - State persists across messages
 - Use `msg.Tags.Amount` to access custom tags

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AO Counter</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <h1>AO Counter</h1>
+
+      <div class="process-input">
+        <input type="text" id="processId" placeholder="Enter Process ID" />
+        <button id="connectBtn">Connect</button>
+      </div>
+
+      <div id="counter-display" class="hidden">
+        <div class="count-value">
+          <span id="count">0</span>
+        </div>
+
+        <div class="controls">
+          <button id="decBtn" class="control-btn">−</button>
+          <button id="incBtn" class="control-btn">+</button>
+        </div>
+
+        <div class="actions">
+          <button id="resetBtn">Reset</button>
+          <button id="refreshBtn">Refresh</button>
+        </div>
+
+        <div class="custom-amount">
+          <input type="number" id="amount" value="1" min="1" />
+          <button id="incAmountBtn">+ Amount</button>
+          <button id="decAmountBtn">− Amount</button>
+        </div>
+      </div>
+
+      <div id="status"></div>
+    </div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
