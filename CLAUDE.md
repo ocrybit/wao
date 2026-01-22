@@ -2,7 +2,7 @@
 
 ## Step 1: Setup
 
-**Run these commands as-is. Do not verify after each step.**
+**IMPORTANT: Run this command block exactly as-is. Do NOT run additional commands to verify. Do NOT check if things exist. ASSUME SUCCESS and proceed to Step 2.**
 
 ```bash
 START=$SECONDS
@@ -29,9 +29,10 @@ echo "Installation complete in $((SECONDS - START)) seconds"
 
 ## Step 2: Ask User
 
-After setup, report: **"Environment ready in X seconds. What would you like to build?"**
+**IMMEDIATELY after running Step 1 (do NOT verify anything), report:**
 
-Options to offer:
+"Environment ready in X seconds. What would you like to build?"
+
 1. **Lua app** - Stateful process (token, DAO, game)
 2. **Erlang device** - HyperBEAM infrastructure
 3. **Run existing tests** - Verify setup works
