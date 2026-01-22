@@ -2,6 +2,46 @@
 
 This guide describes the recommended development workflow for building AOS (AO Operating System) applications using the WAO SDK.
 
+## Prerequisites
+
+### Environment Setup
+
+```bash
+# Clone WAO SDK
+git clone https://github.com/ocrybit/wao.git
+cd wao
+npm install
+
+# Install Erlang 27 (required for HyperBEAM)
+asdf plugin add erlang
+asdf install erlang 27.3.4.6
+asdf global erlang 27.3.4.6
+
+# Install rebar3 (Erlang build tool)
+asdf plugin add rebar
+asdf install rebar 3.26.0
+asdf global rebar 3.26.0
+
+# Configure HyperBEAM environment
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+```
+
+### Verify Installation
+
+```bash
+# Check Erlang
+erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'
+
+# Check Node.js
+node --version  # Should be 18+
+
+# Run a quick test
+npm test -- vibe/apps/tests/counter.test.js
+```
+
 ## Development Flow
 
 ```
