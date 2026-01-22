@@ -7,27 +7,27 @@
 ```bash
 START=$SECONDS
 
-# Extract tarballs
+# Extract tarballs (silent)
 cd ~ && tar -xJf /home/user/wao/claude/installation/asdf-erlang-rebar.tar.xz
 cd ~ && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz
 cd /home/user/wao && tar -xJf /home/user/wao/claude/installation/wao-node-modules.tar.xz
 
-# Setup Erlang
+# Setup Erlang (silent)
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# Install dependencies (tarballs may be incomplete)
-cd /home/user/wao && npm install
+# Install dependencies (silent)
+cd /home/user/wao && npm install --silent 2>/dev/null
 
-# Build and link hbsig properly
-cd /home/user/wao/hbsig && npm install && npm run build
+# Build and link hbsig (silent)
+cd /home/user/wao/hbsig && npm install --silent 2>/dev/null && npm run build --silent 2>/dev/null
 rm -f /home/user/wao/node_modules/hbsig
 ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
 
-# Register dev_dex device for Erlang tests
+# Register dev_dex device for Erlang tests (silent)
 cp /home/user/wao/claude/devices/dev_dex.erl ~/HyperBEAM/src/
 grep -q 'dev_dex' ~/HyperBEAM/src/hb_opts.erl || \
   sed -i 's/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois},\n            #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}/' ~/HyperBEAM/src/hb_opts.erl
-cd ~/HyperBEAM && rebar3 compile
+cd ~/HyperBEAM && rebar3 compile > /dev/null 2>&1
 
 # Create workspaces directory
 mkdir -p /home/user/wao/workspaces
