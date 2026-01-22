@@ -49,7 +49,7 @@ cat << 'SPLASH'
 ╚███╔███╔╝██║  ██║╚██████╔╝
  ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝
 
-      Weave AO SDK Ready!
+  WizardAO SDK on Claude Code
 
 SPLASH
 echo "Installation complete in $((SECONDS - START)) seconds"
