@@ -4,14 +4,19 @@ This guide describes the 4 development tracks for building on AO using the WAO S
 
 ## Development Tracks Overview
 
-| Track | Execution Device | Use Case | Deployment Target |
+| Track | Execution Config | Use Case | Deployment Target |
 |-------|-----------------|----------|-------------------|
-| **1. Legacynet AOS** | `stack@1.0` | Existing legacynet apps | Legacynet |
-| **2. Mainnet AOS** | `stack@1.0` | Production mainnet apps | Mainnet |
-| **3. HyperAOS** | `stack@1.0` or `lua@5.3a` | HyperBEAM-native apps | HyperBEAM nodes |
+| **1. Legacynet AOS** | `stack@1.0` + `genesis-wasm@1.0` | Existing legacynet apps | Legacynet |
+| **2. Mainnet AOS** | `stack@1.0` + `wasm-64@1.0` | Production mainnet apps | Mainnet |
+| **3. HyperAOS** | `lua@5.3a` | Fast native Lua apps | HyperBEAM nodes |
 | **4. HyperBEAM Devices** | Native Erlang | Core infrastructure | HyperBEAM nodes |
 
-**Note:** `stack@1.0` is the standard WASM execution device for all AOS tracks. `lua@5.3a` is a HyperBEAM-specific alternative using native luerl (faster, no WASM overhead) for development and HyperBEAM-only deployments.
+**Execution Device Patterns:**
+- **Track 1 & 2**: Use `execution-device: "stack@1.0"` with `device-stack` array:
+  - Legacynet: `device-stack: ["genesis-wasm@1.0", "patch@1.0"]`
+  - Mainnet: `device-stack: ["wasm-64@1.0", "patch@1.0"]`
+- **Track 3**: Use `execution-device: "lua@5.3a"` directly (no stack wrapper)
+- **Track 4**: Native Erlang devices (no execution device)
 
 ---
 
@@ -77,7 +82,7 @@ npm test -- vibe/apps/tests/counter.test.js
 
 # Track 1: Legacynet AOS Apps
 
-Build apps for the AO legacynet using `stack@1.0` WASM execution.
+Build apps for the AO legacynet using `genesis-wasm@1.0` execution device.
 
 ## Workflow
 
@@ -91,8 +96,8 @@ Build apps for the AO legacynet using `stack@1.0` WASM execution.
 │  In-memory WAO    ───► Integration WAO   ───► E2E with WAO  ───► Legacynet  │
 │  (ArMem WASM)          (HyperBEAM)            (WAO Server)                   │
 │                                                                              │
-│  • Fast iteration      • stack@1.0            • Full stack        • Deploy  │
-│  • Full WASM exec      • WASM execution       • HTTP endpoints    • WAO SDK │
+│  • Fast iteration      • genesis-wasm@1.0     • Full stack        • Deploy  │
+│  • Full WASM exec      • Legacy WASM          • HTTP endpoints    • WAO SDK │
 │  • ~14 seconds         • ~25 seconds          • React UI                    │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -164,11 +169,14 @@ describe('MyApp (HyperBEAM)', () => {
   after(() => hbeam?.kill())
 
   it('should spawn and execute', async () => {
-    // Test with stack@1.0 device (standard WASM execution)
+    // Legacynet: stack@1.0 with genesis-wasm@1.0 in device-stack
     const tags = {
       type: 'Process',
       device: 'process@1.0',
       'execution-device': 'stack@1.0',
+      'device-stack': ['genesis-wasm@1.0', 'patch@1.0'],
+      'push-device': 'push@1.0',
+      'patch-from': '/results/outbox',
       scheduler: hb.addr,
     }
     // ... test logic
@@ -240,7 +248,7 @@ await ao.message({
 
 # Track 2: Mainnet AOS Apps
 
-Build production apps for AO mainnet using `stack@1.0` execution.
+Build production apps for AO mainnet using `wasm-64@1.0` execution device.
 
 ## Workflow
 
@@ -252,9 +260,9 @@ Build production apps for AO mainnet using `stack@1.0` execution.
 │  1. TEST LUA           2. TEST HYPERBEAM      3. TEST FRONTEND   4. DEPLOY  │
 │  ───────────           ──────────────         ─────────────────  ────────   │
 │  In-memory WAO    ───► In-memory HB WAO  ───► Local HB WAO  ───► Mainnet    │
-│  (ArMem WASM)          (stack@1.0)            (WAO Server)                   │
+│  (ArMem WASM)          (wasm-64@1.0)          (WAO Server)                   │
 │                                                                              │
-│  • Fast iteration      • Full WASM stack      • Production-like   • Deploy  │
+│  • Fast iteration      • wasm-64@1.0          • Production-like   • Deploy  │
 │  • aos2_0_6            • Cached images        • HTTP endpoints    • WAO SDK │
 │  • ~14 seconds         • ~30 seconds          • React UI                    │
 │                                                                              │
@@ -275,11 +283,14 @@ const hbeam = await new HyperBEAM({
   timeout: 120,
 }).ready()
 
-// Test with stack@1.0 (requires cached WASM images)
+// Mainnet: stack@1.0 with wasm-64@1.0 in device-stack
 const tags = {
   type: 'Process',
   device: 'process@1.0',
   'execution-device': 'stack@1.0',
+  'device-stack': ['wasm-64@1.0', 'patch@1.0'],
+  'push-device': 'push@1.0',
+  'patch-from': '/results/outbox',
   scheduler: hbeam.hb.addr,
 }
 ```
@@ -314,11 +325,7 @@ Same as Track 1 - use WAO SDK's `AO` class.
 
 # Track 3: HyperAOS Apps
 
-Build Lua apps for HyperBEAM nodes using `stack@1.0` (WASM) or `lua@5.3a` (native luerl).
-
-**Execution options:**
-- `stack@1.0` - Standard WASM execution (same as mainnet)
-- `lua@5.3a` - Native luerl execution (faster, HyperBEAM-only)
+Build fast Lua apps for HyperBEAM nodes using `lua@5.3a` execution device (native luerl).
 
 ## Workflow
 
@@ -330,11 +337,11 @@ Build Lua apps for HyperBEAM nodes using `stack@1.0` (WASM) or `lua@5.3a` (nativ
 │  1. TEST LUA & INTEGRATION           2. TEST FRONTEND        3. DEPLOY      │
 │  ────────────────────────            ──────────────          ────────       │
 │  In-memory HyperBEAM WAO        ───► Local HyperBEAM    ───► HyperBEAM      │
-│  (stack@1.0 or lua@5.3a)             (WAO + Vitest)          Nodes          │
+│  (lua@5.3a)                          (WAO + Vitest)          Nodes          │
 │                                                                              │
-│  • stack@1.0: WASM execution         • E2E tests             • Deploy to    │
-│  • lua@5.3a: Native luerl            • React components      • HB nodes     │
-│  • ~10-25 seconds                    • HTTP client                          │
+│  • lua@5.3a device                   • E2E tests             • Deploy to    │
+│  • No WASM overhead                  • React components      • HB nodes     │
+│  • ~10 seconds                       • HTTP client                          │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -710,10 +717,11 @@ import { AO, HB } from 'wao'
 
 ### Execution Devices
 
-| Device | Runtime | Use Case |
+| Config | Runtime | Use Case |
 |--------|---------|----------|
-| `stack@1.0` | WASM | Standard for all AOS (legacynet, mainnet, HyperBEAM) |
-| `lua@5.3a` | luerl | Fast native execution (HyperBEAM only) |
+| `stack@1.0` + `genesis-wasm@1.0` | WASM | Legacynet AOS (Track 1) |
+| `stack@1.0` + `wasm-64@1.0` | WASM | Mainnet AOS (Track 2) |
+| `lua@5.3a` | luerl | HyperAOS - fast native (Track 3) |
 | Native Erlang | BEAM | HyperBEAM devices (Track 4) |
 
 ### Key Gotchas
