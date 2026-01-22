@@ -1,8 +1,10 @@
-# Tutorial Devices
+# Erlang Device Development
 
-Erlang device examples for HyperBEAM infrastructure development.
+Build HyperBEAM infrastructure with Erlang.
 
-> **Note:** These are Erlang devices that extend HyperBEAM. For Lua apps (AOS processes), see `/vibe/apps/`.
+**BEFORE BUILDING: Read `../docs/llms.txt` for TABM format and device patterns.**
+
+> For Lua apps, see `../apps/SKILL.md`
 
 ## Devices
 
