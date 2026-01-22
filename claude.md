@@ -265,12 +265,29 @@ pkill -9 -f beam.smp && pkill -9 -f epmd
 
 ## Deep Dive Resources
 
-| File | Content |
-|------|---------|
-| `llms.txt` | Complete HyperBEAM reference (93KB) |
-| `lua-report.md` | Test results and architecture |
-| `README.md` | Full SDK documentation |
-| `ao-core.md` | AO protocol internals |
+| File | Content | When to Use |
+|------|---------|-------------|
+| `llms.txt` | HyperBEAM LLM Reference (93KB) - Architecture, source structure, TABM format, key resolution, device patterns | **Use first** - Practical guide for understanding codebase and building devices |
+| `ao-core.md` | AO-Core Protocol Specification - TypeScript interfaces, cryptographic operations, scheduler, codecs | **Use for protocol** - When implementing new protocol features or deep understanding |
+| `aos-dev.md` | AO Development Guide - Lua + Erlang workflows, environment setup, testing patterns | **Use for development** - Step-by-step guide for building apps |
+| `vibe-engineer.mdx` | Vibe Engineer's Guide - AI-assisted and manual development workflows | **Use for overview** - Quick reference for both AI and human developers |
+| `lua-report.md` | Test results and architecture | Debugging test failures |
+| `README.md` | Full SDK documentation | Project overview |
+
+### Quick Reference: llms.txt vs ao-core.md
+
+**llms.txt** (Read first for most tasks):
+- Erlang source file locations and line numbers
+- Device implementation patterns with code examples
+- Practical "how to" for building HyperBEAM devices
+- Architecture diagrams and directory structure
+
+**ao-core.md** (Read for protocol work):
+- Complete TypeScript type definitions
+- Cryptographic algorithms (RSA-PSS, SHA-256, Deep Hash)
+- TABM binary format specification
+- Scheduler hash chain computation
+- HTTP API message format
 
 ---
 
