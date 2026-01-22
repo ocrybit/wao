@@ -33,6 +33,8 @@ echo "Installation complete in $((SECONDS - START)) seconds"
 
 "Environment ready in X seconds. What would you like to build?"
 
+(Replace X with the actual seconds from the setup output)
+
 1. **Lua app** - Stateful process (token, DAO, game)
 2. **Erlang device** - HyperBEAM infrastructure
 3. **Run existing tests** - Verify setup works
