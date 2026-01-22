@@ -2,7 +2,7 @@
 
 ## Step 1: Setup
 
-**Run this single command block. Do not verify after each step.**
+**Run these commands as-is. Do not verify after each step.**
 
 ```bash
 START=$SECONDS
@@ -24,22 +24,14 @@ ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
-# Verify setup
-. ~/.asdf/asdf.sh
-echo "=== VERIFICATION ==="
-echo "Erlang: $(erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell 2>/dev/null || echo 'NOT INSTALLED')"
-echo "HyperBEAM: $(test -d ~/HyperBEAM/src && echo 'OK' || echo 'NOT FOUND')"
-echo "node_modules: $(test -d /home/user/wao/node_modules && echo 'OK' || echo 'NOT FOUND')"
 echo "Installation complete in $((SECONDS - START)) seconds"
 ```
 
-## Step 2: Check Result
+## Step 2: Ask User
 
-**If verification shows all OK:** Report "Environment ready in X seconds. What would you like to build?"
+After setup, report: **"Environment ready in X seconds. What would you like to build?"**
 
-**If verification shows NOT INSTALLED/NOT FOUND:** Say "Setup failed. Running full installation from scratch..." then follow **Appendix: Setup From Scratch** at the bottom of this file.
-
-Options to offer (only after successful setup):
+Options to offer:
 1. **Lua app** - Stateful process (token, DAO, game)
 2. **Erlang device** - HyperBEAM infrastructure
 3. **Run existing tests** - Verify setup works
