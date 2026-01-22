@@ -137,5 +137,6 @@ dist
 # Large compiled packages
 *.tar.xz
 *.tar.gz
+!claude/installation/*.tar.xz
 tinyllama.gguf
 rebar3.crashdump
