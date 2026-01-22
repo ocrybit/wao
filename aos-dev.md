@@ -1,10 +1,21 @@
-# AOS Development Guide
+# AO Development Guide
 
-This guide describes the recommended development workflow for building AOS (AO Operating System) applications using the WAO SDK.
+This guide describes the 4 development tracks for building on AO using the WAO SDK.
+
+## Development Tracks Overview
+
+| Track | Execution Device | Use Case | Deployment Target |
+|-------|-----------------|----------|-------------------|
+| **1. Legacynet AOS** | `genesis-wasm@1.0` | Existing legacynet apps | Legacynet |
+| **2. Mainnet AOS** | `stack@1.0` | Production mainnet apps | Mainnet |
+| **3. HyperAOS** | `lua@5.3a` | Fast native Lua apps | HyperBEAM nodes |
+| **4. HyperBEAM Devices** | Native Erlang | Core infrastructure | HyperBEAM nodes |
+
+---
 
 ## Prerequisites
 
-### Environment Setup
+### Option A: Use WAO SDK (Recommended for development)
 
 ```bash
 # Clone WAO SDK
@@ -12,12 +23,12 @@ git clone https://github.com/ocrybit/wao.git
 cd wao
 npm install
 
-# Install Erlang 27 (required for HyperBEAM)
+# Install Erlang 27 (required for local HyperBEAM)
 asdf plugin add erlang
 asdf install erlang 27.3.4.6
 asdf global erlang 27.3.4.6
 
-# Install rebar3 (Erlang build tool)
+# Install rebar3
 asdf plugin add rebar
 asdf install rebar 3.26.0
 asdf global rebar 3.26.0
@@ -29,6 +40,24 @@ HB_REBAR3=false
 EOF
 ```
 
+### Option B: Install HyperBEAM + WAO separately
+
+Follow the official guide: https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html
+
+Clone the beta3 release:
+```bash
+git clone -b v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git
+cd HyperBEAM
+rebar3 compile
+```
+
+Add WAO to your project:
+```bash
+yarn add wao
+# or
+npm install wao
+```
+
 ### Verify Installation
 
 ```bash
@@ -38,553 +67,503 @@ erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'
 # Check Node.js
 node --version  # Should be 18+
 
-# Run a quick test
+# Run a quick test (if using WAO SDK clone)
 npm test -- vibe/apps/tests/counter.test.js
 ```
 
-## Development Flow
+---
+
+# Track 1: Legacynet AOS Apps
+
+Build apps compatible with the existing AO legacynet using `genesis-wasm@1.0`.
+
+## Workflow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AOS Development Flow                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   1. WRITE          2. TEST IN-MEMORY       3. DEPLOY           │
-│   ─────────         ─────────────────       ──────────          │
-│   Lua Module   ───► WAO SDK Tests     ───►  HyperBEAM           │
-│   (counter.lua)     (fast iteration)        (production)        │
-│                                                                  │
-│   • Handlers        • Full Lua execution    • Process spawn     │
-│   • State           • No dependencies       • Message routing   │
-│   • Logic           • ~14 seconds           • Persistence       │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Track 1: Legacynet AOS Apps                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. TEST LUA           2. TEST HYPERBEAM      3. TEST FRONTEND   4. DEPLOY  │
+│  ───────────           ──────────────         ─────────────────  ────────   │
+│  In-memory WAO    ───► Integration WAO   ───► E2E with WAO  ───► Mainnet    │
+│  (ArMem WASM)          (HyperBEAM)            (WAO Server)                   │
+│                                                                              │
+│  • Fast iteration      • genesis-wasm@1.0     • Full stack        • Deploy  │
+│  • Full WASM exec      • CU required          • HTTP endpoints    • WAO SDK │
+│  • ~14 seconds         • ~25 seconds          • React UI                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Why This Flow?
-
-| Phase | Speed | Dependencies | Use Case |
-|-------|-------|--------------|----------|
-| In-Memory | ~14s for 7 tests | None | Development, iteration |
-| HyperBEAM | ~25s for 9 tests | HyperBEAM node | Production validation |
-
-**In-memory testing** provides full Lua execution without starting HyperBEAM, making development iteration fast.
-
-## Step 1: Write Your Lua Module
-
-Create your AOS Lua script with handlers:
-
-```lua
--- myapp.lua
-local state = {}
-
--- Initialize state
-Handlers.add("Init", "Init", function(msg)
-  state.owner = msg.From
-  state.count = 0
-  msg.reply({ Data = "Initialized" })
-end)
-
--- Query state
-Handlers.add("Get", "Get", function(msg)
-  msg.reply({
-    Data = tostring(state.count),
-    Owner = state.owner or "none"
-  })
-end)
-
--- Modify state
-Handlers.add("Set", "Set", function(msg)
-  local value = tonumber(msg.Value) or tonumber(msg.Tags.Value) or 0
-  state.count = value
-  msg.reply({ Data = tostring(state.count) })
-end)
-```
-
-### Handler Pattern
-
-```lua
-Handlers.add("ActionName", "ActionName", function(msg)
-  -- msg.From     - Sender address
-  -- msg.Data     - Message data
-  -- msg.Tags     - Message tags (msg.Tags.Key or msg.Key)
-  -- msg.Target   - Target process
-  -- msg.reply()  - Send response
-end)
-```
-
-## Step 2: Test In-Memory with WAO SDK
-
-Create a test file that runs your Lua code in-memory:
+## Step 1: Test Lua In-Memory with WAO
 
 ```javascript
 // myapp.test.js
-import assert from "assert"
-import { describe, it, before } from "node:test"
-import { readFileSync } from "fs"
-import { resolve, dirname } from "path"
-import { fileURLToPath } from "url"
-import { AO, connect, acc, scheduler } from "../src/test.js"
-import ArMem from "../src/armem.js"
+import { describe, it } from 'node:test'
+import assert from 'assert'
+import { readFileSync } from 'fs'
+import { ArMem, connect, acc, scheduler } from 'wao/test'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const myAppScript = readFileSync(resolve(__dirname, "myapp.lua"), "utf8")
-const [{ signer, jwk }] = acc
+const luaCode = readFileSync('myapp.lua', 'utf-8')
 
-describe("My App (In-Memory)", function() {
-  let mem, ao, pid
-
-  before(async () => {
-    // Create in-memory AO environment
-    mem = new ArMem()
+describe('MyApp (In-Memory)', () => {
+  it('should work', async () => {
+    const mem = new ArMem()
     const { spawn, message, dryrun } = connect(mem)
 
-    // Spawn a process with AOS module
-    pid = await spawn({
-      signer,
+    // Use aos2_0_6 for legacynet compatibility
+    const pid = await spawn({
+      signer: acc[0].signer,
       scheduler,
-      module: mem.modules.aos2_0_1,
+      module: mem.modules.aos2_0_6,
     })
 
-    // Load your Lua script
     await message({
       process: pid,
-      signer,
-      tags: [{ name: "Action", value: "Eval" }],
-      data: myAppScript,
+      signer: acc[0].signer,
+      tags: [{ name: 'Action', value: 'Eval' }],
+      data: luaCode,
     })
 
-    ao = { mem, spawn, message, dryrun, pid }
-  })
-
-  it("should initialize", async () => {
-    await ao.message({
-      process: ao.pid,
-      signer,
-      tags: [{ name: "Action", value: "Init" }],
-      data: "",
+    const res = await dryrun({
+      process: pid,
+      tags: [{ name: 'Action', value: 'Get' }],
     })
 
-    const result = await ao.dryrun({
-      process: ao.pid,
-      tags: [{ name: "Action", value: "Get" }],
-      data: "",
-    })
-
-    assert.equal(result.Messages[0].Data, "0")
-  })
-
-  it("should set value", async () => {
-    await ao.message({
-      process: ao.pid,
-      signer,
-      tags: [
-        { name: "Action", value: "Set" },
-        { name: "Value", value: "42" },
-      ],
-      data: "",
-    })
-
-    const result = await ao.dryrun({
-      process: ao.pid,
-      tags: [{ name: "Action", value: "Get" }],
-      data: "",
-    })
-
-    assert.equal(result.Messages[0].Data, "42")
+    assert.ok(res.Messages[0].Data)
   })
 })
 ```
 
-### Run In-Memory Tests
-
 ```bash
-HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 myapp.test.js
+npm test -- myapp.test.js
 ```
 
-### Key APIs
-
-| API | Description |
-|-----|-------------|
-| `spawn({ signer, scheduler, module })` | Create a new process |
-| `message({ process, signer, tags, data })` | Send a message (modifies state) |
-| `dryrun({ process, tags, data })` | Query state (read-only) |
-
-### Available Modules
-
-```javascript
-mem.modules.aos2_0_1  // AOS 2.0.1 (recommended)
-mem.modules.aos2_0_3  // AOS 2.0.3
-mem.modules.aos2_0_4_32  // AOS 2.0.4 (32-bit)
-```
-
-## Step 3: Deploy to HyperBEAM
-
-Once your in-memory tests pass, validate on HyperBEAM:
+## Step 2: Test Integration with HyperBEAM
 
 ```javascript
 // myapp.hyperbeam.test.js
-import assert from "assert"
-import { describe, it, before, after } from "node:test"
-import { readFileSync } from "fs"
-import { resolve, dirname } from "path"
-import { fileURLToPath } from "url"
-import HyperBEAM from "../src/hyperbeam.js"
+import { describe, it, before, after } from 'node:test'
+import assert from 'assert'
+import HyperBEAM from 'wao/hyperbeam'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const myAppScript = readFileSync(resolve(__dirname, "myapp.lua"), "utf8")
-
-describe("My App (HyperBEAM)", function() {
-  let hbeam, hb, pid
+describe('MyApp (HyperBEAM)', () => {
+  let hbeam, hb
 
   before(async () => {
-    // Start HyperBEAM
     hbeam = await new HyperBEAM({
       reset: true,
       timeout: 120,
+      genesis_wasm: true  // Enable genesis-wasm execution
     }).ready()
+    hb = hbeam.hb
+  })
 
+  after(() => hbeam?.kill())
+
+  it('should spawn and execute', async () => {
+    // Test with genesis-wasm@1.0 device
+    const tags = {
+      type: 'Process',
+      device: 'process@1.0',
+      'execution-device': 'genesis-wasm@1.0',
+      scheduler: hb.addr,
+    }
+    // ... test logic
+  })
+})
+```
+
+```bash
+HB_TIMEOUT=120 node --test --test-concurrency=1 myapp.hyperbeam.test.js
+```
+
+## Step 3: Test Frontend E2E with WAO Server
+
+```javascript
+// myapp.e2e.test.js
+import { describe, it, beforeAll, afterAll } from 'vitest'
+import { ArMem, connect, acc, scheduler } from 'wao/test'
+import Server from 'wao/server'
+
+describe('MyApp E2E', () => {
+  let server, mem, pid
+
+  beforeAll(async () => {
+    mem = new ArMem()
+    const { spawn, message } = connect(mem)
+
+    // Start WAO Server with ArMem backend
+    server = new Server({ port: 4000, aoconnect: mem, log: false })
+
+    pid = await spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_6,
+    })
+  }, 60000)
+
+  afterAll(() => server?.end())
+
+  it('should respond to HTTP', async () => {
+    // CU endpoint at port+4
+    const res = await fetch('http://localhost:4004/status')
+    expect(res.ok).toBe(true)
+  })
+})
+```
+
+## Step 4: Deploy to Mainnet
+
+```javascript
+import { AO } from 'wao'
+
+const ao = new AO()
+
+// Deploy process
+const pid = await ao.spawn({
+  module: 'YOUR_MODULE_ID',  // aos2_0_6 module on mainnet
+  scheduler: 'SCHEDULER_ADDRESS',
+})
+
+// Send messages
+await ao.message({
+  process: pid,
+  action: 'YourAction',
+  data: '...',
+})
+```
+
+---
+
+# Track 2: Mainnet AOS Apps
+
+Build production apps for AO mainnet using `stack@1.0` execution.
+
+## Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Track 2: Mainnet AOS Apps                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. TEST LUA           2. TEST HYPERBEAM      3. TEST FRONTEND   4. DEPLOY  │
+│  ───────────           ──────────────         ─────────────────  ────────   │
+│  In-memory WAO    ───► In-memory HB WAO  ───► Local HB WAO  ───► Mainnet    │
+│  (ArMem WASM)          (stack@1.0)            (WAO Server)                   │
+│                                                                              │
+│  • Fast iteration      • Full WASM stack      • Production-like   • Deploy  │
+│  • aos2_0_6            • Cached images        • HTTP endpoints    • WAO SDK │
+│  • ~14 seconds         • ~30 seconds          • React UI                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Step 1: Test Lua In-Memory with WAO
+
+Same as Track 1 - use ArMem with `aos2_0_6` module.
+
+## Step 2: Test with In-Memory HyperBEAM
+
+```javascript
+import HyperBEAM from 'wao/hyperbeam'
+
+const hbeam = await new HyperBEAM({
+  reset: true,
+  timeout: 120,
+}).ready()
+
+// Test with stack@1.0 (requires cached WASM images)
+const tags = {
+  type: 'Process',
+  device: 'process@1.0',
+  'execution-device': 'stack@1.0',
+  scheduler: hbeam.hb.addr,
+}
+```
+
+## Step 3: Test Frontend E2E with Local HyperBEAM
+
+```javascript
+import HyperBEAM from 'wao/hyperbeam'
+import MyClient from './lib/MyClient'
+
+describe('E2E Tests', () => {
+  let hbeam, client
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    client = new MyClient(hbeam.url)
+  }, 120000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should work end-to-end', async () => {
+    // Test your frontend against local HyperBEAM
+  })
+})
+```
+
+## Step 4: Deploy to Mainnet
+
+Same as Track 1 - use WAO SDK's `AO` class.
+
+---
+
+# Track 3: HyperAOS Apps
+
+Build fast native Lua apps using `lua@5.3a` (luerl) execution on HyperBEAM.
+
+## Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Track 3: HyperAOS Apps                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. TEST LUA & INTEGRATION           2. TEST FRONTEND        3. DEPLOY      │
+│  ────────────────────────            ──────────────          ────────       │
+│  In-memory HyperBEAM WAO        ───► Local HyperBEAM    ───► HyperBEAM      │
+│  (lua@5.3a luerl)                    (WAO + Vitest)          Nodes          │
+│                                                                              │
+│  • Native Lua execution              • E2E tests             • Deploy to    │
+│  • No WASM overhead                  • React components      • HB nodes     │
+│  • ~10 seconds                       • HTTP client                          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Step 1: Test Lua & Integration with HyperBEAM
+
+```javascript
+import { describe, it, before, after } from 'node:test'
+import assert from 'assert'
+import { readFileSync } from 'fs'
+import HyperBEAM from 'wao/hyperbeam'
+
+const luaCode = readFileSync('myapp.lua', 'utf-8')
+
+describe('HyperAOS App', () => {
+  let hbeam, hb, pid
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
     hb = hbeam.hb
 
-    // Spawn process using commit + POST pattern
+    // Get Lua module (cached)
+    const moduleId = await hb.getLua()
+
+    // Spawn with lua@5.3a (native luerl)
     const tags = {
-      type: "Process",
-      device: "process@1.0",
+      type: 'Process',
+      device: 'process@1.0',
+      'execution-device': 'lua@5.3a',
+      module: moduleId,
       scheduler: hb.addr,
-      "execution-device": "test-device@1.0",
-      "random-seed": `seed-${Date.now()}`,
+      data: luaCode,
     }
 
     const committed = await hb.commit(tags, { path: false })
     const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(committed),
     })
-
-    pid = response.headers.get("process")
+    pid = response.headers.get('process')
   })
 
-  after(async () => {
-    if (hbeam) hbeam.kill()
-  })
+  after(() => hbeam?.kill())
 
-  it("should spawn process", async () => {
-    assert.ok(pid, "Process ID should exist")
-  })
-
-  it("should schedule messages", async () => {
-    const tags = { type: "Message", target: pid, action: "Get" }
-    const committed = await hb.commit(tags, { path: false })
-
-    const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+  it('should execute Lua natively', async () => {
+    // Schedule message
+    const msgTags = { type: 'Message', target: pid, Action: 'Get' }
+    const committed = await hb.commit(msgTags, { path: false })
+    const res = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(committed),
     })
+    const slot = res.headers.get('slot')
 
-    assert.equal(response.status, 200)
+    // Compute
+    const result = await hb.g(`/${pid}~process@1.0/compute`, { slot: parseInt(slot) })
+    assert.ok(result)
   })
 })
 ```
 
-### Run HyperBEAM Tests
-
 ```bash
-HB_TIMEOUT=120 node --experimental-wasm-memory64 --test --test-concurrency=1 myapp.hyperbeam.test.js
+HB_TIMEOUT=120 node --test --test-concurrency=1 myapp.hyperaos.test.js
 ```
 
-## Project Structure
-
-```
-my-aos-app/
-├── myapp.lua                    # Lua module
-├── myapp.test.js                # In-memory tests (development)
-├── myapp.hyperbeam.test.js      # HyperBEAM tests (production)
-└── README.md                    # Documentation
-```
-
-## Example: Counter App
-
-See `aos-app/` for a complete example:
-
-```bash
-# In-memory tests (7 tests, ~14s)
-HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 aos-app/counter.test.js
-
-# HyperBEAM tests (9 tests, ~25s)
-HB_TIMEOUT=120 node --experimental-wasm-memory64 --test --test-concurrency=1 aos-app/counter.hyperbeam.test.js
-```
-
-## Common Patterns
-
-### Reading Tags in Lua
-
-```lua
--- Access tag values (both styles work)
-local value = msg.Value or msg.Tags.Value
-local action = msg.Action or msg.Tags.Action
-```
-
-### Replying with Tags
-
-```lua
-msg.reply({
-  Data = "Response data",
-  Status = "success",
-  Count = tostring(count)
-})
-```
-
-### Sending Messages to Other Processes
-
-```lua
-Send({
-  Target = other_process_id,
-  Action = "Notify",
-  Data = "Hello"
-})
-```
-
-### Using Spawn
-
-```lua
-Spawn(module_id, {
-  Data = initial_data,
-  ["On-Boot"] = "Data"
-})
-```
-
-## Debugging Tips
-
-### Print Debug Output (In-Memory)
-
-```lua
-Handlers.add("Debug", "Debug", function(msg)
-  print("State:", state.count)  -- Shows in test output
-  msg.reply({ Data = "debug" })
-end)
-```
-
-### Check Message Structure
+## Step 2: Test Frontend E2E with Local HyperBEAM
 
 ```javascript
-const result = await ao.dryrun({
-  process: ao.pid,
-  tags: [{ name: "Action", value: "Get" }],
-  data: "",
+// Using Vitest for frontend tests
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from 'wao/hyperbeam'
+import MyClient from './lib/MyClient'
+
+describe('HyperAOS Frontend', () => {
+  let hbeam, client
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    client = new MyClient(hbeam.url)
+  }, 120000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should work with frontend', async () => {
+    const result = await client.getData()
+    expect(result).toBeDefined()
+  })
 })
-
-console.log("Messages:", result.Messages)
-console.log("Output:", result.Output)
-console.log("Spawns:", result.Spawns)
 ```
 
-### Test Assertions
+## Step 3: Deploy to HyperBEAM Nodes
+
+Deploy your Lua app to production HyperBEAM nodes.
 
 ```javascript
-// Check message data
-assert.equal(result.Messages[0].Data, "expected")
+import { HB } from 'wao'
 
-// Check tags
-const tags = result.Messages[0].Tags
-const statusTag = tags.find(t => t.name === "Status")
-assert.equal(statusTag.value, "success")
+const hb = new HB({ url: 'https://your-hyperbeam-node.com' })
+
+// Spawn process
+const tags = {
+  type: 'Process',
+  device: 'process@1.0',
+  'execution-device': 'lua@5.3a',
+  module: 'YOUR_LUA_MODULE_ID',
+  scheduler: 'SCHEDULER_ADDRESS',
+  data: luaCode,
+}
+
+const committed = await hb.commit(tags, { path: false })
+const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(committed),
+})
+const pid = response.headers.get('process')
 ```
-
-## Full Lua Execution on HyperBEAM
-
-For full Lua execution (not just scheduling), you need:
-
-1. **genesis-wasm execution device**:
-   ```javascript
-   new HyperBEAM({ genesis_wasm: true })
-   ```
-   Requires CU server running.
-
-2. **stack@1.0 with wasm-64**:
-   Requires cached WASM images.
-
-For development, **in-memory tests provide full Lua execution** and are recommended for fast iteration.
-
-## Quick Reference
-
-### Test Commands
-
-```bash
-# In-memory (development)
-HB_TIMEOUT=60 node --experimental-wasm-memory64 --test --test-concurrency=1 myapp.test.js
-
-# HyperBEAM (production)
-HB_TIMEOUT=120 node --experimental-wasm-memory64 --test --test-concurrency=1 myapp.hyperbeam.test.js
-```
-
-### Key Imports
-
-```javascript
-// In-memory testing
-import { AO, connect, acc, scheduler } from "../src/test.js"
-import ArMem from "../src/armem.js"
-
-// HyperBEAM testing
-import HyperBEAM from "../src/hyperbeam.js"
-```
-
-### Message vs Dryrun
-
-| Method | Modifies State | Use Case |
-|--------|---------------|----------|
-| `message()` | Yes | Write operations (Inc, Set, etc.) |
-| `dryrun()` | No | Read operations (Get, Info, etc.) |
 
 ---
 
-# Erlang Device Development Guide
+# Track 4: HyperBEAM Devices
 
-This section describes how to build native HyperBEAM devices in Erlang with Vite + React frontends.
+Build native Erlang devices that extend HyperBEAM functionality.
 
-## Erlang Development Flow
+## Workflow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Erlang Device Development Flow                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   1. WRITE          2. REGISTER         3. TEST & BUILD UI      │
-│   ─────────         ─────────           ────────────────        │
-│   dev_xxx.erl  ───► hb_opts.erl   ───►  Vitest + React          │
-│   (device code)     (device map)        (frontend app)          │
-│                                                                  │
-│   • HTTP API        • Add to map        • DexClient HTTP        │
-│   • State mgmt      • Set ~path         • Component tests       │
-│   • Business logic  • Restart HB        • Full UI               │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Track 4: HyperBEAM Devices                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. TEST DEVICE        2. TEST INTEGRATION    3. TEST FRONTEND   4. DEPLOY  │
+│  ─────────────         ────────────────       ─────────────────  ────────   │
+│  EUnit in HB      ───► In-memory HB WAO  ───► Local HB WAO  ───► HB Nodes   │
+│  (Erlang tests)        (HTTP API)             (Vitest + React)              │
+│                                                                              │
+│  • Unit tests          • WAO SDK tests        • Component tests   • Deploy  │
+│  • Fast feedback       • HTTP client          • E2E tests         • Custom  │
+│  • Erlang native       • ~10 seconds          • Vitest            • HB node │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## When to Use Erlang vs Lua
-
-| Aspect | Lua (AOS) | Erlang (Native Device) |
-|--------|-----------|------------------------|
-| **Use Case** | Custom app logic | Core HB functionality |
-| **State** | Process-scoped | Global via `persistent_term` |
-| **Performance** | WASM overhead | Native Erlang speed |
-| **HTTP API** | Via scheduler | Direct device routes |
-| **Testing** | ArMem in-memory | HyperBEAM + Vitest |
-| **Complexity** | Simpler | More control |
-
-## Step 1: Write Your Erlang Device
-
-Create a device module in `hyperbeam/src/`:
+## Step 1: Test Device with EUnit
 
 ```erlang
-%% dev_mydevice.erl
--module(dev_mydevice).
--export([info/3, routes/0]).
--export([init/3, get_state/3, update_state/3]).
+%% dev_mydevice_tests.erl
+-module(dev_mydevice_tests).
+-include_lib("eunit/include/eunit.hrl").
 
-%% Device info
-info(_M1, _M2, _Opts) ->
-    #{
-        name => <<"My Device">>,
-        version => <<"1.0.0">>
-    }.
+basic_test() ->
+    %% Test your device logic
+    {ok, Result} = dev_mydevice:get(#{}, #{}, #{}),
+    ?assertEqual(0, maps:get(value, Result)).
 
-%% HTTP routes (required for ~mydevice@1.0 prefix)
-routes() ->
-    #{
-        <<"init">> => fun init/3,
-        <<"get-state">> => fun get_state/3,
-        <<"update-state">> => fun update_state/3
-    }.
-
-%% Initialize state
-init(M1, M2, Opts) ->
-    %% Get parameter from request body or query
-    User = get_param(<<"user">>, M1, M2, Opts, <<"anonymous">>),
-
-    %% Store state globally with persistent_term
-    Key = {?MODULE, state},
-    State = #{user => User, count => 0},
-    persistent_term:put(Key, State),
-
-    {ok, #{status => <<"initialized">>, user => User}}.
-
-%% Read state
-get_state(_M1, _M2, _Opts) ->
-    Key = {?MODULE, state},
-    State = persistent_term:get(Key, #{count => 0}),
-    {ok, State}.
-
-%% Update state
-update_state(M1, M2, Opts) ->
-    Key = {?MODULE, state},
-    OldState = persistent_term:get(Key, #{count => 0}),
-
-    Value = get_param(<<"value">>, M1, M2, Opts, 0),
-    NewState = OldState#{count => Value},
-    persistent_term:put(Key, NewState),
-
-    {ok, NewState}.
-
-%% Helper to get parameter from body or query
-get_param(Name, M1, M2, _Opts, Default) ->
-    case maps:get(Name, M1, undefined) of
-        undefined -> maps:get(Name, M2, Default);
-        V -> V
-    end.
+state_test() ->
+    %% Test state management
+    dev_mydevice:set(#{<<"value">> => 42}, #{}, #{}),
+    {ok, Result} = dev_mydevice:get(#{}, #{}, #{}),
+    ?assertEqual(42, maps:get(value, Result)).
 ```
 
-### Key Patterns
-
-**State Management with `persistent_term`:**
-```erlang
-%% Store (survives across HTTP requests)
-persistent_term:put({?MODULE, my_key}, Value).
-
-%% Retrieve with default
-persistent_term:get({?MODULE, my_key}, DefaultValue).
-```
-
-**Routes Function:**
-```erlang
-routes() ->
-    #{
-        <<"action-name">> => fun handler_function/3
-    }.
-```
-
-**Handler Signature:**
-```erlang
-handler_function(M1, M2, Opts) ->
-    %% M1 = parsed request body (JSON map)
-    %% M2 = query parameters map
-    %% Opts = HyperBEAM options
-    {ok, ResponseMap}.
-```
-
-## Step 2: Register the Device
-
-Add your device to `hyperbeam/src/hb_opts.erl`:
-
-```erlang
-%% In the default_devices() function, add:
-<<"mydevice@1.0">> => #{
-    module => dev_mydevice,
-    routes => dev_mydevice:routes(),
-    <<"~path">> => <<"~mydevice@1.0">>
-}
-```
-
-**Restart HyperBEAM** to load the new device:
+Run EUnit tests:
 ```bash
-# Stop existing HyperBEAM, then restart
-HB_TIMEOUT=120 node --test --test-concurrency=1 your-test.js
+cd HyperBEAM
+rebar3 eunit --module=dev_mydevice_tests
 ```
 
-## Step 3: Create JavaScript Client
+## Step 2: Test Integration with WAO
 
-Create a client class to call your device HTTP API:
+```javascript
+// mydevice.integration.test.js
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from 'wao/hyperbeam'
+
+describe('MyDevice Integration', () => {
+  let hbeam, hb
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+  }, 120000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should respond to HTTP API', async () => {
+    const res = await fetch(`${hbeam.url}/~mydevice@1.0/get`)
+    const data = await res.json()
+    expect(data.value).toBeDefined()
+  })
+
+  it('should update state', async () => {
+    await fetch(`${hbeam.url}/~mydevice@1.0/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: 42 })
+    })
+
+    const res = await fetch(`${hbeam.url}/~mydevice@1.0/get`)
+    const data = await res.json()
+    expect(data.value).toBe(42)
+  })
+})
+```
+
+## Step 3: Test Frontend E2E with Local HyperBEAM
+
+```javascript
+// mydevice-ui/src/test/e2e.test.js
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from 'wao/hyperbeam'
+import MyDeviceClient from '../lib/MyDeviceClient'
+
+describe('MyDevice Frontend E2E', () => {
+  let hbeam, client
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    client = new MyDeviceClient(hbeam.url)
+  }, 120000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should work end-to-end', async () => {
+    await client.set(100)
+    const result = await client.get()
+    expect(result.value).toBe(100)
+  })
+})
+```
+
+### Client Class Pattern
 
 ```javascript
 // MyDeviceClient.js
@@ -593,22 +572,13 @@ export default class MyDeviceClient {
     this.baseUrl = baseUrl
   }
 
-  async init(user) {
-    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user })
-    })
-    return res.json()
+  async get() {
+    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/get`)
+    return res.json()  // Note: HyperBEAM lowercases response keys
   }
 
-  async getState() {
-    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/get-state`)
-    return res.json()
-  }
-
-  async updateState(value) {
-    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/update-state`, {
+  async set(value) {
+    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/set`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value })
@@ -618,283 +588,145 @@ export default class MyDeviceClient {
 }
 ```
 
-**Important**: HyperBEAM lowercases all response keys. `TOKEN-A` becomes `token-a`.
+## Step 4: Deploy to HyperBEAM Nodes
 
-## Step 4: Write Vitest Tests
-
-Create tests in `vibe/apps/your-app/`:
-
-```javascript
-// mydevice.test.js
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import HyperBEAM from '../../src/hyperbeam.js'
-import MyDeviceClient from './MyDeviceClient.js'
-
-describe('My Device', () => {
-  let hbeam, client
-
-  beforeAll(async () => {
-    // Start HyperBEAM (takes ~5-10s)
-    hbeam = await new HyperBEAM({
-      reset: true,
-      timeout: 120
-    }).ready()
-
-    client = new MyDeviceClient(hbeam.url)
-  }, 60000)  // 60s timeout for setup
-
-  afterAll(() => {
-    if (hbeam) hbeam.kill()
-  })
-
-  it('should initialize', async () => {
-    const result = await client.init('test-user')
-    expect(result.status).toBe('initialized')
-    expect(result.user).toBe('test-user')
-  })
-
-  it('should get state', async () => {
-    const result = await client.getState()
-    expect(result.count).toBeDefined()
-  })
-
-  it('should update state', async () => {
-    await client.updateState(42)
-    const result = await client.getState()
-    expect(result.count).toBe(42)
-  })
-})
-```
-
-### Run Vitest Tests
-
+1. Copy your device to HyperBEAM source:
 ```bash
-# Run all tests
-cd vibe/apps/your-app && npm test
-
-# Run specific test file
-npx vitest run mydevice.test.js
-
-# Watch mode
-npx vitest
+cp dev_mydevice.erl ~/HyperBEAM/src/
 ```
 
-## Step 5: Build React Frontend
-
-### Project Setup
-
-```bash
-cd vibe/apps
-npm create vite@latest mydevice-ui -- --template react
-cd mydevice-ui
-npm install
-npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom
-```
-
-### Vite Config
-
-```javascript
-// vite.config.js
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-export default defineConfig({
-  plugins: [react()],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.js'],
-  },
-})
-```
-
-### Test Setup
-
-```javascript
-// src/test/setup.js
-import '@testing-library/jest-dom'
-```
-
-### Component Structure
-
-```
-mydevice-ui/
-├── src/
-│   ├── components/
-│   │   ├── StatePanel.jsx       # Display/update state
-│   │   └── StatePanel.test.jsx  # Component tests
-│   ├── lib/
-│   │   └── MyDeviceClient.js    # HTTP client
-│   ├── test/
-│   │   └── setup.js             # Vitest setup
-│   ├── App.jsx                  # Main app
-│   └── main.jsx                 # Entry point
-├── vite.config.js
-└── package.json
-```
-
-### Example Component
-
-```jsx
-// StatePanel.jsx
-import { useState, useEffect } from 'react'
-
-export default function StatePanel({ client }) {
-  const [state, setState] = useState(null)
-  const [loading, setLoading] = useState(false)
-
-  const loadState = async () => {
-    if (!client) return
-    const result = await client.getState()
-    setState(result)
-  }
-
-  useEffect(() => {
-    loadState()
-  }, [client])
-
-  const handleUpdate = async (value) => {
-    setLoading(true)
-    try {
-      await client.updateState(value)
-      await loadState()
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div data-testid="state-panel">
-      <h2>State</h2>
-      {state && (
-        <div>
-          <p>Count: {state.count}</p>
-          <button
-            onClick={() => handleUpdate(state.count + 1)}
-            disabled={loading}
-            data-testid="increment-button"
-          >
-            Increment
-          </button>
-        </div>
-      )}
-    </div>
-  )
+2. Register in `hb_opts.erl`:
+```erlang
+<<"mydevice@1.0">> => #{
+    module => dev_mydevice,
+    routes => dev_mydevice:routes(),
+    <<"~path">> => <<"~mydevice@1.0">>
 }
 ```
 
-### Component Tests
-
-```jsx
-// StatePanel.test.jsx
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
-import StatePanel from './StatePanel'
-
-describe('StatePanel', () => {
-  it('renders state panel', () => {
-    render(<StatePanel client={null} />)
-    expect(screen.getByTestId('state-panel')).toBeInTheDocument()
-  })
-
-  it('displays count from client', async () => {
-    const mockClient = {
-      getState: vi.fn().mockResolvedValue({ count: 42 }),
-      updateState: vi.fn().mockResolvedValue({ count: 43 })
-    }
-
-    render(<StatePanel client={mockClient} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Count: 42')).toBeInTheDocument()
-    })
-  })
-
-  it('calls updateState on increment', async () => {
-    const mockClient = {
-      getState: vi.fn().mockResolvedValue({ count: 10 }),
-      updateState: vi.fn().mockResolvedValue({ count: 11 })
-    }
-
-    render(<StatePanel client={mockClient} />)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('increment-button')).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByTestId('increment-button'))
-
-    await waitFor(() => {
-      expect(mockClient.updateState).toHaveBeenCalledWith(11)
-    })
-  })
-})
-```
-
-### Run Frontend Tests
-
+3. Recompile and restart:
 ```bash
-# Unit tests (fast, no HyperBEAM)
-npm test
-
-# Integration tests with HyperBEAM
-npx vitest run integration.test.js
+cd ~/HyperBEAM
+rebar3 compile
+# Restart your HyperBEAM node
 ```
 
-## Complete Example: AMM DEX
+---
 
-See the `erlang-dex-ui/` project for a complete example:
+## Erlang Device Development Reference
 
-- **Erlang device**: `hyperbeam/src/dev_dex.erl`
-- **JS Client**: `erlang-dex-ui/src/lib/DexClient.js`
-- **React Components**: `erlang-dex-ui/src/components/`
-- **Tests**: `erlang-dex-ui/src/components/*.test.jsx`
+### Device Module Structure
 
-```bash
-# Run all DEX frontend tests (18 tests)
-cd vibe/apps/erlang-dex-ui && npm test
+```erlang
+-module(dev_mydevice).
+-export([info/3, routes/0]).
+-export([get/3, set/3]).
 
-# Run HyperBEAM integration tests
-cd vibe/apps && npx vitest run dev-dex.test.js
+info(_M1, _M2, _Opts) ->
+    #{name => <<"mydevice">>, version => <<"1.0">>}.
+
+routes() ->
+    #{
+        <<"get">> => fun get/3,
+        <<"set">> => fun set/3
+    }.
+
+get(_M1, _M2, _Opts) ->
+    Value = persistent_term:get({?MODULE, value}, 0),
+    {ok, #{value => Value}}.
+
+set(M1, _M2, _Opts) ->
+    Value = maps:get(<<"value">>, M1, 0),
+    persistent_term:put({?MODULE, value}, Value),
+    {ok, #{value => Value}}.
 ```
+
+### State Management
+
+```erlang
+%% Store state (survives HTTP requests)
+persistent_term:put({?MODULE, key}, Value).
+
+%% Retrieve with default
+persistent_term:get({?MODULE, key}, DefaultValue).
+```
+
+### Handler Signature
+
+```erlang
+handler(M1, M2, Opts) ->
+    %% M1 = parsed request body (JSON map)
+    %% M2 = query parameters map
+    %% Opts = HyperBEAM options
+    {ok, ResponseMap}.
+```
+
+---
 
 ## Quick Reference
 
-### Erlang Device Checklist
-
-1. [ ] Create `dev_xxx.erl` in `hyperbeam/src/`
-2. [ ] Export `info/3` and `routes/0`
-3. [ ] Use `persistent_term` for state
-4. [ ] Register in `hb_opts.erl` default_devices()
-5. [ ] Set `<<"~path">>` for HTTP routing
-
-### JavaScript Client Checklist
-
-1. [ ] Create client class with fetch calls
-2. [ ] Handle lowercase response keys
-3. [ ] Use `application/json` content type
-4. [ ] Return parsed JSON responses
-
-### Vitest Test Checklist
-
-1. [ ] Setup HyperBEAM in `beforeAll` (60s timeout)
-2. [ ] Kill HyperBEAM in `afterAll`
-3. [ ] Create client with `hbeam.url`
-4. [ ] Test each API endpoint
-5. [ ] Mock client for component tests
-
-### Commands
+### Test Commands by Track
 
 ```bash
-# Vitest tests (frontend)
-cd vibe/apps/your-app && npm test
+# Track 1 & 2: Lua in-memory
+npm test -- myapp.test.js
 
-# HyperBEAM integration tests
-HB_TIMEOUT=120 node --test --test-concurrency=1 your-test.js
+# Track 1 & 2: HyperBEAM integration
+HB_TIMEOUT=120 node --test --test-concurrency=1 myapp.hyperbeam.test.js
 
-# Run specific Vitest file
-npx vitest run filename.test.js
+# Track 3: HyperAOS
+HB_TIMEOUT=120 node --test --test-concurrency=1 myapp.hyperaos.test.js
 
-# Vitest watch mode
-npx vitest
+# Track 4: Erlang EUnit
+cd HyperBEAM && rebar3 eunit --module=dev_mydevice_tests
+
+# Track 4: Integration
+npx vitest run mydevice.integration.test.js
+
+# All tracks: Frontend E2E
+cd myapp-ui && npm test
 ```
+
+### WAO Imports
+
+```javascript
+// In-memory testing
+import { ArMem, connect, acc, scheduler } from 'wao/test'
+
+// HyperBEAM testing
+import HyperBEAM from 'wao/hyperbeam'
+
+// WAO Server (for frontend E2E)
+import Server from 'wao/server'
+
+// Production client
+import { AO, HB } from 'wao'
+```
+
+### Execution Devices
+
+| Device | Runtime | Use Case |
+|--------|---------|----------|
+| `genesis-wasm@1.0` | WASM | Legacynet compatibility |
+| `stack@1.0` | WASM | Mainnet production |
+| `lua@5.3a` | luerl | Fast native HyperBEAM |
+| Native Erlang | BEAM | HyperBEAM devices |
+
+### Key Gotchas
+
+1. **HyperBEAM lowercases response keys**: `TOKEN-A` → `token-a`
+2. **aos2_0_6 lowercases custom tags**: `TokenA` → `Tokena`
+3. **Kill stuck HyperBEAM**: `pkill -9 -f beam.smp && pkill -9 -f epmd`
+4. **Use `persistent_term` for Erlang device state** (not `hb_private`)
+
+---
+
+## Resources
+
+| Resource | Description |
+|----------|-------------|
+| [HyperBEAM Docs](https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html) | Official HyperBEAM setup guide |
+| [Beta3 Release](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | Stable HyperBEAM release |
+| `llms.txt` | HyperBEAM LLM reference (architecture, patterns) |
+| `ao-core.md` | AO protocol specification (TypeScript types) |
+| `vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |
