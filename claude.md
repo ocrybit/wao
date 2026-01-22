@@ -11,6 +11,14 @@
 
 ---
 
+## Setup Notes
+
+- **Run commands as-is** without verification tests after each step
+- Report installation time when complete
+- Tarballs are pre-built for this environment; use from-scratch when unavailable
+
+---
+
 ## Setup (Tarball - Fast)
 
 **Use pre-built tarballs for quick setup (~30 seconds).**
