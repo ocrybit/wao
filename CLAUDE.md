@@ -15,10 +15,22 @@ cd /home/user/wao && tar -xJf /home/user/wao/claude/installation/wao-node-module
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# Rebuild hbsig
-cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
+# Install dependencies (tarballs may be incomplete)
+cd /home/user/wao && npm install
+
+# Build and link hbsig properly
+cd /home/user/wao/hbsig && npm install && npm run build
+rm -f /home/user/wao/node_modules/hbsig
+ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+
+# Register dev_dex device for Erlang tests
+cp /home/user/wao/claude/devices/dev_dex.erl ~/HyperBEAM/src/
+grep -q 'dev_dex' ~/HyperBEAM/src/hb_opts.erl || \
+  sed -i 's/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois},\n            #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}/' ~/HyperBEAM/src/hb_opts.erl
+cd ~/HyperBEAM && rebar3 compile
 
 # Configure environment
+cd /home/user/wao
 cat > .env.hyperbeam << 'EOF'
 ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
@@ -527,9 +539,25 @@ export HB_REBAR3=false
 . ~/.asdf/asdf.sh
 ```
 
-**hbsig errors:**
+**"Cannot find package 'ramda'" or other missing packages:**
 ```bash
-cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
+cd /home/user/wao && npm install
+```
+
+**"Cannot find module hbsig" or hbsig errors:**
+```bash
+cd /home/user/wao/hbsig && npm install && npm run build
+rm -f /home/user/wao/node_modules/hbsig
+ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+```
+
+**Erlang device tests fail with "device_not_loadable":**
+```bash
+# Copy device to HyperBEAM and register it
+cp /home/user/wao/claude/devices/dev_dex.erl ~/HyperBEAM/src/
+# Add to preloaded_devices in ~/HyperBEAM/src/hb_opts.erl:
+# #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}
+cd ~/HyperBEAM && rebar3 compile
 ```
 
 ---
