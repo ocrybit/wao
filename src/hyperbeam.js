@@ -138,12 +138,38 @@ export default class HyperBEAM {
     // Remove any existing crash dump
     spawnSync("rm", ["-f", resolve(this.dirname, "erl_crash.dump")], { stdio: "ignore" })
 
-    let cmd
     if (this.rebar3) {
-      // Rebar3 mode (default/original) - use rebar3 shell command
-      const evalForRebar3 = evalCmd.replace(/\.$/, ".")
-      // Source asdf.sh only if it exists (for asdf-managed Erlang), otherwise assume rebar3 is in PATH
-      cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; rebar3 shell --eval '${evalForRebar3}'`
+      // Rebar3 mode (default/original) - spawn rebar3 directly like the working version
+      // This keeps the Erlang shell interactive and prevents premature termination
+      const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
+
+      // Ensure asdf shims are in PATH for rebar3/erlang to be found
+      const home = process.env.HOME || ""
+      const asdfShims = `${home}/.asdf/shims`
+      const asdfBin = `${home}/.asdf/bin`
+      const currentPath = process.env.PATH || ""
+      const pathWithAsdf = currentPath.includes(asdfShims)
+        ? currentPath
+        : `${asdfShims}:${asdfBin}:${currentPath}`
+
+      this.proc = spawn("rebar3", [
+        ..._as,
+        "shell",
+        "--eval",
+        evalCmd,
+      ], {
+        env: { ...process.env, ...this.genEnv(), PATH: pathWithAsdf },
+        cwd: resolve(process.cwd(), this.cwd),
+      })
+
+      if (this.logs) {
+        this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
+        this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+        this.proc.on("error", err => console.error(`failed to start process: ${err}`))
+        this.proc.on("close", code => {
+          console.log(`child process exited with code ${code}`)
+        })
+      }
     } else {
       // Direct erl mode - use erl with rebar3-compiled beam files
       // Beta1's prometheus_cowboy uses prometheus_buckets:exponential/3 which doesn't exist.
@@ -173,22 +199,22 @@ export default class HyperBEAM {
 
       // Use default profile beam files
       // Source asdf.sh only if it exists (for asdf-managed Erlang), otherwise assume erl is in PATH
-      cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; erl -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
-    }
+      const cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; erl -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
 
-    this.proc = spawn("bash", ["-c", cmd], {
-      env: { ...process.env, ...this.genEnv() },
-      cwd: resolve(process.cwd(), this.cwd),
-      detached: true,
-      stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
-    })
+      this.proc = spawn("bash", ["-c", cmd], {
+        env: { ...process.env, ...this.genEnv() },
+        cwd: resolve(process.cwd(), this.cwd),
+        detached: true,
+        stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
+      })
 
-    // Don't let parent wait for this child
-    this.proc.unref()
+      // Don't let parent wait for this child
+      this.proc.unref()
 
-    if (this.logs && this.proc.stdout) {
-      this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
-      this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+      if (this.logs && this.proc.stdout) {
+        this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
+        this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+      }
     }
 
     if (this.logs) {
@@ -477,10 +503,16 @@ export default class HyperBEAM {
         // Process may already be dead
       }
     }
-    // Kill our process group if we have a reference
+    // Kill our process - method depends on whether detached or not
     if (this.proc && this.proc.pid) {
       try {
-        process.kill(-this.proc.pid, "SIGKILL")
+        if (this.rebar3) {
+          // rebar3 mode: not detached, kill directly with SIGKILL
+          this.proc.kill("SIGKILL")
+        } else {
+          // erl mode: detached, kill process group
+          process.kill(-this.proc.pid, "SIGKILL")
+        }
       } catch (e) {
         // Process may already be dead
       }
