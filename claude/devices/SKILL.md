@@ -77,7 +77,7 @@ After devices are compiled into HyperBEAM:
 
 ```bash
 # Run WAO integration tests
-node --test vibe/devices/tests/device-wao.test.js
+node --test claude/devices/tests/device-wao.test.js
 ```
 
 ## API Patterns

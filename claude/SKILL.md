@@ -1,4 +1,4 @@
-# Vibe Coding Skill
+# Claude Coding Skill
 
 Build AO apps by describing what you want. No manual coding required.
 
@@ -47,10 +47,10 @@ All in `./apps/`:
 
 ```bash
 # HyperBEAM (recommended) - native Lua via lua@5.3a
-HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js
 
 # In-memory (fast)
-npm test -- vibe/apps/tests/amm-dex-wasm.test.js
+npm test -- claude/apps/tests/amm-dex-wasm.test.js
 ```
 
 ## Workflow
@@ -64,7 +64,7 @@ npm test -- vibe/apps/tests/amm-dex-wasm.test.js
 ## Folder Structure
 
 ```
-vibe/
+claude/
 ├── SKILL.md              # This file
 ├── apps/                 # Lua apps + frontends
 │   ├── *.lua

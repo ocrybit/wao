@@ -8,9 +8,9 @@
 START=$SECONDS
 
 # Extract tarballs
-cd ~ && tar -xJf /home/user/wao/vibe/installation/asdf-erlang-rebar.tar.xz
-cd ~ && tar -xJf /home/user/wao/vibe/installation/hyperbeam-wao-ready.tar.xz
-cd /home/user/wao && tar -xJf /home/user/wao/vibe/installation/wao-node-modules.tar.xz
+cd ~ && tar -xJf /home/user/wao/claude/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz
+cd /home/user/wao && tar -xJf /home/user/wao/claude/installation/wao-node-modules.tar.xz
 
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
@@ -35,7 +35,7 @@ Options to offer:
 1. **Lua app** - Stateful process (token, DAO, game)
 2. **Erlang device** - HyperBEAM infrastructure
 3. **Run existing tests** - Verify setup works
-4. **Explore examples** - See 13 apps in `vibe/apps/`
+4. **Explore examples** - See 13 apps in `claude/apps/`
 
 ---
 
@@ -43,10 +43,10 @@ Options to offer:
 
 | Task | Command |
 |------|---------|
-| **HyperBEAM tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js` |
-| **ArMem tests** | `npm test -- vibe/apps/tests/amm-dex-wasm.test.js` |
+| **HyperBEAM tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
+| **ArMem tests** | `npm test -- claude/apps/tests/amm-dex-wasm.test.js` |
 | **Kill stuck processes** | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
-| **Erlang device tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js` |
+| **Erlang device tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
 
 ---
 
@@ -54,7 +54,7 @@ Options to offer:
 
 ```
 wao/
-├── vibe/
+├── claude/
 │   ├── SKILL.md                # Vibe coding skill
 │   ├── apps/                   # Lua apps + frontends
 │   │   ├── SKILL.md            # Lua development skill
@@ -89,9 +89,9 @@ wao/
 
 | File | When to Read |
 |------|--------------|
-| **`vibe/docs/llms.txt`** | **MANDATORY for Erlang devices** - TABM format, device callbacks, key resolution |
-| `vibe/docs/ao-core.md` | Protocol work - TypeScript types, cryptographic operations |
-| `vibe/docs/aos-dev.md` | Development workflows - 4 tracks with execution devices |
+| **`claude/docs/llms.txt`** | **MANDATORY for Erlang devices** - TABM format, device callbacks, key resolution |
+| `claude/docs/ao-core.md` | Protocol work - TypeScript types, cryptographic operations |
+| `claude/docs/aos-dev.md` | Development workflows - 4 tracks with execution devices |
 
 ---
 
@@ -195,7 +195,7 @@ hbeam.kill()
 import { ArMem, connect, acc, scheduler } from "../../../src/test.js"
 import { readFileSync } from "fs"
 
-const luaCode = readFileSync("vibe/apps/counter.lua", "utf-8")
+const luaCode = readFileSync("claude/apps/counter.lua", "utf-8")
 const mem = new ArMem()
 const { spawn, message, dryrun } = connect(mem)
 
@@ -248,7 +248,7 @@ const data = JSON.parse(res.Messages[0].Data)
 
 ## Part 2: Erlang Devices
 
-**BEFORE BUILDING ERLANG DEVICES: Read `vibe/docs/llms.txt` for TABM format and device patterns.**
+**BEFORE BUILDING ERLANG DEVICES: Read `claude/docs/llms.txt` for TABM format and device patterns.**
 
 ### When to Use Erlang vs Lua
 
@@ -534,20 +534,20 @@ cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
 ## Building Workflow
 
 ### Lua Apps
-1. Write Lua in `vibe/apps/[name].lua`
-2. Add tests to `vibe/apps/tests/hyperbeam.test.js`
-3. Run: `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
+1. Write Lua in `claude/apps/[name].lua`
+2. Add tests to `claude/apps/tests/hyperbeam.test.js`
+3. Run: `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js`
 
 ### Erlang Devices
-1. **Read `vibe/docs/llms.txt`** for TABM and device patterns
-2. Write device in `vibe/devices/dev_[name].erl`
+1. **Read `claude/docs/llms.txt`** for TABM and device patterns
+2. Write device in `claude/devices/dev_[name].erl`
 3. Copy to `~/HyperBEAM/src/`
 4. Register in `~/HyperBEAM/src/hb_opts.erl`
 5. Recompile: `cd ~/HyperBEAM && rebar3 compile`
 6. Test with Vitest + HyperBEAM
 
 ### Frontend Apps
-1. Create in `vibe/apps/[name]-ui/`
+1. Create in `claude/apps/[name]-ui/`
 2. Add `"wao": "file:../../.."` to package.json devDependencies
 3. Configure vitest with `pool: 'forks'`
 4. Import from source paths for local dev

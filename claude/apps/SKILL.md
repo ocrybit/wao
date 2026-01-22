@@ -11,7 +11,7 @@ cp counter.lua myapp.lua
 # Add tests to tests/hyperbeam.test.js
 
 # Run tests
-HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js
 ```
 
 ## Handler Pattern
