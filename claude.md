@@ -49,18 +49,24 @@ WAO is an SDK for building on AO (the hypercomputer on Arweave). It provides:
 
 ```
 wao/
-├── vibe/apps/              # 13 Lua apps (examples)
+├── vibe/apps/              # Lua apps + frontends
 │   ├── counter.lua         # Simple counter
 │   ├── token.lua           # Fungible token
-│   ├── amm-dex.lua         # Uniswap-style DEX
+│   ├── amm-dex.lua         # Uniswap-style DEX (Lua)
 │   ├── voting-dao.lua      # DAO with voting
+│   ├── amm-dex-ui/         # Lua DEX frontend (Vite + React)
+│   ├── erlang-dex-ui/      # Erlang DEX frontend (Vite + React)
 │   └── tests/
-│       └── hyperbeam.test.js  # HyperBEAM tests (30 pass)
+│       ├── hyperbeam.test.js  # HyperBEAM tests (30 pass)
+│       └── dev-dex.test.js    # Erlang DEX device tests (14 pass)
 ├── src/
 │   ├── hb.js               # HyperBEAM client (HB class)
 │   ├── ao.js               # AO process management
 │   └── hyperbeam.js        # Local HyperBEAM manager
-├── tutorial-devices/       # 5 Erlang devices
+├── tutorial-devices/       # Erlang devices
+│   ├── dev_dex.erl         # AMM DEX device
+│   ├── dev_kv.erl          # Key-value store
+│   └── README.md           # Device development guide
 ├── llms.txt                # Full HyperBEAM reference (93KB)
 └── lua-report.md           # Test results summary
 ```
@@ -558,6 +564,7 @@ The `wao/test` export requires the package to be built (`npm run build` in wao r
 
 ### Example Frontend App Structure
 
+**Lua DEX (AO Process via ArMem/Server):**
 ```
 vibe/apps/amm-dex-ui/
 ├── src/
@@ -567,12 +574,29 @@ vibe/apps/amm-dex-ui/
 │   │   ├── LiquidityPanel.jsx # Add/remove liquidity
 │   │   └── BalancePanel.jsx   # Token balances
 │   ├── lib/
-│   │   └── wao.js             # DexClient class
+│   │   └── wao.js             # DexClient (MU/CU endpoints)
 │   ├── test/
 │   │   ├── dex.test.js        # ArMem tests (28 tests)
 │   │   └── dex-server.test.js # Server tests (9 tests)
-│   ├── App.jsx
-│   └── main.jsx
+│   └── App.jsx
+├── vitest.config.js
+└── package.json
+```
+
+**Erlang DEX (HyperBEAM Device via HTTP):**
+```
+vibe/apps/erlang-dex-ui/
+├── src/
+│   ├── components/
+│   │   ├── SwapPanel.jsx      # Same UI components
+│   │   ├── PoolPanel.jsx
+│   │   ├── LiquidityPanel.jsx
+│   │   └── BalancePanel.jsx
+│   ├── lib/
+│   │   └── DexClient.js       # HyperBEAM HTTP client
+│   ├── test/
+│   │   └── dex.test.js        # HyperBEAM tests (18 tests)
+│   └── App.jsx
 ├── vitest.config.js
 └── package.json
 ```
@@ -589,6 +613,191 @@ npm test -- src/test/dex.test.js
 # Run with verbose output
 npm test -- --reporter=verbose
 ```
+
+---
+
+## Erlang Device Development
+
+### Overview
+
+Erlang devices extend HyperBEAM directly (unlike Lua apps which run in AO processes). They're useful for:
+- Custom HTTP endpoints
+- Server-side state management
+- Direct HyperBEAM integration
+
+**Location:** `tutorial-devices/` (copy to HyperBEAM/src/ to use)
+
+### Device Registration
+
+Add devices to `/root/HyperBEAM/src/hb_opts.erl`:
+
+```erlang
+preloaded_devices => [
+    #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex},
+    #{<<"name">> => <<"kv@1.0">>, <<"module">> => dev_kv}
+]
+```
+
+Then recompile: `rebar3 compile`
+
+### State Persistence
+
+Erlang devices use `persistent_term` for state (not `hb_private`/`hb_cache`):
+
+```erlang
+%% Store state
+persistent_term:put({dev_mydevice, key}, Value).
+
+%% Retrieve state
+try persistent_term:get({dev_mydevice, key})
+catch error:badarg -> DefaultValue
+end.
+```
+
+### HTTP API Patterns
+
+```javascript
+// GET request
+const info = await hb.g('/~device@1.0/info')
+const data = await hb.g('/~device@1.0/query', { param: 'value' })
+
+// POST request
+const result = await hb.p('/~device@1.0/action', {
+    param1: 'value1',
+    param2: 'value2'
+})
+```
+
+**Key Notes:**
+- HyperBEAM lowercases all response keys (`TOKEN-A` → `token-a`)
+- Nested maps become `+link` references (flatten responses when possible)
+- Numbers may be returned as strings (use `Number()` for comparisons)
+
+### DexClient Pattern (Erlang Device)
+
+```javascript
+// src/lib/DexClient.js
+export class DexClient {
+  constructor(hb) {
+    this.hb = hb
+  }
+
+  async info() {
+    return this.hb.g('/~dex@1.0/info')
+  }
+
+  async mint(token, amount, from) {
+    const params = { token, amount }
+    if (from) params.from = from
+    return this.hb.p('/~dex@1.0/mint', params)
+  }
+
+  async createPool(tokenA, tokenB, amountA, amountB, from) {
+    const params = {
+      tokena: tokenA,   // lowercase param names!
+      tokenb: tokenB,
+      amounta: amountA,
+      amountb: amountB,
+    }
+    if (from) params.from = from
+    return this.hb.p('/~dex@1.0/create_pool', params)
+  }
+
+  async swap(tokenIn, tokenOut, amountIn, minAmountOut = 0, from) {
+    const params = {
+      tokenin: tokenIn,
+      tokenout: tokenOut,
+      amountin: amountIn,
+      minamountout: minAmountOut,
+    }
+    if (from) params.from = from
+    return this.hb.p('/~dex@1.0/swap', params)
+  }
+}
+```
+
+### Vitest + HyperBEAM Test Pattern
+
+```javascript
+// src/test/dex.test.js
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from '../../../../../src/hyperbeam.js'
+import { DexClient } from '../lib/DexClient.js'
+
+describe('Erlang DEX Tests', () => {
+  let hbeam, hb, dex
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+    dex = new DexClient(hb)
+  }, 120000)
+
+  afterAll(async () => {
+    if (hbeam) hbeam.kill()
+  })
+
+  it('should get device info', async () => {
+    const info = await dex.info()
+    expect(info.name).toBe('dex')
+  })
+
+  it('should mint tokens', async () => {
+    const result = await dex.mint('TOKEN-A', 100000, 'alice')
+    expect(result.action).toBe('minted')
+  })
+
+  it('should reject invalid operations', async () => {
+    await expect(
+      dex.swap('TOKEN-A', 'TOKEN-B', 999999, 0, 'broke_user')
+    ).rejects.toThrow()
+  })
+})
+```
+
+### Erlang DEX Frontend Structure
+
+```
+vibe/apps/erlang-dex-ui/
+├── src/
+│   ├── components/
+│   │   ├── SwapPanel.jsx
+│   │   ├── PoolPanel.jsx
+│   │   ├── LiquidityPanel.jsx
+│   │   └── BalancePanel.jsx
+│   ├── lib/
+│   │   └── DexClient.js      # HyperBEAM HTTP client
+│   ├── test/
+│   │   └── dex.test.js       # 18 Vitest tests
+│   ├── App.jsx
+│   └── main.jsx
+├── vitest.config.js          # pool: 'forks' for subprocess isolation
+└── package.json
+```
+
+### Running Erlang Device Tests
+
+```bash
+# Run Vitest tests (starts HyperBEAM automatically)
+cd vibe/apps/erlang-dex-ui
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 npm test
+
+# Run with verbose output
+npm test -- --reporter=verbose
+
+# Run existing dev-dex tests
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js
+```
+
+### Lua vs Erlang: When to Use Which
+
+| Feature | Lua (AO Process) | Erlang (HyperBEAM Device) |
+|---------|------------------|---------------------------|
+| State | Process memory | `persistent_term` |
+| Execution | WASM/luerl | Native Erlang |
+| Testing | ArMem or HyperBEAM | HyperBEAM only |
+| Use Case | User apps, tokens, DAOs | Infrastructure, gateways |
+| Deployment | Arweave (mainnet) | HyperBEAM node |
 
 ---
 
