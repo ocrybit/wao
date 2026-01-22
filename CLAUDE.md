@@ -39,6 +39,18 @@ ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
+# Show splash
+cat << 'SPLASH'
+
+ __        __    _    ___
+ \ \      / /   / \  / _ \
+  \ \ /\ / /   / _ \| | | |
+   \ V  V /   / ___ \ |_| |
+    \_/\_/   /_/   \_\___/
+
+   Weave AO SDK Ready!
+
+SPLASH
 echo "Installation complete in $((SECONDS - START)) seconds"
 ```
 
