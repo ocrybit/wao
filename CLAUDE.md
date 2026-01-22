@@ -67,15 +67,16 @@ wao/
 │   ├── devices/                # Erlang devices
 │   │   ├── dev_dex.erl         # AMM DEX device
 │   │   └── dev_kv.erl          # Key-value store
-│   └── installation/           # Setup tarballs
-├── src/
-│   ├── hb.js                   # HB class (HyperBEAM client)
-│   ├── hyperbeam.js            # HyperBEAM node manager
-│   ├── ao.js                   # AO process client
-│   ├── test.js                 # ArMem utilities
-│   └── server.js               # WAO Server
-├── llms.txt                    # HyperBEAM internals (READ FOR DEVICES)
-└── ao-core.md                  # Protocol specification
+│   ├── installation/           # Setup tarballs
+│   ├── llms.txt                # HyperBEAM internals (READ FOR DEVICES)
+│   ├── ao-core.md              # Protocol specification
+│   └── aos-dev.md              # Development guide (4 tracks)
+└── src/
+    ├── hb.js                   # HB class (HyperBEAM client)
+    ├── hyperbeam.js            # HyperBEAM node manager
+    ├── ao.js                   # AO process client
+    ├── test.js                 # ArMem utilities
+    └── server.js               # WAO Server
 ```
 
 ---
@@ -84,9 +85,9 @@ wao/
 
 | File | When to Read |
 |------|--------------|
-| **`llms.txt`** | **MANDATORY for Erlang devices** - TABM format, device callbacks, key resolution |
-| `ao-core.md` | Protocol work - TypeScript types, cryptographic operations |
-| `aos-dev.md` | Development workflows - 4 tracks with execution devices |
+| **`vibe/llms.txt`** | **MANDATORY for Erlang devices** - TABM format, device callbacks, key resolution |
+| `vibe/ao-core.md` | Protocol work - TypeScript types, cryptographic operations |
+| `vibe/aos-dev.md` | Development workflows - 4 tracks with execution devices |
 
 ---
 
@@ -243,7 +244,7 @@ const data = JSON.parse(res.Messages[0].Data)
 
 ## Part 2: Erlang Devices
 
-**BEFORE BUILDING ERLANG DEVICES: Read `llms.txt` for TABM format and device patterns.**
+**BEFORE BUILDING ERLANG DEVICES: Read `vibe/llms.txt` for TABM format and device patterns.**
 
 ### When to Use Erlang vs Lua
 
@@ -534,7 +535,7 @@ cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
 3. Run: `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js`
 
 ### Erlang Devices
-1. **Read `llms.txt`** for TABM and device patterns
+1. **Read `vibe/llms.txt`** for TABM and device patterns
 2. Write device in `vibe/devices/dev_[name].erl`
 3. Copy to `~/HyperBEAM/src/`
 4. Register in `~/HyperBEAM/src/hb_opts.erl`

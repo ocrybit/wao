@@ -739,6 +739,6 @@ import { AO, HB } from 'wao'
 |----------|-------------|
 | [HyperBEAM Docs](https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html) | Official HyperBEAM setup guide |
 | [HyperBEAM WAO](https://github.com/weavedb/HyperBEAM/tree/wao) | WAO-compatible HyperBEAM fork |
-| `llms.txt` | HyperBEAM LLM reference (architecture, patterns) |
-| `ao-core.md` | AO protocol specification (TypeScript types) |
-| `vibe/vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |
+| `./llms.txt` | HyperBEAM LLM reference (architecture, patterns) |
+| `./ao-core.md` | AO protocol specification (TypeScript types) |
+| `./vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |
