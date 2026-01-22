@@ -99,7 +99,20 @@ cat /home/user/wao/workspaces/[name]/README.md
 
 ## Option 1: Build a Lua App
 
-**When user selects this, ask:**
+**When user selects this, ask TWO questions:**
+
+**Question 1: Execution Environment**
+```
+Which execution environment?
+
+1. Mainnet WASM (Recommended) - aos2_0_6 module, production-ready
+2. HyperAOS - lua@5.3a native, fastest for development
+3. Legacynet - older aos2_0_1 module
+
+Default: Mainnet WASM
+```
+
+**Question 2: App Type & Name**
 ```
 What kind of Lua app? Examples:
 - Counter (simple state)
@@ -112,20 +125,34 @@ What kind of Lua app? Examples:
 What should I name the workspace?
 ```
 
+### Environment Comparison
+
+| Feature | Mainnet WASM | HyperAOS | Legacynet |
+|---------|--------------|----------|-----------|
+| Module | aos2_0_6 | lua@5.3a | aos2_0_1 |
+| Testing | ArMem (fast) | HyperBEAM | ArMem |
+| Tag case | Lowercased | Preserved | Preserved |
+| Speed | Medium | Fastest | Medium |
+| Production | Yes | Dev only | Legacy |
+
 **Workflow:**
 1. Create workspace: `workspaces/[name]/`
 2. Create `workspaces/[name]/app.lua`
-3. Create `workspaces/[name]/app.test.js`
+3. Create `workspaces/[name]/app.test.js` (based on environment)
 4. Create `workspaces/[name]/README.md` with description
-5. Run tests: `node --test workspaces/[name]/app.test.js`
+5. Run tests
 6. Report results and return to menu
 
-**Lua App Workspace Template:**
+---
+
+### Mainnet WASM Template (Default)
 
 `workspaces/[name]/app.lua`:
 ```lua
 -- [Name] - [Description]
 -- Created: [Date]
+-- Environment: Mainnet WASM (aos2_0_6)
+-- NOTE: Custom tags are lowercased (e.g., msg.Tags.Amount -> msg.Tags.amount)
 
 local json = require("json")
 
@@ -140,7 +167,80 @@ end)
 -- Add your handlers here
 ```
 
-`workspaces/[name]/app.test.js`:
+`workspaces/[name]/app.test.js` (ArMem):
+```javascript
+import { describe, it, before } from 'node:test'
+import assert from 'node:assert'
+import { readFileSync } from 'fs'
+import { ArMem, connect, acc, scheduler } from '../../src/test.js'
+
+const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+
+describe('[Name] App (Mainnet WASM)', () => {
+  let mem, spawn, message, dryrun, pid
+
+  before(async () => {
+    mem = new ArMem()
+    const conn = connect(mem)
+    spawn = conn.spawn
+    message = conn.message
+    dryrun = conn.dryrun
+
+    // Spawn process with aos2_0_6
+    pid = await spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_6,
+    })
+
+    // Load Lua code
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: luaCode,
+    })
+  })
+
+  it('should return info', async () => {
+    const res = await dryrun({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Info" }],
+    })
+    const data = JSON.parse(res.Messages[0].Data)
+    assert.strictEqual(data.name, '[name]')
+  })
+})
+```
+
+**Test command:** `node --test workspaces/[name]/app.test.js`
+
+---
+
+### HyperAOS Template
+
+`workspaces/[name]/app.lua`:
+```lua
+-- [Name] - [Description]
+-- Created: [Date]
+-- Environment: HyperAOS (lua@5.3a)
+-- NOTE: Tag case is preserved
+
+local json = require("json")
+
+-- State
+State = State or {}
+
+-- Handlers
+Handlers.add("Info", "Info", function(msg)
+  msg.reply({ Data = json.encode({ name = "[name]", version = "1.0" }) })
+end)
+
+-- Add your handlers here
+```
+
+`workspaces/[name]/app.test.js` (HyperBEAM):
 ```javascript
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert'
@@ -149,28 +249,136 @@ import HyperBEAM from '../../src/hyperbeam.js'
 
 const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
 
-describe('[Name] App', () => {
+describe('[Name] App (HyperAOS)', () => {
   let hbeam, hb, pid
 
   before(async () => {
     hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
     hb = hbeam.hb
-    // Spawn process with luaCode
-  })
+
+    // Get Lua module and spawn process
+    const moduleId = await hb.getLua()
+    const tags = {
+      "execution-device": "lua@5.3a",
+      module: moduleId,
+      type: "Process",
+      device: "process@1.0",
+      scheduler: hb.addr,
+      data: luaCode,
+    }
+    const response = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await hb.commit(tags, { path: false })),
+    })
+    pid = response.headers.get("process")
+  }, 120000)
 
   after(() => hbeam?.kill())
 
-  it('should work', async () => {
-    // Add tests
+  it('should return info', async () => {
+    // Send Info message
+    const msgTags = { type: "Message", target: pid, Action: "Info" }
+    const msgResponse = await fetch(`${hb.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await hb.commit(msgTags, { path: false })),
+    })
+    const slot = msgResponse.headers.get("slot")
+
+    // Compute result
+    const result = await hb.g(`/${pid}~process@1.0/compute`, { slot: parseInt(slot) })
+    assert.ok(result)
   })
 })
 ```
+
+**Test command:** `HB_TIMEOUT=120 node --test workspaces/[name]/app.test.js`
+
+---
+
+### Legacynet Template
+
+`workspaces/[name]/app.lua`:
+```lua
+-- [Name] - [Description]
+-- Created: [Date]
+-- Environment: Legacynet (aos2_0_1)
+-- NOTE: Tag case is preserved (legacy behavior)
+
+local json = require("json")
+
+-- State
+State = State or {}
+
+-- Handlers
+Handlers.add("Info", "Info", function(msg)
+  msg.reply({ Data = json.encode({ name = "[name]", version = "1.0" }) })
+end)
+
+-- Add your handlers here
+```
+
+`workspaces/[name]/app.test.js` (ArMem with aos2_0_1):
+```javascript
+import { describe, it, before } from 'node:test'
+import assert from 'node:assert'
+import { readFileSync } from 'fs'
+import { ArMem, connect, acc, scheduler } from '../../src/test.js'
+
+const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+
+describe('[Name] App (Legacynet)', () => {
+  let mem, spawn, message, dryrun, pid
+
+  before(async () => {
+    mem = new ArMem()
+    const conn = connect(mem)
+    spawn = conn.spawn
+    message = conn.message
+    dryrun = conn.dryrun
+
+    // Spawn process with aos2_0_1 (legacy)
+    pid = await spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_1,
+    })
+
+    // Load Lua code
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Eval" }],
+      data: luaCode,
+    })
+  })
+
+  it('should return info', async () => {
+    const res = await dryrun({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: "Action", value: "Info" }],
+    })
+    const data = JSON.parse(res.Messages[0].Data)
+    assert.strictEqual(data.name, '[name]')
+  })
+})
+```
+
+**Test command:** `node --test workspaces/[name]/app.test.js`
+
+---
+
+### README Template for Lua Apps
 
 `workspaces/[name]/README.md`:
 ```markdown
 # [Name]
 
 **Type:** Lua App
+**Environment:** [Mainnet WASM | HyperAOS | Legacynet]
+**Module:** [aos2_0_6 | lua@5.3a | aos2_0_1]
 **Created:** [Date]
 **Status:** In Progress
 
@@ -178,13 +386,16 @@ describe('[Name] App', () => {
 [User's description]
 
 ## Handlers
-- Handler1: Description
-- Handler2: Description
+- Info: Returns app info
+- Add more...
 
 ## Test Command
 \`\`\`bash
-HB_TIMEOUT=120 node --test workspaces/[name]/app.test.js
+[HB_TIMEOUT=120] node --test workspaces/[name]/app.test.js
 \`\`\`
+
+## Notes
+- [Environment-specific notes about tag casing, etc.]
 ```
 
 **Reference examples:** `claude/apps/*.lua` (13 apps)
