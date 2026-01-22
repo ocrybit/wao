@@ -29,6 +29,9 @@ grep -q 'dev_dex' ~/HyperBEAM/src/hb_opts.erl || \
   sed -i 's/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois},\n            #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}/' ~/HyperBEAM/src/hb_opts.erl
 cd ~/HyperBEAM && rebar3 compile
 
+# Create workspaces directory
+mkdir -p /home/user/wao/workspaces
+
 # Configure environment
 cd /home/user/wao
 cat > .env.hyperbeam << 'EOF'
@@ -51,12 +54,46 @@ Environment ready in X seconds. What would you like to do?
 3. Run tests (verify setup)
 4. Explore examples
 5. What's possible? (explain tech stack)
+6. Manage workspaces (list, continue, delete)
 ```
 
 **IMPORTANT BEHAVIOR:**
 - After completing ANY task, return to this menu
 - Ask "What would you like to do next?" with the same options
 - If user says "menu" or "options", show this menu again
+- All user projects go in `workspaces/[project-name]/`
+
+---
+
+## Workspace Management
+
+**All user projects are created in `/home/user/wao/workspaces/`**
+
+```
+workspaces/
+├── my-token/           # Lua app
+│   ├── app.lua
+│   ├── app.test.js
+│   └── README.md
+├── my-dex/             # Lua app
+│   ├── app.lua
+│   ├── app.test.js
+│   └── README.md
+├── rate-limiter/       # Erlang device
+│   ├── dev_ratelimiter.erl
+│   ├── device.test.js
+│   └── README.md
+└── ...
+```
+
+**Workspace Commands:**
+```bash
+# List all workspaces
+ls -la /home/user/wao/workspaces/
+
+# Check workspace status
+cat /home/user/wao/workspaces/[name]/README.md
+```
 
 ---
 
@@ -71,13 +108,84 @@ What kind of Lua app? Examples:
 - DAO (proposals + voting)
 - Game (turn-based, lottery)
 - Custom (describe your idea)
+
+What should I name the workspace?
 ```
 
 **Workflow:**
-1. Create `claude/apps/[name].lua`
-2. Write tests in `claude/apps/tests/hyperbeam.test.js`
-3. Run: `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js`
-4. Return to menu
+1. Create workspace: `workspaces/[name]/`
+2. Create `workspaces/[name]/app.lua`
+3. Create `workspaces/[name]/app.test.js`
+4. Create `workspaces/[name]/README.md` with description
+5. Run tests: `node --test workspaces/[name]/app.test.js`
+6. Report results and return to menu
+
+**Lua App Workspace Template:**
+
+`workspaces/[name]/app.lua`:
+```lua
+-- [Name] - [Description]
+-- Created: [Date]
+
+local json = require("json")
+
+-- State
+State = State or {}
+
+-- Handlers
+Handlers.add("Info", "Info", function(msg)
+  msg.reply({ Data = json.encode({ name = "[name]", version = "1.0" }) })
+end)
+
+-- Add your handlers here
+```
+
+`workspaces/[name]/app.test.js`:
+```javascript
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert'
+import { readFileSync } from 'fs'
+import HyperBEAM from '../../src/hyperbeam.js'
+
+const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+
+describe('[Name] App', () => {
+  let hbeam, hb, pid
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+    // Spawn process with luaCode
+  })
+
+  after(() => hbeam?.kill())
+
+  it('should work', async () => {
+    // Add tests
+  })
+})
+```
+
+`workspaces/[name]/README.md`:
+```markdown
+# [Name]
+
+**Type:** Lua App
+**Created:** [Date]
+**Status:** In Progress
+
+## Description
+[User's description]
+
+## Handlers
+- Handler1: Description
+- Handler2: Description
+
+## Test Command
+\`\`\`bash
+HB_TIMEOUT=120 node --test workspaces/[name]/app.test.js
+\`\`\`
+```
 
 **Reference examples:** `claude/apps/*.lua` (13 apps)
 
@@ -94,17 +202,86 @@ What kind of Erlang device? Examples:
 - Analytics (metrics collection)
 - Custom (describe your idea)
 
-NOTE: I'll read claude/docs/llms.txt first for TABM format.
+What should I name the workspace? (will be prefixed with dev_)
 ```
 
 **Workflow:**
-1. Read `claude/docs/llms.txt` (MANDATORY)
-2. Create `claude/devices/dev_[name].erl`
-3. Copy to `~/HyperBEAM/src/`
-4. Register in `~/HyperBEAM/src/hb_opts.erl`
-5. Compile: `cd ~/HyperBEAM && rebar3 compile`
-6. Test with HyperBEAM
-7. Return to menu
+1. **Read `claude/docs/llms.txt`** (MANDATORY for TABM format)
+2. Create workspace: `workspaces/[name]/`
+3. Create `workspaces/[name]/dev_[name].erl`
+4. Create `workspaces/[name]/device.test.js`
+5. Create `workspaces/[name]/README.md`
+6. Copy to HyperBEAM: `cp workspaces/[name]/dev_[name].erl ~/HyperBEAM/src/`
+7. Register in `~/HyperBEAM/src/hb_opts.erl`
+8. Compile: `cd ~/HyperBEAM && rebar3 compile`
+9. Run tests: `node --test workspaces/[name]/device.test.js`
+10. Report results and return to menu
+
+**Erlang Device Workspace Template:**
+
+`workspaces/[name]/dev_[name].erl`:
+```erlang
+-module(dev_[name]).
+-export([info/3]).
+%% Add more exports as needed
+
+%% GET /~[name]@1.0/info
+info(_M1, _M2, _Opts) ->
+    {ok, #{<<"name">> => <<"[name]">>, <<"version">> => <<"1.0">>}}.
+
+%% Add your endpoints here
+```
+
+`workspaces/[name]/device.test.js`:
+```javascript
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert'
+import HyperBEAM from '../../src/hyperbeam.js'
+
+describe('[Name] Device', () => {
+  let hbeam, hb
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+  }, 120000)
+
+  after(() => hbeam?.kill())
+
+  it('should return info', async () => {
+    const info = await hb.g('/~[name]@1.0/info')
+    assert.strictEqual(info.name, '[name]')
+  })
+})
+```
+
+`workspaces/[name]/README.md`:
+```markdown
+# [Name] Device
+
+**Type:** Erlang Device
+**Created:** [Date]
+**Status:** In Progress
+**Device Name:** [name]@1.0
+
+## Description
+[User's description]
+
+## Endpoints
+- GET /~[name]@1.0/info - Device info
+- Add more...
+
+## Deploy Command
+\`\`\`bash
+cp workspaces/[name]/dev_[name].erl ~/HyperBEAM/src/
+cd ~/HyperBEAM && rebar3 compile
+\`\`\`
+
+## Test Command
+\`\`\`bash
+HB_TIMEOUT=120 node --test workspaces/[name]/device.test.js
+\`\`\`
+```
 
 **Reference examples:** `claude/devices/*.erl` (9 devices)
 
@@ -115,16 +292,19 @@ NOTE: I'll read claude/docs/llms.txt first for TABM format.
 **When user selects this, offer:**
 ```
 Which tests?
-1. Lua app tests (30 tests) - HyperBEAM + lua@5.3a
+1. Lua app tests (30 tests) - Example apps
 2. Erlang device tests (14 tests) - DEX device
-3. Both
+3. Workspace tests - Run tests for a specific workspace
+4. All workspace tests
 ```
 
 **Commands:**
 | Test | Command |
 |------|---------|
-| Lua apps | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
-| Erlang DEX | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
+| Example Lua apps | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
+| Example Erlang DEX | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
+| Specific workspace | `HB_TIMEOUT=120 node --test workspaces/[name]/*.test.js` |
+| All workspaces | `HB_TIMEOUT=120 node --test workspaces/**/*.test.js` |
 | Kill stuck | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
 
 After tests complete, return to menu.
@@ -165,7 +345,7 @@ After tests complete, return to menu.
 | `dev_dataplatform.erl` | Data platform | store, query, aggregate |
 | `dev_aojs.erl` | AO.js integration | eval, call |
 
-**Ask:** "Want me to read any of these? Or return to menu?"
+**Ask:** "Want me to read any of these? Copy one as starting point? Or return to menu?"
 
 ---
 
@@ -222,19 +402,36 @@ After tests complete, return to menu.
 - TABM format: `<<"key+integer">> => 42`
 - Must register in `hb_opts.erl`
 
-### File Structure
+**Ask:** "Ready to build something? Back to menu?"
+
+---
+
+## Option 6: Manage Workspaces
+
+**When user selects this, show:**
 ```
-claude/
-├── apps/           # 13 Lua apps + tests
-├── devices/        # 9 Erlang devices
-├── docs/           # Reference docs
-│   ├── llms.txt    # HyperBEAM internals (READ FOR DEVICES)
-│   ├── ao-core.md  # Protocol spec
-│   └── aos-dev.md  # Dev guide
-└── installation/   # Setup tarballs
+Workspace Management:
+
+1. List all workspaces
+2. Continue working on a workspace
+3. Delete a workspace
+4. Back to menu
 ```
 
-**Ask:** "Ready to build something? Back to menu?"
+**List workspaces:** Show table with name, type, status, last modified
+```bash
+ls -la /home/user/wao/workspaces/
+```
+
+**Continue workspace:**
+- Read the workspace's README.md
+- Show current status and next steps
+- Resume development
+
+**Delete workspace:**
+- Confirm with user
+- Remove directory
+- If Erlang device, remind to remove from hb_opts.erl
 
 ---
 
@@ -242,8 +439,10 @@ claude/
 
 | Task | Command |
 |------|---------|
-| Lua tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
-| Erlang tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
+| List workspaces | `ls -la workspaces/` |
+| Lua example tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
+| Erlang example tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
+| Workspace tests | `HB_TIMEOUT=120 node --test workspaces/[name]/*.test.js` |
 | Kill stuck | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
 | Recompile HB | `cd ~/HyperBEAM && rebar3 compile` |
 | Load Erlang | `. ~/.asdf/asdf.sh` |
@@ -277,7 +476,7 @@ ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
 
 **Erlang "device_not_loadable":**
 ```bash
-cp /home/user/wao/claude/devices/dev_[name].erl ~/HyperBEAM/src/
+cp workspaces/[name]/dev_[name].erl ~/HyperBEAM/src/
 # Add to preloaded_devices in ~/HyperBEAM/src/hb_opts.erl
 cd ~/HyperBEAM && rebar3 compile
 ```
@@ -330,17 +529,30 @@ query(_M1, M2, _Opts) ->
 ## Reference: HyperBEAM Test Pattern
 
 ```javascript
-import HyperBEAM from "../../../src/hyperbeam.js"
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert'
+import HyperBEAM from '../../src/hyperbeam.js'
 
-const hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
-const hb = hbeam.hb
+describe('My App/Device', () => {
+  let hbeam, hb
 
-// GET request
-const info = await hb.g('/~device@1.0/info')
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    hb = hbeam.hb
+  }, 120000)
 
-// POST request
-const result = await hb.p('/~device@1.0/action', { amount: 100 })
+  after(() => hbeam?.kill())
 
-// Cleanup
-hbeam.kill()
+  // GET request
+  it('should get info', async () => {
+    const info = await hb.g('/~device@1.0/info')
+    assert.ok(info.name)
+  })
+
+  // POST request
+  it('should perform action', async () => {
+    const result = await hb.p('/~device@1.0/action', { amount: 100 })
+    assert.strictEqual(result.result, 'ok')
+  })
+})
 ```
