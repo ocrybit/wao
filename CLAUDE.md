@@ -639,7 +639,7 @@ Would you like me to build a frontend for this app?
 ```bash
 cd workspaces/[name]
 npm create vite@latest frontend -- --template vanilla
-cd frontend && npm install && npm install @permaweb/aoconnect
+cd frontend && npm install && npm install wao
 ```
 
 **Frontend Structure:**
@@ -647,7 +647,7 @@ cd frontend && npm install && npm install @permaweb/aoconnect
 workspaces/[name]/frontend/
 ├── package.json
 ├── index.html
-├── main.js          # AO interaction logic
+├── main.js          # WAO SDK interaction logic
 └── style.css
 ```
 
@@ -680,20 +680,10 @@ workspaces/[name]/frontend/
 
 **`frontend/main.js` Template:**
 ```javascript
-import { dryrun, message, createDataItemSigner } from "@permaweb/aoconnect"
+import { AO } from "wao/web"
 
+let ao = null
 let processId = null
-let wallet = null
-
-async function connectWallet() {
-  if (!window.arweaveWallet) {
-    setStatus("Please install ArConnect wallet", "error")
-    return false
-  }
-  await window.arweaveWallet.connect(["ACCESS_ADDRESS", "SIGN_TRANSACTION"])
-  wallet = window.arweaveWallet
-  return true
-}
 
 function setStatus(msg, type = "") {
   const el = document.getElementById("status")
@@ -701,23 +691,41 @@ function setStatus(msg, type = "") {
   el.className = type
 }
 
-// Dryrun (read-only, no wallet needed)
-async function query(action, tags = []) {
-  const result = await dryrun({
+// Initialize AO with ArConnect wallet
+async function initAO() {
+  if (ao) return ao
+
+  if (!window.arweaveWallet) {
+    setStatus("Please install ArConnect wallet", "error")
+    return null
+  }
+
+  await window.arweaveWallet.connect(["ACCESS_ADDRESS", "SIGN_TRANSACTION"])
+  ao = new AO({ wallet: window.arweaveWallet })
+  await ao.init()
+  return ao
+}
+
+// Dryrun (read-only)
+async function query(action, tags = {}) {
+  const _ao = ao || new AO()
+  const res = await _ao.dryrun({
     process: processId,
-    tags: [{ name: "Action", value: action }, ...tags],
+    tags: { Action: action, ...tags },
   })
-  return result.Messages?.[0]?.Data ? JSON.parse(result.Messages[0].Data) : null
+  return res.Messages?.[0]?.Data ? JSON.parse(res.Messages[0].Data) : null
 }
 
 // Message (write, needs wallet)
-async function send(action, tags = []) {
-  if (!wallet && !(await connectWallet())) return
-  await message({
+async function send(action, tags = {}) {
+  const _ao = await initAO()
+  if (!_ao) return null
+
+  const res = await _ao.message({
     process: processId,
-    signer: createDataItemSigner(wallet),
-    tags: [{ name: "Action", value: action }, ...tags],
+    tags: { Action: action, ...tags },
   })
+  return res
 }
 
 // Connect button
