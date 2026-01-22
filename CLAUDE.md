@@ -2,7 +2,7 @@
 
 ## Step 1: Setup
 
-**Run this command block exactly as-is. Report the duration to user and proceed to Step 2.**
+**Run this command block exactly as-is (it runs silently). Then output the splash and duration directly as text.**
 
 ```bash
 START=$SECONDS
@@ -39,9 +39,13 @@ ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
 HB_REBAR3=false
 EOF
 
-# Show splash
-cat << 'SPLASH'
+# Output duration only (splash is displayed by assistant)
+echo "$((SECONDS - START))"
+```
 
+**After running the command, output this splash directly as text (replacing X with the duration):**
+
+```
 ██╗    ██╗ █████╗  ██████╗
 ██║    ██║██╔══██╗██╔═══██╗
 ██║ █╗ ██║███████║██║   ██║
@@ -51,8 +55,7 @@ cat << 'SPLASH'
 
   WizardAO SDK on Claude Code
 
-SPLASH
-echo "Installation complete in $((SECONDS - START)) seconds"
+Installation complete in X seconds
 ```
 
 ## Step 2: Interactive Menu
