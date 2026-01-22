@@ -142,7 +142,8 @@ export default class HyperBEAM {
     if (this.rebar3) {
       // Rebar3 mode (default/original) - use rebar3 shell command
       const evalForRebar3 = evalCmd.replace(/\.$/, ".")
-      cmd = `. $HOME/.asdf/asdf.sh && rebar3 shell --eval '${evalForRebar3}'`
+      // Source asdf.sh only if it exists (for asdf-managed Erlang), otherwise assume rebar3 is in PATH
+      cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; rebar3 shell --eval '${evalForRebar3}'`
     } else {
       // Direct erl mode - use erl with rebar3-compiled beam files
       // Beta1's prometheus_cowboy uses prometheus_buckets:exponential/3 which doesn't exist.
@@ -171,7 +172,8 @@ export default class HyperBEAM {
       const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end`
 
       // Use default profile beam files
-      cmd = `. $HOME/.asdf/asdf.sh && erl -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
+      // Source asdf.sh only if it exists (for asdf-managed Erlang), otherwise assume erl is in PATH
+      cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; erl -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
     }
 
     this.proc = spawn("bash", ["-c", cmd], {
