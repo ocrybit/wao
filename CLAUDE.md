@@ -50,7 +50,7 @@ echo "Installation complete in $((SECONDS - START)) seconds"
 1. **Lua app** - Stateful process (token, DAO, game)
 2. **Erlang device** - HyperBEAM infrastructure
 3. **Run existing tests** - Verify setup works
-4. **Explore examples** - See 13 apps in `claude/apps/`
+4. **Explore examples** - 13 Lua apps in `claude/apps/`, 9 Erlang devices in `claude/devices/`
 
 ---
 
@@ -81,10 +81,17 @@ wao/
 │   │   └── tests/
 │   │       ├── hyperbeam.test.js   # Lua tests (30 pass)
 │   │       └── dev-dex.test.js     # Erlang tests (14 pass)
-│   ├── devices/                # Erlang devices
+│   ├── devices/                # Erlang devices (9 examples)
 │   │   ├── SKILL.md            # Erlang development skill
 │   │   ├── dev_dex.erl         # AMM DEX device
-│   │   └── dev_kv.erl          # Key-value store
+│   │   ├── dev_kv.erl          # Key-value store
+│   │   ├── dev_counter.erl     # Simple counter
+│   │   ├── dev_gateway.erl     # Gateway device
+│   │   ├── dev_analytics.erl   # Analytics device
+│   │   ├── dev_ratelimiter.erl # Rate limiter
+│   │   ├── dev_processor.erl   # Message processor
+│   │   ├── dev_dataplatform.erl # Data platform
+│   │   └── dev_aojs.erl        # AO.js integration
 │   ├── docs/                   # Reference documentation
 │   │   ├── llms.txt            # HyperBEAM internals (READ FOR DEVICES)
 │   │   ├── ao-core.md          # Protocol specification
