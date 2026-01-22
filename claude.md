@@ -1,27 +1,8 @@
 # WAO SDK - Claude Guide
 
-## Quick Reference
+## Step 1: Setup
 
-| Task | Command |
-|------|---------|
-| **HyperBEAM tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js` |
-| **ArMem tests** | `npm test -- vibe/apps/tests/amm-dex-wasm.test.js` |
-| **Kill stuck processes** | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
-| **Erlang device tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js` |
-
----
-
-## Setup Notes
-
-- **Run commands as-is** without verification tests after each step
-- Report installation time when complete
-- Tarballs are pre-built for this environment; use from-scratch when unavailable
-
----
-
-## Setup (Tarball - Fast)
-
-**Use pre-built tarballs for quick setup (~30 seconds).**
+**Run these commands as-is. Do not verify after each step.**
 
 ```bash
 START=$SECONDS
@@ -46,75 +27,26 @@ EOF
 echo "Installation complete in $((SECONDS - START)) seconds"
 ```
 
-After installation, report time and offer: build Lua app, run tests, or explore examples.
+## Step 2: Ask User
+
+After setup, report: **"Environment ready in X seconds. What would you like to build?"**
+
+Options to offer:
+1. **Lua app** - Stateful process (token, DAO, game)
+2. **Erlang device** - HyperBEAM infrastructure
+3. **Run existing tests** - Verify setup works
+4. **Explore examples** - See 13 apps in `vibe/apps/`
 
 ---
 
-## Setup (From Scratch)
+## Quick Reference
 
-**Build everything from source when tarballs aren't available.**
-
-### 1. Install asdf + Erlang + rebar3
-
-```bash
-# Install asdf
-git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
-echo '. "$HOME/.asdf/asdf.sh"' >> ~/.bashrc
-. ~/.asdf/asdf.sh
-
-# Install Erlang 27
-asdf plugin add erlang
-asdf install erlang 27.3.4.6
-asdf global erlang 27.3.4.6
-
-# Install rebar3
-asdf plugin add rebar
-asdf install rebar 3.26.0
-asdf global rebar 3.26.0
-```
-
-### 2. Clone and Build HyperBEAM (WAO-equipped)
-
-We use the WAO fork of HyperBEAM with additional devices pre-configured.
-
-```bash
-cd ~
-git clone -b wao https://github.com/weavedb/HyperBEAM.git
-cd HyperBEAM
-
-# Build (takes ~5-10 minutes first time)
-rebar3 compile
-```
-
-### 3. Install WAO SDK
-
-```bash
-cd /home/user/wao
-npm install
-
-# Build hbsig (required local dependency)
-cd hbsig && npm run build && cd ..
-```
-
-### 4. Configure Environment
-
-```bash
-cat > .env.hyperbeam << 'EOF'
-ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
-HB_REBAR3=false
-EOF
-```
-
-### 5. Verify Installation
-
-```bash
-# Check Erlang
-erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'
-
-# Run a quick test
-. ~/.asdf/asdf.sh
-HB_TIMEOUT=60 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
-```
+| Task | Command |
+|------|---------|
+| **HyperBEAM tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js` |
+| **ArMem tests** | `npm test -- vibe/apps/tests/amm-dex-wasm.test.js` |
+| **Kill stuck processes** | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
+| **Erlang device tests** | `HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/dev-dex.test.js` |
 
 ---
 
@@ -614,3 +546,54 @@ cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
 2. Add `"wao": "file:../../.."` to package.json devDependencies
 3. Configure vitest with `pool: 'forks'`
 4. Import from source paths for local dev
+
+---
+
+## Appendix: Setup From Scratch
+
+**Use when tarballs aren't available.**
+
+### 1. Install asdf + Erlang + rebar3
+
+```bash
+# Install asdf
+git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+echo '. "$HOME/.asdf/asdf.sh"' >> ~/.bashrc
+. ~/.asdf/asdf.sh
+
+# Install Erlang 27
+asdf plugin add erlang
+asdf install erlang 27.3.4.6
+asdf global erlang 27.3.4.6
+
+# Install rebar3
+asdf plugin add rebar
+asdf install rebar 3.26.0
+asdf global rebar 3.26.0
+```
+
+### 2. Clone and Build HyperBEAM (WAO-equipped)
+
+```bash
+cd ~
+git clone -b wao https://github.com/weavedb/HyperBEAM.git
+cd HyperBEAM
+rebar3 compile  # Takes ~5-10 minutes first time
+```
+
+### 3. Install WAO SDK
+
+```bash
+cd /home/user/wao
+npm install
+cd hbsig && npm run build && cd ..
+```
+
+### 4. Configure Environment
+
+```bash
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+```
