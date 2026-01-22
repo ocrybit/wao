@@ -206,7 +206,7 @@ rebar3 eunit --module=dev_analytics
 
 #### WAO Integration
 ```bash
-node --test tutorial-devices/tests/device-wao.test.js
+node --test vibe/devices/tests/device-wao.test.js
 ```
 
 ---
@@ -275,18 +275,17 @@ wao/
 │   └── tests/
 │       └── hyperbeam.test.js    # HyperBEAM tests (30 tests)
 │
-├── tutorial-devices/            # 8 Erlang devices
-│   ├── dev_kv.erl              # Existing
-│   ├── dev_processor.erl       # Existing
-│   ├── dev_gateway.erl         # Existing
-│   ├── dev_dataplatform.erl    # Existing
-│   ├── dev_aojs.erl            # Existing
-│   ├── dev_counter.erl         # Vibe-coded
-│   ├── dev_ratelimiter.erl     # Vibe-coded
-│   ├── dev_analytics.erl       # Vibe-coded
-│   ├── README.md               # Device documentation
-│   └── tests/
-│       └── device-wao.test.js  # WAO integration tests
+│   ├── devices/                 # 8 Erlang devices
+│   │   ├── dev_kv.erl          # Existing
+│   │   ├── dev_processor.erl   # Existing
+│   │   ├── dev_gateway.erl     # Existing
+│   │   ├── dev_dataplatform.erl # Existing
+│   │   ├── dev_aojs.erl        # Existing
+│   │   ├── dev_counter.erl     # Vibe-coded
+│   │   ├── dev_ratelimiter.erl # Vibe-coded
+│   │   ├── dev_analytics.erl   # Vibe-coded
+│   │   └── tests/
+│   │       └── device-wao.test.js # WAO integration tests
 │
 └── lua-report.md               # This report
 ```

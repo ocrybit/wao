@@ -741,4 +741,4 @@ import { AO, HB } from 'wao'
 | [HyperBEAM WAO](https://github.com/weavedb/HyperBEAM/tree/wao) | WAO-compatible HyperBEAM fork |
 | `llms.txt` | HyperBEAM LLM reference (architecture, patterns) |
 | `ao-core.md` | AO protocol specification (TypeScript types) |
-| `vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |
+| `vibe/vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |

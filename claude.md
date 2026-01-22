@@ -19,9 +19,9 @@
 START=$SECONDS
 
 # Extract tarballs
-cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
-cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
-cd /home/user/wao && tar -xJf /home/user/wao/installation/wao-node-modules.tar.xz
+cd ~ && tar -xJf /home/user/wao/vibe/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/vibe/installation/hyperbeam-wao-ready.tar.xz
+cd /home/user/wao && tar -xJf /home/user/wao/vibe/installation/wao-node-modules.tar.xz
 
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
@@ -46,18 +46,20 @@ After installation, report time and offer: build Lua app, run tests, or explore 
 
 ```
 wao/
-├── vibe/apps/                  # Lua apps + frontends
-│   ├── counter.lua             # Simple counter
-│   ├── token.lua               # Fungible token
-│   ├── amm-dex.lua             # DEX (Lua)
-│   ├── amm-dex-ui/             # Lua DEX frontend
-│   ├── erlang-dex-ui/          # Erlang DEX frontend
-│   └── tests/
-│       ├── hyperbeam.test.js   # Lua tests (30 pass)
-│       └── dev-dex.test.js     # Erlang tests (14 pass)
-├── tutorial-devices/           # Erlang devices
-│   ├── dev_dex.erl             # AMM DEX device
-│   └── dev_kv.erl              # Key-value store
+├── vibe/
+│   ├── apps/                   # Lua apps + frontends
+│   │   ├── counter.lua         # Simple counter
+│   │   ├── token.lua           # Fungible token
+│   │   ├── amm-dex.lua         # DEX (Lua)
+│   │   ├── amm-dex-ui/         # Lua DEX frontend
+│   │   ├── erlang-dex-ui/      # Erlang DEX frontend
+│   │   └── tests/
+│   │       ├── hyperbeam.test.js   # Lua tests (30 pass)
+│   │       └── dev-dex.test.js     # Erlang tests (14 pass)
+│   ├── devices/                # Erlang devices
+│   │   ├── dev_dex.erl         # AMM DEX device
+│   │   └── dev_kv.erl          # Key-value store
+│   └── installation/           # Setup tarballs
 ├── src/
 │   ├── hb.js                   # HB class (HyperBEAM client)
 │   ├── hyperbeam.js            # HyperBEAM node manager
@@ -525,7 +527,7 @@ cd /home/user/wao/hbsig && npm run build && cd /home/user/wao
 
 ### Erlang Devices
 1. **Read `llms.txt`** for TABM and device patterns
-2. Write device in `tutorial-devices/dev_[name].erl`
+2. Write device in `vibe/devices/dev_[name].erl`
 3. Copy to `~/HyperBEAM/src/`
 4. Register in `~/HyperBEAM/src/hb_opts.erl`
 5. Recompile: `cd ~/HyperBEAM && rebar3 compile`

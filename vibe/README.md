@@ -2,7 +2,7 @@
 
 This folder contains Lua app examples built using natural language prompts with the WAO SDK. Each example demonstrates what's possible when you describe what you want to build in plain English.
 
-> **Note:** Apps are Lua code running on AOS processes. For Erlang devices (HyperBEAM infrastructure), see `/tutorial-devices/`.
+> **Note:** Apps are Lua code running on AOS processes. For Erlang devices (HyperBEAM infrastructure), see `./devices/`.
 
 ## Apps (13 Examples)
 
@@ -116,7 +116,7 @@ If you can describe it, you can build it!
 ## Erlang Devices
 
 For HyperBEAM device development (Erlang), see:
-- `/tutorial-devices/` - Example device implementations
+- `./devices/` - Example device implementations
 - `/docs/docs/pages/book/dev*.mdx` - Device development tutorials
 
 ---

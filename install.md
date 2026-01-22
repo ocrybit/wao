@@ -7,9 +7,9 @@
 START=$SECONDS
 
 # Extract all tarballs (no checks, just extract)
-cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
-cd ~ && tar -xJf /home/user/wao/installation/hyperbeam-wao-ready.tar.xz
-cd /home/user/wao && tar -xJf /home/user/wao/installation/wao-node-modules.tar.xz
+cd ~ && tar -xJf /home/user/wao/vibe/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/vibe/installation/hyperbeam-wao-ready.tar.xz
+cd /home/user/wao && tar -xJf /home/user/wao/vibe/installation/wao-node-modules.tar.xz
 
 # Setup Erlang
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0

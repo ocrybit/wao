@@ -1,0 +1,410 @@
+# Vibe Engineer's Guide to AO
+
+Build AO apps by describing what you want. No coding required.
+
+## Setup Prompt
+
+```
+follow claude.md
+```
+
+## Build Something
+
+```
+Build me a [your idea] app with HyperBEAM tests.
+```
+
+## What You Can Build
+
+| Category | Examples |
+|----------|----------|
+| **DeFi** | Token, AMM DEX, Staking, Lending |
+| **NFTs** | Collections, Marketplace, Royalties |
+| **DAOs** | Voting, Proposals, Treasury |
+| **Social** | Feed, Chat, Follows |
+| **Gaming** | Lottery, Auction, Leaderboards |
+
+## 13 Ready-to-Use Apps
+
+All in `/vibe/apps/`:
+
+| App | Description |
+|-----|-------------|
+| `counter.lua` | Increment/decrement with history |
+| `token.lua` | Fungible token (transfers, mint, burn) |
+| `chatroom.lua` | Rooms, members, messages |
+| `todo.lua` | Tasks with priorities |
+| `voting-dao.lua` | Proposals, voting |
+| `nft-collection.lua` | Mint, transfer, metadata |
+| `kv-store.lua` | Key-value database |
+| `amm-dex.lua` | Liquidity pools, swaps |
+| `social-feed.lua` | Posts, follows, likes |
+| `lottery.lua` | Tickets, random drawing |
+| `escrow.lua` | Secure trades |
+| `auction.lua` | English/Dutch auctions |
+| `staking-pool.lua` | Stake, earn rewards |
+
+## Testing
+
+### HyperBEAM (Recommended)
+
+Native Lua execution via `lua@5.3a`. No external CU needed.
+
+```bash
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+```
+
+### In-Memory (ArMem)
+
+Fast but behavior may differ from real execution.
+
+```bash
+npm test -- vibe/apps/tests/armem.test.js
+```
+
+## Lua App Pattern
+
+```lua
+-- State persists between messages
+Count = Count or 0
+Owner = Owner or ao.env.Process.Owner
+
+-- Handler pattern
+Handlers.add("Inc", "Inc", function(msg)
+  Count = Count + 1
+  msg.reply({ Data = tostring(Count) })
+end)
+
+Handlers.add("Get", "Get", function(msg)
+  msg.reply({ Data = tostring(Count) })
+end)
+```
+
+## Common Prompts
+
+**Build an app:**
+```
+Build me an AO app that [description]. Write tests and run them.
+```
+
+**Add a feature:**
+```
+Add [feature] to my [app]. Run tests to verify.
+```
+
+**Fix an issue:**
+```
+The tests are failing. Read the errors and fix them.
+```
+
+**Explain code:**
+```
+Explain how [component] works.
+```
+
+## Execution Modes
+
+| Mode | Device | CU Required | Use Case |
+|------|--------|-------------|----------|
+| **HyperAOS** | `lua@5.3a` | No | Local dev (luerl) |
+| Legacynet | `genesis-wasm@1.0` | Yes | External CU |
+| Mainnet | `stack@1.0` | Yes | Production |
+
+## File Structure
+
+```
+wao/
+├── vibe/apps/           # 13 Lua apps
+│   ├── counter.lua
+│   ├── token.lua
+│   └── tests/
+│       └── hyperbeam.test.js
+│   └── devices/         # Erlang devices
+├── src/                 # WAO SDK
+└── claude.md           # Read this first!
+```
+
+## The Workflow
+
+1. **Describe** what you want
+2. **Claude builds** the Lua code
+3. **Tests run** on HyperBEAM
+4. **Iterate** until it works
+5. **Deploy** to mainnet
+
+That's vibe engineering. Start building!
+
+---
+
+# Manual Development Guide
+
+For developers who prefer coding without AI assistance.
+
+## Environment Setup
+
+```bash
+# Clone and setup
+git clone https://github.com/ocrybit/wao.git
+cd wao
+npm install
+
+# Install Erlang (for HyperBEAM)
+asdf plugin add erlang
+asdf install erlang 27.3.4.6
+asdf global erlang 27.3.4.6
+
+# Install rebar3
+asdf plugin add rebar
+asdf install rebar 3.26.0
+asdf global rebar 3.26.0
+
+# Configure HyperBEAM
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+```
+
+## Development Workflow
+
+### Lua App Development
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Lua App Development Flow                      │
+├─────────────────────────────────────────────────────────────────┤
+│   1. WRITE          2. TEST IN-MEMORY       3. TEST HYPERBEAM   │
+│   ─────────         ─────────────────       ─────────────────   │
+│   app.lua      ───► ArMem (fast)       ───► HyperBEAM (prod)    │
+│                                                                  │
+│   • Handlers        • npm test              • Native Lua exec   │
+│   • State           • ~14 seconds           • ~25 seconds       │
+│   • Logic           • Full WASM             • luerl runtime     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Step 1: Write Lua Code**
+```lua
+-- vibe/apps/myapp.lua
+Count = Count or 0
+
+Handlers.add("Inc", "Inc", function(msg)
+  Count = Count + 1
+  msg.reply({ Data = tostring(Count) })
+end)
+
+Handlers.add("Get", "Get", function(msg)
+  msg.reply({ Data = tostring(Count) })
+end)
+```
+
+**Step 2: Write Tests**
+```javascript
+// vibe/apps/tests/myapp.test.js
+import { describe, it } from 'node:test'
+import assert from 'assert'
+import { readFileSync } from 'fs'
+import { ArMem, connect, acc, scheduler } from '../../../src/test.js'
+
+const luaCode = readFileSync('vibe/apps/myapp.lua', 'utf-8')
+
+describe('MyApp', () => {
+  it('should increment', async () => {
+    const mem = new ArMem()
+    const { spawn, message, dryrun } = connect(mem)
+
+    const pid = await spawn({
+      signer: acc[0].signer,
+      scheduler,
+      module: mem.modules.aos2_0_6,
+    })
+
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: 'Action', value: 'Eval' }],
+      data: luaCode,
+    })
+
+    await message({
+      process: pid,
+      signer: acc[0].signer,
+      tags: [{ name: 'Action', value: 'Inc' }],
+    })
+
+    const res = await dryrun({
+      process: pid,
+      tags: [{ name: 'Action', value: 'Get' }],
+    })
+
+    assert.equal(res.Messages[0].Data, '1')
+  })
+})
+```
+
+**Step 3: Run Tests**
+```bash
+# In-memory (fast iteration)
+npm test -- vibe/apps/tests/myapp.test.js
+
+# HyperBEAM (production validation)
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+```
+
+### Erlang Device Development
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Erlang Device Development Flow                   │
+├─────────────────────────────────────────────────────────────────┤
+│   1. WRITE          2. REGISTER         3. TEST & BUILD UI      │
+│   ─────────         ─────────           ────────────────        │
+│   dev_xxx.erl  ───► hb_opts.erl   ───►  Vitest + React          │
+│                                                                  │
+│   • HTTP routes     • Add to map        • HTTP client class     │
+│   • persistent_term • Set ~path         • Component tests       │
+│   • Business logic  • Restart HB        • Full frontend         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Step 1: Write Erlang Device**
+```erlang
+%% hyperbeam/src/dev_mydevice.erl
+-module(dev_mydevice).
+-export([info/3, routes/0, get/3, set/3]).
+
+info(_M1, _M2, _Opts) ->
+    #{name => <<"mydevice">>, version => <<"1.0">>}.
+
+routes() ->
+    #{<<"get">> => fun get/3, <<"set">> => fun set/3}.
+
+get(_M1, _M2, _Opts) ->
+    Value = persistent_term:get({?MODULE, value}, 0),
+    {ok, #{value => Value}}.
+
+set(M1, _M2, _Opts) ->
+    Value = maps:get(<<"value">>, M1, 0),
+    persistent_term:put({?MODULE, value}, Value),
+    {ok, #{value => Value}}.
+```
+
+**Step 2: Register Device**
+```erlang
+%% In hyperbeam/src/hb_opts.erl default_devices():
+<<"mydevice@1.0">> => #{
+    module => dev_mydevice,
+    routes => dev_mydevice:routes(),
+    <<"~path">> => <<"~mydevice@1.0">>
+}
+```
+
+**Step 3: Create JS Client**
+```javascript
+// vibe/apps/mydevice-ui/src/lib/MyDeviceClient.js
+export default class MyDeviceClient {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl
+  }
+
+  async get() {
+    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/get`)
+    return res.json()
+  }
+
+  async set(value) {
+    const res = await fetch(`${this.baseUrl}/~mydevice@1.0/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value })
+    })
+    return res.json()
+  }
+}
+```
+
+**Step 4: Write Vitest Tests**
+```javascript
+// vibe/apps/mydevice-ui/src/test/device.test.js
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import HyperBEAM from '../../../../../src/hyperbeam.js'
+import MyDeviceClient from '../lib/MyDeviceClient.js'
+
+describe('MyDevice', () => {
+  let hbeam, client
+
+  beforeAll(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
+    client = new MyDeviceClient(hbeam.url)
+  }, 60000)
+
+  afterAll(() => hbeam?.kill())
+
+  it('should get and set', async () => {
+    await client.set(42)
+    const result = await client.get()
+    expect(result.value).toBe(42)
+  })
+})
+```
+
+**Step 5: Run Tests**
+```bash
+cd vibe/apps/mydevice-ui && npm test
+```
+
+## Quick Start Templates
+
+### New Lua App
+```bash
+# Copy counter as template
+cp vibe/apps/counter.lua vibe/apps/myapp.lua
+
+# Edit your app
+# Add tests to vibe/apps/tests/hyperbeam.test.js
+
+# Run tests
+HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+```
+
+### New Erlang Device + Frontend
+```bash
+# Create frontend
+cd vibe/apps
+npm create vite@latest mydevice-ui -- --template react
+cd mydevice-ui
+npm install
+npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom
+
+# Add wao as dependency
+# package.json: "wao": "file:../../.."
+
+# Create client in src/lib/
+# Create tests in src/test/
+# Run: npm test
+```
+
+## Reference Documentation
+
+| Guide | Content |
+|-------|---------|
+| `aos-dev.md` | Complete AO development guide (Lua + Erlang) |
+| `claude.md` | AI assistant reference (patterns, gotchas) |
+| `llms.txt` | Full HyperBEAM API reference (93KB) |
+| `vibe/devices/README.md` | Erlang device examples |
+
+## Commands Cheatsheet
+
+```bash
+# Lua tests (in-memory)
+npm test -- vibe/apps/tests/myapp.test.js
+
+# Lua tests (HyperBEAM)
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --test --test-concurrency=1 vibe/apps/tests/hyperbeam.test.js
+
+# Erlang device tests (Vitest)
+cd vibe/apps/mydevice-ui && npm test
+
+# Kill stuck HyperBEAM
+pkill -9 -f beam.smp && pkill -9 -f epmd
+```
