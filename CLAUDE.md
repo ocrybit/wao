@@ -85,21 +85,45 @@ Environment ready in X seconds. What would you like to do?
 
 **All user projects are created in `/home/user/wao/workspaces/`**
 
+### Workspace Structure
+
 ```
 workspaces/
-├── my-token/           # Lua app
-│   ├── app.lua
-│   ├── app.test.js
-│   └── README.md
-├── my-dex/             # Lua app
-│   ├── app.lua
-│   ├── app.test.js
-│   └── README.md
-├── rate-limiter/       # Erlang device
-│   ├── dev_ratelimiter.erl
-│   ├── device.test.js
-│   └── README.md
+├── my-token/                # Lua app
+│   ├── package.json         # Scripts: test, dev
+│   ├── README.md            # Description & commands
+│   ├── lua/
+│   │   └── token.lua        # Lua source code
+│   ├── test/
+│   │   └── main.test.js     # Tests
+│   └── frontend/            # Optional Vite app
+│       ├── package.json
+│       ├── index.html
+│       ├── main.js
+│       └── style.css
+├── rate-limiter/            # Erlang device
+│   ├── package.json
+│   ├── README.md
+│   ├── erlang/
+│   │   └── dev_ratelimiter.erl
+│   ├── test/
+│   │   └── main.test.js
+│   └── frontend/            # Optional Vite app
 └── ...
+```
+
+### Root package.json Template
+
+`workspaces/[name]/package.json`:
+```json
+{
+  "name": "[name]",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/main.test.js",
+    "dev": "cd frontend && npm run dev"
+  }
+}
 ```
 
 **Workspace Commands:**
@@ -109,6 +133,12 @@ ls -la /home/user/wao/workspaces/
 
 # Check workspace status
 cat /home/user/wao/workspaces/[name]/README.md
+
+# Run tests
+cd workspaces/[name] && npm test
+
+# Run frontend
+cd workspaces/[name] && npm run dev
 ```
 
 ---
@@ -152,23 +182,37 @@ What should I name the workspace?
 | Production | Yes | Dev only | Legacy |
 
 **Workflow:**
-1. Create workspace: `workspaces/[name]/`
-2. Create `workspaces/[name]/app.lua`
-3. Create `workspaces/[name]/app.test.js` (based on environment)
-4. Create `workspaces/[name]/README.md` with description
-5. Run tests
-6. Report results and return to menu
+1. Create workspace structure:
+   - `workspaces/[name]/package.json`
+   - `workspaces/[name]/lua/[name].lua`
+   - `workspaces/[name]/test/main.test.js`
+   - `workspaces/[name]/README.md`
+2. Run tests
+3. **Ask user:** "Would you like me to build a frontend for this app?"
+4. If yes, create Vite frontend in `workspaces/[name]/frontend/`
+5. Report results and return to menu
 
 ---
 
 ### Mainnet WASM Template (Default)
 
-`workspaces/[name]/app.lua`:
+`workspaces/[name]/package.json`:
+```json
+{
+  "name": "[name]",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/main.test.js",
+    "dev": "cd frontend && npm run dev"
+  }
+}
+```
+
+`workspaces/[name]/lua/[name].lua`:
 ```lua
 -- [Name] - [Description]
 -- Created: [Date]
 -- Environment: Mainnet WASM (aos2_0_6)
--- NOTE: Custom tags are lowercased (e.g., msg.Tags.Amount -> msg.Tags.amount)
 
 local json = require("json")
 
@@ -183,14 +227,14 @@ end)
 -- Add your handlers here
 ```
 
-`workspaces/[name]/app.test.js` (ArMem):
+`workspaces/[name]/test/main.test.js` (ArMem):
 ```javascript
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert'
 import { readFileSync } from 'fs'
-import { ArMem, connect, acc, scheduler } from '../../src/test.js'
+import { ArMem, connect, acc, scheduler } from '../../../src/test.js'
 
-const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+const luaCode = readFileSync(new URL('../lua/[name].lua', import.meta.url), 'utf-8')
 
 describe('[Name] App (Mainnet WASM)', () => {
   let mem, spawn, message, dryrun, pid
@@ -230,18 +274,29 @@ describe('[Name] App (Mainnet WASM)', () => {
 })
 ```
 
-**Test command:** `node --test workspaces/[name]/app.test.js`
+**Test command:** `cd workspaces/[name] && npm test`
 
 ---
 
 ### HyperAOS Template
 
-`workspaces/[name]/app.lua`:
+`workspaces/[name]/package.json`:
+```json
+{
+  "name": "[name]",
+  "type": "module",
+  "scripts": {
+    "test": "HB_TIMEOUT=120 node --test test/main.test.js",
+    "dev": "cd frontend && npm run dev"
+  }
+}
+```
+
+`workspaces/[name]/lua/[name].lua`:
 ```lua
 -- [Name] - [Description]
 -- Created: [Date]
 -- Environment: HyperAOS (lua@5.3a)
--- NOTE: Tag case is preserved
 
 local json = require("json")
 
@@ -256,14 +311,14 @@ end)
 -- Add your handlers here
 ```
 
-`workspaces/[name]/app.test.js` (HyperBEAM):
+`workspaces/[name]/test/main.test.js` (HyperBEAM):
 ```javascript
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert'
 import { readFileSync } from 'fs'
-import HyperBEAM from '../../src/hyperbeam.js'
+import HyperBEAM from '../../../src/hyperbeam.js'
 
-const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+const luaCode = readFileSync(new URL('../lua/[name].lua', import.meta.url), 'utf-8')
 
 describe('[Name] App (HyperAOS)', () => {
   let hbeam, hb, pid
@@ -309,18 +364,29 @@ describe('[Name] App (HyperAOS)', () => {
 })
 ```
 
-**Test command:** `HB_TIMEOUT=120 node --test workspaces/[name]/app.test.js`
+**Test command:** `cd workspaces/[name] && npm test`
 
 ---
 
 ### Legacynet Template
 
-`workspaces/[name]/app.lua`:
+`workspaces/[name]/package.json`:
+```json
+{
+  "name": "[name]",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/main.test.js",
+    "dev": "cd frontend && npm run dev"
+  }
+}
+```
+
+`workspaces/[name]/lua/[name].lua`:
 ```lua
 -- [Name] - [Description]
 -- Created: [Date]
 -- Environment: Legacynet (aos2_0_1)
--- NOTE: Tag case is preserved (legacy behavior)
 
 local json = require("json")
 
@@ -335,14 +401,14 @@ end)
 -- Add your handlers here
 ```
 
-`workspaces/[name]/app.test.js` (ArMem with aos2_0_1):
+`workspaces/[name]/test/main.test.js` (ArMem with aos2_0_1):
 ```javascript
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert'
 import { readFileSync } from 'fs'
-import { ArMem, connect, acc, scheduler } from '../../src/test.js'
+import { ArMem, connect, acc, scheduler } from '../../../src/test.js'
 
-const luaCode = readFileSync(new URL('./app.lua', import.meta.url), 'utf-8')
+const luaCode = readFileSync(new URL('../lua/[name].lua', import.meta.url), 'utf-8')
 
 describe('[Name] App (Legacynet)', () => {
   let mem, spawn, message, dryrun, pid
@@ -382,7 +448,7 @@ describe('[Name] App (Legacynet)', () => {
 })
 ```
 
-**Test command:** `node --test workspaces/[name]/app.test.js`
+**Test command:** `cd workspaces/[name] && npm test`
 
 ---
 
@@ -401,17 +467,34 @@ describe('[Name] App (Legacynet)', () => {
 ## Description
 [User's description]
 
+## Structure
+\`\`\`
+[name]/
+├── package.json
+├── README.md
+├── lua/
+│   └── [name].lua
+├── test/
+│   └── main.test.js
+└── frontend/          # Optional
+    └── ...
+\`\`\`
+
 ## Handlers
 - Info: Returns app info
 - Add more...
 
-## Test Command
+## Commands
 \`\`\`bash
-[HB_TIMEOUT=120] node --test workspaces/[name]/app.test.js
+# Run tests
+npm test
+
+# Run frontend (if created)
+npm run dev
 \`\`\`
 
 ## Notes
-- [Environment-specific notes about tag casing, etc.]
+- [Environment-specific notes]
 ```
 
 **Reference examples:** `claude/apps/*.lua` (13 apps)
@@ -434,19 +517,34 @@ What should I name the workspace? (will be prefixed with dev_)
 
 **Workflow:**
 1. **Read `claude/docs/llms.txt`** (MANDATORY for TABM format)
-2. Create workspace: `workspaces/[name]/`
-3. Create `workspaces/[name]/dev_[name].erl`
-4. Create `workspaces/[name]/device.test.js`
-5. Create `workspaces/[name]/README.md`
-6. Copy to HyperBEAM: `cp workspaces/[name]/dev_[name].erl ~/HyperBEAM/src/`
-7. Register in `~/HyperBEAM/src/hb_opts.erl`
-8. Compile: `cd ~/HyperBEAM && rebar3 compile`
-9. Run tests: `node --test workspaces/[name]/device.test.js`
-10. Report results and return to menu
+2. Create workspace structure:
+   - `workspaces/[name]/package.json`
+   - `workspaces/[name]/erlang/dev_[name].erl`
+   - `workspaces/[name]/test/main.test.js`
+   - `workspaces/[name]/README.md`
+3. Copy to HyperBEAM: `cp workspaces/[name]/erlang/dev_[name].erl ~/HyperBEAM/src/`
+4. Register in `~/HyperBEAM/src/hb_opts.erl`
+5. Compile: `cd ~/HyperBEAM && rebar3 compile`
+6. Run tests: `cd workspaces/[name] && npm test`
+7. **Ask user:** "Would you like me to build a frontend for this device?"
+8. If yes, create Vite frontend in `workspaces/[name]/frontend/`
+9. Report results and return to menu
 
 **Erlang Device Workspace Template:**
 
-`workspaces/[name]/dev_[name].erl`:
+`workspaces/[name]/package.json`:
+```json
+{
+  "name": "[name]",
+  "type": "module",
+  "scripts": {
+    "test": "HB_TIMEOUT=120 node --test test/main.test.js",
+    "dev": "cd frontend && npm run dev"
+  }
+}
+```
+
+`workspaces/[name]/erlang/dev_[name].erl`:
 ```erlang
 -module(dev_[name]).
 -export([info/3]).
@@ -459,11 +557,11 @@ info(_M1, _M2, _Opts) ->
 %% Add your endpoints here
 ```
 
-`workspaces/[name]/device.test.js`:
+`workspaces/[name]/test/main.test.js`:
 ```javascript
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert'
-import HyperBEAM from '../../src/hyperbeam.js'
+import HyperBEAM from '../../../src/hyperbeam.js'
 
 describe('[Name] Device', () => {
   let hbeam, hb
@@ -494,23 +592,202 @@ describe('[Name] Device', () => {
 ## Description
 [User's description]
 
+## Structure
+\`\`\`
+[name]/
+├── package.json
+├── README.md
+├── erlang/
+│   └── dev_[name].erl
+├── test/
+│   └── main.test.js
+└── frontend/          # Optional
+    └── ...
+\`\`\`
+
 ## Endpoints
 - GET /~[name]@1.0/info - Device info
 - Add more...
 
-## Deploy Command
+## Commands
 \`\`\`bash
-cp workspaces/[name]/dev_[name].erl ~/HyperBEAM/src/
+# Deploy to HyperBEAM
+cp erlang/dev_[name].erl ~/HyperBEAM/src/
 cd ~/HyperBEAM && rebar3 compile
-\`\`\`
 
-## Test Command
-\`\`\`bash
-HB_TIMEOUT=120 node --test workspaces/[name]/device.test.js
+# Run tests
+npm test
+
+# Run frontend (if created)
+npm run dev
 \`\`\`
 ```
 
 **Reference examples:** `claude/devices/*.erl` (9 devices)
+
+---
+
+## Frontend Template (Vite)
+
+**After building a Lua app or Erlang device, ask:**
+```
+Would you like me to build a frontend for this app?
+```
+
+**If yes, create a Vite project:**
+
+```bash
+cd workspaces/[name]
+npm create vite@latest frontend -- --template vanilla
+cd frontend && npm install && npm install @permaweb/aoconnect
+```
+
+**Frontend Structure:**
+```
+workspaces/[name]/frontend/
+├── package.json
+├── index.html
+├── main.js          # AO interaction logic
+└── style.css
+```
+
+**`frontend/index.html` Template:**
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>[Name] App</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <h1>[Name]</h1>
+      <div class="process-input">
+        <input type="text" id="processId" placeholder="Enter Process ID" />
+        <button id="connectBtn">Connect</button>
+      </div>
+      <div id="content" class="hidden">
+        <!-- App-specific UI here -->
+      </div>
+      <div id="status"></div>
+    </div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
+```
+
+**`frontend/main.js` Template:**
+```javascript
+import { dryrun, message, createDataItemSigner } from "@permaweb/aoconnect"
+
+let processId = null
+let wallet = null
+
+async function connectWallet() {
+  if (!window.arweaveWallet) {
+    setStatus("Please install ArConnect wallet", "error")
+    return false
+  }
+  await window.arweaveWallet.connect(["ACCESS_ADDRESS", "SIGN_TRANSACTION"])
+  wallet = window.arweaveWallet
+  return true
+}
+
+function setStatus(msg, type = "") {
+  const el = document.getElementById("status")
+  el.textContent = msg
+  el.className = type
+}
+
+// Dryrun (read-only, no wallet needed)
+async function query(action, tags = []) {
+  const result = await dryrun({
+    process: processId,
+    tags: [{ name: "Action", value: action }, ...tags],
+  })
+  return result.Messages?.[0]?.Data ? JSON.parse(result.Messages[0].Data) : null
+}
+
+// Message (write, needs wallet)
+async function send(action, tags = []) {
+  if (!wallet && !(await connectWallet())) return
+  await message({
+    process: processId,
+    signer: createDataItemSigner(wallet),
+    tags: [{ name: "Action", value: action }, ...tags],
+  })
+}
+
+// Connect button
+document.getElementById("connectBtn").addEventListener("click", async () => {
+  processId = document.getElementById("processId").value.trim()
+  if (!processId) return setStatus("Enter a Process ID", "error")
+
+  try {
+    // Query initial state
+    const info = await query("Info")
+    document.getElementById("content").classList.remove("hidden")
+    setStatus("Connected!", "success")
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, "error")
+  }
+})
+```
+
+**`frontend/style.css` Template:**
+```css
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --primary: #e94560;
+  --text: #eee;
+  --text-dim: #888;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#app { text-align: center; padding: 2rem; max-width: 500px; }
+h1 { margin-bottom: 2rem; }
+
+.process-input { display: flex; gap: 0.5rem; margin-bottom: 2rem; }
+.process-input input {
+  flex: 1; padding: 0.75rem; border: none; border-radius: 8px;
+  background: var(--surface); color: var(--text);
+}
+.process-input button {
+  padding: 0.75rem 1.5rem; border: none; border-radius: 8px;
+  background: var(--primary); color: white; cursor: pointer;
+}
+
+.hidden { display: none !important; }
+
+#status {
+  margin-top: 1.5rem; padding: 0.75rem; border-radius: 8px;
+  font-size: 0.85rem; color: var(--text-dim);
+}
+#status.error { background: #5c1e2e; color: #ff6b6b; }
+#status.success { background: #1e5c3a; color: #6bff9e; }
+
+button {
+  padding: 0.5rem 1rem; border: none; border-radius: 8px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+button:hover { background: var(--primary); }
+```
+
+**Run frontend:** `cd workspaces/[name] && npm run dev`
 
 ---
 
@@ -530,8 +807,8 @@ Which tests?
 |------|---------|
 | Example Lua apps | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
 | Example Erlang DEX | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
-| Specific workspace | `HB_TIMEOUT=120 node --test workspaces/[name]/*.test.js` |
-| All workspaces | `HB_TIMEOUT=120 node --test workspaces/**/*.test.js` |
+| Specific workspace | `cd workspaces/[name] && npm test` |
+| All workspaces | `HB_TIMEOUT=120 node --test workspaces/**/test/main.test.js` |
 | Kill stuck | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
 
 After tests complete, return to menu.
@@ -669,7 +946,8 @@ ls -la /home/user/wao/workspaces/
 | List workspaces | `ls -la workspaces/` |
 | Lua example tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/hyperbeam.test.js` |
 | Erlang example tests | `HB_TIMEOUT=120 node --test --test-concurrency=1 claude/apps/tests/dev-dex.test.js` |
-| Workspace tests | `HB_TIMEOUT=120 node --test workspaces/[name]/*.test.js` |
+| Workspace tests | `cd workspaces/[name] && npm test` |
+| Workspace frontend | `cd workspaces/[name] && npm run dev` |
 | Kill stuck | `pkill -9 -f beam.smp; pkill -9 -f epmd` |
 | Recompile HB | `cd ~/HyperBEAM && rebar3 compile` |
 | Load Erlang | `. ~/.asdf/asdf.sh` |
