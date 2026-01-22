@@ -387,6 +387,7 @@ export const commit = async (obj, opts) => {
     commitments: {
       [rsaId]: {
         type: "rsa-pss-sha512",
+        alg: "rsa-pss-sha512", // Include both for HyperBEAM compatibility
         "commitment-device": "httpsig@1.0",
         committer,
         committed: committedKeys,
