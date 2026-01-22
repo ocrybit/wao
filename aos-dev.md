@@ -51,9 +51,9 @@ EOF
 
 Follow the official guide: https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html
 
-Clone the beta3 release:
+Clone the WAO-compatible HyperBEAM:
 ```bash
-git clone -b v0.9-milestone-3-beta-3 https://github.com/permaweb/HyperBEAM.git
+git clone -b wao https://github.com/weavedb/HyperBEAM.git
 cd HyperBEAM
 rebar3 compile
 ```
@@ -738,7 +738,7 @@ import { AO, HB } from 'wao'
 | Resource | Description |
 |----------|-------------|
 | [HyperBEAM Docs](https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html) | Official HyperBEAM setup guide |
-| [Beta3 Release](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | Stable HyperBEAM release |
+| [HyperBEAM WAO](https://github.com/weavedb/HyperBEAM/tree/wao) | WAO-compatible HyperBEAM fork |
 | `llms.txt` | HyperBEAM LLM reference (architecture, patterns) |
 | `ao-core.md` | AO protocol specification (TypeScript types) |
 | `vibe-engineer.mdx` | Quick start guide (AI-assisted & manual) |
