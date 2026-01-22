@@ -71,11 +71,21 @@ mint(M1, M2, Opts) ->
     })}.
 
 %% @doc Get user balances
-balances(M1, M2, Opts) ->
+%% Returns balances as individual top-level keys
+%% Each token becomes a key: result["TOKEN-X"] => amount
+balances(M1, M2, _Opts) ->
     From = get_from(M2),
-    Balances = load_balances(M1, Opts),
+    Balances = load_balances(M1, _Opts),
     UserBal = maps:get(From, Balances, #{}),
-    {ok, #{<<"balances">> => UserBal}}.
+    %% Return each token balance as a top-level key
+    Result = maps:fold(
+        fun(Token, Amount, Acc) ->
+            maps:put(Token, Amount, Acc)
+        end,
+        #{<<"user">> => From, <<"count">> => maps:size(UserBal)},
+        UserBal
+    ),
+    {ok, Result}.
 
 %% @doc Create a new liquidity pool
 create_pool(M1, M2, Opts) ->
@@ -616,53 +626,43 @@ capitalize(<<First, Rest/binary>>) when First >= $a, First =< $z ->
     <<(First - 32), Rest/binary>>;
 capitalize(Bin) -> Bin.
 
-%% @private Load pools from cache
-load_pools(M1, Opts) ->
-    case hb_private:get(?POOLS_KEY, M1, not_found, Opts) of
-        not_found -> #{};
-        StateID ->
-            case hb_cache:read(StateID, Opts) of
-                {ok, State} -> hb_cache:ensure_all_loaded(State, Opts);
-                not_found -> #{}
-            end
+%% persistent_term keys for global state
+-define(POOLS_PT_KEY, {dev_dex, pools}).
+-define(BALANCES_PT_KEY, {dev_dex, balances}).
+-define(LIQUIDITY_PT_KEY, {dev_dex, liquidity}).
+
+%% @private Load pools from persistent_term
+load_pools(_M1, _Opts) ->
+    try persistent_term:get(?POOLS_PT_KEY)
+    catch error:badarg -> #{}
     end.
 
-%% @private Save pools to cache
-save_pools(M1, Pools, Opts) ->
-    {ok, StateID} = hb_cache:write(Pools, Opts),
-    hb_private:set(M1, #{?POOLS_KEY => StateID}, Opts).
+%% @private Save pools to persistent_term
+save_pools(M1, Pools, _Opts) ->
+    persistent_term:put(?POOLS_PT_KEY, Pools),
+    M1.
 
-%% @private Load balances from cache
-load_balances(M1, Opts) ->
-    case hb_private:get(?BALANCES_KEY, M1, not_found, Opts) of
-        not_found -> #{};
-        StateID ->
-            case hb_cache:read(StateID, Opts) of
-                {ok, State} -> hb_cache:ensure_all_loaded(State, Opts);
-                not_found -> #{}
-            end
+%% @private Load balances from persistent_term
+load_balances(_M1, _Opts) ->
+    try persistent_term:get(?BALANCES_PT_KEY)
+    catch error:badarg -> #{}
     end.
 
-%% @private Save balances to cache
-save_balances(M1, Balances, Opts) ->
-    {ok, StateID} = hb_cache:write(Balances, Opts),
-    hb_private:set(M1, #{?BALANCES_KEY => StateID}, Opts).
+%% @private Save balances to persistent_term
+save_balances(M1, Balances, _Opts) ->
+    persistent_term:put(?BALANCES_PT_KEY, Balances),
+    M1.
 
-%% @private Load liquidity tokens from cache
-load_liquidity(M1, Opts) ->
-    case hb_private:get(?LIQUIDITY_KEY, M1, not_found, Opts) of
-        not_found -> #{};
-        StateID ->
-            case hb_cache:read(StateID, Opts) of
-                {ok, State} -> hb_cache:ensure_all_loaded(State, Opts);
-                not_found -> #{}
-            end
+%% @private Load liquidity tokens from persistent_term
+load_liquidity(_M1, _Opts) ->
+    try persistent_term:get(?LIQUIDITY_PT_KEY)
+    catch error:badarg -> #{}
     end.
 
-%% @private Save liquidity tokens to cache
-save_liquidity(M1, LiqTokens, Opts) ->
-    {ok, StateID} = hb_cache:write(LiqTokens, Opts),
-    hb_private:set(M1, #{?LIQUIDITY_KEY => StateID}, Opts).
+%% @private Save liquidity tokens to persistent_term
+save_liquidity(M1, LiqTokens, _Opts) ->
+    persistent_term:put(?LIQUIDITY_PT_KEY, LiqTokens),
+    M1.
 
 %%====================================================================
 %% Tests
