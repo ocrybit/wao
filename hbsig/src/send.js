@@ -54,7 +54,9 @@ export const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  return `http-sig-${hexString}`
+  // Beta3 HyperBEAM requires signature names to start with "comm-" prefix
+  // See dev_codec_httpsig_siginfo.erl lines 170-171
+  return `comm-${hexString}`
 }
 
 const toView = value => {
@@ -84,7 +86,9 @@ export const toHttpSigner = signer => {
       const signingParameters = createSigningParameters({
         params,
         paramValues: {
-          keyid: base64url.encode(publicKeyBuffer),
+          // Beta3 requires "publickey:" scheme prefix on keyid
+          // HyperBEAM uses standard base64 (not base64url) for keyid
+          keyid: `publickey:${publicKeyBuffer.toString("base64")}`,
           alg,
         },
       })

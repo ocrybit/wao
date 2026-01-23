@@ -133,12 +133,14 @@ function hmacid(message) {
 /**
  * Generate commitment ID based on the algorithm type
  *
- * @param {Object} commitment - The commitment object containing alg, signature, etc.
+ * @param {Object} commitment - The commitment object containing type/alg, signature, etc.
  * @param {Object} fullMessage - The full message (required for HMAC)
  * @returns {string} The commitment ID in base64url format
  */
 function generateCommitmentId(commitment, fullMessage = null) {
-  switch (commitment.alg) {
+  // Support both 'type' (new) and 'alg' (legacy) field names
+  const algType = commitment.type || commitment.alg
+  switch (algType) {
     case "rsa-pss-sha512":
     case "ecdsa-p256-sha256":
       return rsaid(commitment)
@@ -150,7 +152,7 @@ function generateCommitmentId(commitment, fullMessage = null) {
       return hmacid(fullMessage)
 
     default:
-      throw new Error(`Unsupported algorithm: ${commitment.alg}`)
+      throw new Error(`Unsupported algorithm: ${algType}`)
   }
 }
 
@@ -169,7 +171,8 @@ function extractCommitmentIds(message) {
 
   for (const [id, commitment] of Object.entries(message.commitments)) {
     ids[id] = {
-      alg: commitment.alg,
+      // Support both 'type' (new) and 'alg' (legacy) field names
+      alg: commitment.type || commitment.alg,
       committer: commitment.committer,
       device: commitment["commitment-device"],
     }

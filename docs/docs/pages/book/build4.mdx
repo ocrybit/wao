@@ -1,0 +1,1535 @@
+# L4: Decentralized Data Platform
+
+Build an expert-level device for permanent data storage on Arweave with bundle creation, remote node replication, and distributed queries.
+
+## What You'll Learn
+
+| Module | Purpose |
+|--------|---------|
+| `ar_bundles` | Create and parse ANS-104 data bundles |
+| `ar_wallet` | Manage Arweave wallets and signing |
+| `dev_codec_ans104` | Encode/decode bundle format |
+| `hb_gateway_client` | Interact with Arweave gateways |
+| `hb_store_gateway` | Store data via gateway |
+| `hb_store_remote_node` | Replicate to remote HyperBEAM nodes |
+| `hb_persistent` | Persistent worker processes |
+| `hb_name` | Named process registry |
+| `dev_relay` | Message relay between nodes |
+
+## Prerequisites
+
+Complete [L1](/book/build1), [L2](/book/build2), and [L3](/book/build3) tutorials first.
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Data Platform Device                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │   Upload     │  │   Bundle     │  │    Distributed       │   │
+│  │   Manager    │  │   Creator    │  │    Query Engine      │   │
+│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
+│         │                 │                      │               │
+│  ┌──────▼─────────────────▼──────────────────────▼───────────┐  │
+│  │                  Replication Layer                         │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │  │
+│  │  │ Local Store │  │   Gateway   │  │  Remote Nodes   │    │  │
+│  │  │  (hb_cache) │  │  (Arweave)  │  │  (HyperBEAM)    │    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────┘    │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Part 1: Understanding Arweave Bundles
+
+### ANS-104 Bundle Format
+
+Arweave uses ANS-104 bundles to batch multiple data items into a single transaction:
+
+```erlang
+%% Bundle structure
+#{
+    <<"items">> => [
+        #{
+            <<"id">> => <<"base64-encoded-id">>,
+            <<"signature">> => <<"base64-encoded-sig">>,
+            <<"owner">> => <<"base64-encoded-owner">>,
+            <<"target">> => <<>>,
+            <<"anchor">> => <<"random-anchor">>,
+            <<"tags">> => [
+                #{<<"name">> => <<"Content-Type">>, <<"value">> => <<"text/plain">>}
+            ],
+            <<"data">> => <<"actual-data-bytes">>
+        }
+    ]
+}
+```
+
+### Creating Data Items with ar_bundles
+
+```erlang
+%% Create a signed data item
+create_data_item(Data, Tags, Wallet) ->
+    %% Build unsigned item
+    UnsignedItem = #{
+        <<"data">> => Data,
+        <<"tags">> => format_tags(Tags)
+    },
+    %% Sign with wallet
+    ar_bundles:sign_item(UnsignedItem, Wallet).
+
+format_tags(Tags) when is_map(Tags) ->
+    maps:fold(fun(Name, Value, Acc) ->
+        [#{<<"name">> => Name, <<"value">> => Value} | Acc]
+    end, [], Tags);
+format_tags(Tags) when is_list(Tags) ->
+    Tags.
+```
+
+## Part 2: The Data Platform Device
+
+Create `HyperBEAM/src/dev_dataplatform.erl`:
+
+```erlang
+-module(dev_dataplatform).
+-export([info/3]).
+
+%% Upload operations
+-export([upload/3, upload_bundle/3, upload_status/3]).
+
+%% Query operations
+-export([query/3, query_by_tags/3, query_remote/3]).
+
+%% Replication operations
+-export([replicate/3, sync/3, nodes/3, add_node/3, remove_node/3]).
+
+%% Bundle operations
+-export([create_bundle/3, get_bundle/3, verify_bundle/3]).
+
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+%%% ============================================================
+%%% Device Info
+%%% ============================================================
+
+info(_M1, _M2, _Opts) ->
+    {ok, #{
+        <<"name">> => <<"dataplatform@1.0">>,
+        <<"description">> => <<"Decentralized data storage with Arweave">>,
+        <<"exports">> => [
+            %% Upload
+            <<"upload">>, <<"upload_bundle">>, <<"upload_status">>,
+            %% Query
+            <<"query">>, <<"query_by_tags">>, <<"query_remote">>,
+            %% Replication
+            <<"replicate">>, <<"sync">>, <<"nodes">>,
+            <<"add_node">>, <<"remove_node">>,
+            %% Bundles
+            <<"create_bundle">>, <<"get_bundle">>, <<"verify_bundle">>
+        ]
+    }}.
+
+%%% ============================================================
+%%% Upload Operations
+%%% ============================================================
+
+%% Upload data with automatic bundling
+upload(M1, M2, Opts) ->
+    Data = hb_maps:get(<<"data">>, M2, Opts),
+    Tags = hb_maps:get(<<"tags">>, M2, #{}, Opts),
+    Replicate = hb_maps:get(<<"replicate">>, M2, false, Opts),
+
+    case Data of
+        not_found ->
+            {error, #{<<"error">> => <<"data_required">>}};
+        _ ->
+            %% Create data item
+            Wallet = get_wallet(M1, Opts),
+            Item = create_data_item(Data, Tags, Wallet),
+            ItemId = maps:get(<<"id">>, Item),
+
+            %% Store locally first
+            store_item(M1, ItemId, Item, Opts),
+
+            %% Track upload status
+            update_upload_status(M1, ItemId, <<"pending">>, Opts),
+
+            %% Optionally trigger replication
+            case Replicate of
+                true ->
+                    spawn_replication(M1, ItemId, Item, Opts);
+                _ ->
+                    ok
+            end,
+
+            {ok, #{
+                <<"id">> => ItemId,
+                <<"status">> => <<"uploaded">>,
+                <<"size">> => byte_size(Data)
+            }}
+    end.
+
+%% Upload a pre-created bundle
+upload_bundle(M1, M2, Opts) ->
+    Bundle = hb_maps:get(<<"bundle">>, M2, Opts),
+
+    case Bundle of
+        not_found ->
+            {error, #{<<"error">> => <<"bundle_required">>}};
+        _ ->
+            %% Verify bundle integrity
+            case verify_bundle_internal(Bundle) of
+                {ok, Items} ->
+                    %% Store each item
+                    BundleId = generate_bundle_id(Bundle),
+                    lists:foreach(fun(Item) ->
+                        ItemId = maps:get(<<"id">>, Item),
+                        store_item(M1, ItemId, Item, Opts)
+                    end, Items),
+
+                    %% Store bundle metadata
+                    store_bundle_meta(M1, BundleId, #{
+                        <<"item_count">> => length(Items),
+                        <<"item_ids">> => [maps:get(<<"id">>, I) || I <- Items],
+                        <<"uploaded_at">> => erlang:system_time(second)
+                    }, Opts),
+
+                    {ok, #{
+                        <<"bundle_id">> => BundleId,
+                        <<"items_stored">> => length(Items)
+                    }};
+                {error, Reason} ->
+                    {error, #{<<"error">> => <<"invalid_bundle">>,
+                              <<"reason">> => Reason}}
+            end
+    end.
+
+%% Check upload/replication status
+upload_status(M1, M2, Opts) ->
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
+
+    case ItemId of
+        not_found ->
+            {error, #{<<"error">> => <<"id_required">>}};
+        _ ->
+            Status = get_upload_status(M1, ItemId, Opts),
+            Replicas = get_replica_status(M1, ItemId, Opts),
+
+            {ok, #{
+                <<"id">> => ItemId,
+                <<"local_status">> => Status,
+                <<"replicas">> => Replicas
+            }}
+    end.
+
+%%% ============================================================
+%%% Query Operations
+%%% ============================================================
+
+%% Query local data by ID
+query(M1, M2, Opts) ->
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
+
+    case ItemId of
+        not_found ->
+            {error, #{<<"error">> => <<"id_required">>}};
+        _ ->
+            case get_item(M1, ItemId, Opts) of
+                {ok, Item} ->
+                    {ok, #{
+                        <<"id">> => ItemId,
+                        <<"data">> => maps:get(<<"data">>, Item, <<>>),
+                        <<"tags">> => maps:get(<<"tags">>, Item, []),
+                        <<"owner">> => maps:get(<<"owner">>, Item, <<>>)
+                    }};
+                not_found ->
+                    {error, #{<<"error">> => <<"not_found">>}}
+            end
+    end.
+
+%% Query by tags (local search)
+query_by_tags(M1, M2, Opts) ->
+    Tags = hb_maps:get(<<"tags">>, M2, #{}, Opts),
+    Limit = hb_maps:get(<<"limit">>, M2, 100, Opts),
+
+    %% Get all stored item IDs
+    ItemIds = get_all_item_ids(M1, Opts),
+
+    %% Filter by tags
+    Matches = lists:filtermap(fun(ItemId) ->
+        case get_item(M1, ItemId, Opts) of
+            {ok, Item} ->
+                ItemTags = maps:get(<<"tags">>, Item, []),
+                case matches_tags(ItemTags, Tags) of
+                    true -> {true, #{
+                        <<"id">> => ItemId,
+                        <<"tags">> => ItemTags
+                    }};
+                    false -> false
+                end;
+            _ ->
+                false
+        end
+    end, ItemIds),
+
+    %% Apply limit
+    Limited = lists:sublist(Matches, Limit),
+
+    {ok, #{
+        <<"results">> => Limited,
+        <<"total">> => length(Matches),
+        <<"returned">> => length(Limited)
+    }}.
+
+%% Query remote nodes for data
+query_remote(M1, M2, Opts) ->
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
+
+    case ItemId of
+        not_found ->
+            {error, #{<<"error">> => <<"id_required">>}};
+        _ ->
+            %% First check local
+            case get_item(M1, ItemId, Opts) of
+                {ok, Item} ->
+                    {ok, #{
+                        <<"id">> => ItemId,
+                        <<"source">> => <<"local">>,
+                        <<"data">> => maps:get(<<"data">>, Item)
+                    }};
+                not_found ->
+                    %% Query remote nodes
+                    Nodes = get_remote_nodes(M1, Opts),
+                    query_nodes(ItemId, Nodes, Opts)
+            end
+    end.
+
+%%% ============================================================
+%%% Replication Operations
+%%% ============================================================
+
+%% Replicate item to configured nodes
+replicate(M1, M2, Opts) ->
+    ItemId = hb_maps:get(<<"id">>, M2, Opts),
+    TargetNodes = hb_maps:get(<<"nodes">>, M2, all, Opts),
+
+    case ItemId of
+        not_found ->
+            {error, #{<<"error">> => <<"id_required">>}};
+        _ ->
+            case get_item(M1, ItemId, Opts) of
+                {ok, Item} ->
+                    Nodes = case TargetNodes of
+                        all -> get_remote_nodes(M1, Opts);
+                        List when is_list(List) -> List;
+                        _ -> get_remote_nodes(M1, Opts)
+                    end,
+
+                    %% Replicate to each node
+                    Results = lists:map(fun(Node) ->
+                        case replicate_to_node(Node, ItemId, Item, Opts) of
+                            ok ->
+                                update_replica_status(M1, ItemId, Node,
+                                    <<"synced">>, Opts),
+                                #{<<"node">> => Node, <<"status">> => <<"ok">>};
+                            {error, Reason} ->
+                                update_replica_status(M1, ItemId, Node,
+                                    <<"failed">>, Opts),
+                                #{<<"node">> => Node, <<"status">> => <<"failed">>,
+                                  <<"reason">> => Reason}
+                        end
+                    end, Nodes),
+
+                    {ok, #{
+                        <<"id">> => ItemId,
+                        <<"replicated_to">> => Results
+                    }};
+                not_found ->
+                    {error, #{<<"error">> => <<"item_not_found">>}}
+            end
+    end.
+
+%% Sync all data with remote nodes
+sync(M1, M2, Opts) ->
+    Direction = hb_maps:get(<<"direction">>, M2, <<"both">>, Opts),
+
+    Nodes = get_remote_nodes(M1, Opts),
+    LocalIds = get_all_item_ids(M1, Opts),
+
+    Results = lists:map(fun(Node) ->
+        %% Get remote node's item list
+        RemoteIds = get_remote_item_ids(Node, Opts),
+
+        %% Calculate differences
+        ToUpload = LocalIds -- RemoteIds,
+        ToDownload = RemoteIds -- LocalIds,
+
+        %% Perform sync based on direction
+        Uploaded = case Direction of
+            <<"push">> -> sync_push(M1, Node, ToUpload, Opts);
+            <<"pull">> -> [];
+            <<"both">> -> sync_push(M1, Node, ToUpload, Opts)
+        end,
+
+        Downloaded = case Direction of
+            <<"push">> -> [];
+            <<"pull">> -> sync_pull(M1, Node, ToDownload, Opts);
+            <<"both">> -> sync_pull(M1, Node, ToDownload, Opts)
+        end,
+
+        #{
+            <<"node">> => Node,
+            <<"uploaded">> => length(Uploaded),
+            <<"downloaded">> => length(Downloaded)
+        }
+    end, Nodes),
+
+    {ok, #{<<"sync_results">> => Results}}.
+
+%% List configured remote nodes
+nodes(M1, _M2, Opts) ->
+    Nodes = get_remote_nodes(M1, Opts),
+    NodeStatus = lists:map(fun(Node) ->
+        Status = check_node_status(Node, Opts),
+        #{<<"url">> => Node, <<"status">> => Status}
+    end, Nodes),
+
+    {ok, #{<<"nodes">> => NodeStatus}}.
+
+%% Add a remote node
+add_node(M1, M2, Opts) ->
+    NodeUrl = hb_maps:get(<<"url">>, M2, Opts),
+
+    case NodeUrl of
+        not_found ->
+            {error, #{<<"error">> => <<"url_required">>}};
+        _ ->
+            %% Validate node is reachable
+            case check_node_status(NodeUrl, Opts) of
+                <<"online">> ->
+                    Nodes = get_remote_nodes(M1, Opts),
+                    case lists:member(NodeUrl, Nodes) of
+                        true ->
+                            {ok, #{<<"message">> => <<"node_already_exists">>}};
+                        false ->
+                            NewNodes = [NodeUrl | Nodes],
+                            save_remote_nodes(M1, NewNodes, Opts),
+                            {ok, #{
+                                <<"message">> => <<"node_added">>,
+                                <<"url">> => NodeUrl
+                            }}
+                    end;
+                Status ->
+                    {error, #{
+                        <<"error">> => <<"node_unreachable">>,
+                        <<"status">> => Status
+                    }}
+            end
+    end.
+
+%% Remove a remote node
+remove_node(M1, M2, Opts) ->
+    NodeUrl = hb_maps:get(<<"url">>, M2, Opts),
+
+    case NodeUrl of
+        not_found ->
+            {error, #{<<"error">> => <<"url_required">>}};
+        _ ->
+            Nodes = get_remote_nodes(M1, Opts),
+            NewNodes = lists:delete(NodeUrl, Nodes),
+            save_remote_nodes(M1, NewNodes, Opts),
+            {ok, #{
+                <<"message">> => <<"node_removed">>,
+                <<"url">> => NodeUrl
+            }}
+    end.
+
+%%% ============================================================
+%%% Bundle Operations
+%%% ============================================================
+
+%% Create a bundle from multiple items
+create_bundle(M1, M2, Opts) ->
+    Items = hb_maps:get(<<"items">>, M2, Opts),
+
+    case Items of
+        not_found ->
+            {error, #{<<"error">> => <<"items_required">>}};
+        _ when is_list(Items) ->
+            Wallet = get_wallet(M1, Opts),
+
+            %% Create signed data items
+            SignedItems = lists:map(fun(ItemSpec) ->
+                Data = maps:get(<<"data">>, ItemSpec, <<>>),
+                Tags = maps:get(<<"tags">>, ItemSpec, #{}),
+                create_data_item(Data, Tags, Wallet)
+            end, Items),
+
+            %% Create bundle
+            Bundle = #{
+                <<"items">> => SignedItems,
+                <<"created_at">> => erlang:system_time(second)
+            },
+
+            BundleId = generate_bundle_id(Bundle),
+
+            %% Store bundle
+            store_bundle(M1, BundleId, Bundle, Opts),
+
+            {ok, #{
+                <<"bundle_id">> => BundleId,
+                <<"item_count">> => length(SignedItems),
+                <<"item_ids">> => [maps:get(<<"id">>, I) || I <- SignedItems]
+            }};
+        _ ->
+            {error, #{<<"error">> => <<"items_must_be_list">>}}
+    end.
+
+%% Get a bundle by ID
+get_bundle(M1, M2, Opts) ->
+    BundleId = hb_maps:get(<<"bundle_id">>, M2, Opts),
+
+    case BundleId of
+        not_found ->
+            {error, #{<<"error">> => <<"bundle_id_required">>}};
+        _ ->
+            case get_stored_bundle(M1, BundleId, Opts) of
+                {ok, Bundle} ->
+                    {ok, #{
+                        <<"bundle_id">> => BundleId,
+                        <<"bundle">> => Bundle
+                    }};
+                not_found ->
+                    {error, #{<<"error">> => <<"bundle_not_found">>}}
+            end
+    end.
+
+%% Verify bundle signatures
+verify_bundle(M1, M2, Opts) ->
+    BundleId = hb_maps:get(<<"bundle_id">>, M2, Opts),
+    Bundle = hb_maps:get(<<"bundle">>, M2, Opts),
+
+    %% Get bundle from ID or use provided
+    ActualBundle = case {BundleId, Bundle} of
+        {not_found, not_found} ->
+            {error, <<"bundle_or_id_required">>};
+        {_, B} when B =/= not_found ->
+            {ok, B};
+        {Id, _} ->
+            get_stored_bundle(M1, Id, Opts)
+    end,
+
+    case ActualBundle of
+        {ok, B} ->
+            case verify_bundle_internal(B) of
+                {ok, Items} ->
+                    Verifications = lists:map(fun(Item) ->
+                        #{
+                            <<"id">> => maps:get(<<"id">>, Item),
+                            <<"valid">> => true
+                        }
+                    end, Items),
+                    {ok, #{
+                        <<"valid">> => true,
+                        <<"items">> => Verifications
+                    }};
+                {error, Reason} ->
+                    {ok, #{
+                        <<"valid">> => false,
+                        <<"reason">> => Reason
+                    }}
+            end;
+        {error, Reason} ->
+            {error, #{<<"error">> => Reason}}
+    end.
+
+%%% ============================================================
+%%% Internal Functions - Storage
+%%% ============================================================
+
+get_wallet(M1, Opts) ->
+    %% Get wallet from device state or generate new
+    case hb_private:get(M1, <<"wallet">>, Opts) of
+        {ok, Wallet} -> Wallet;
+        _ ->
+            %% Check for configured wallet file
+            case maps:get(wallet_file, Opts, undefined) of
+                undefined ->
+                    %% Generate ephemeral wallet
+                    ar_wallet:new();
+                File ->
+                    ar_wallet:load(File)
+            end
+    end.
+
+create_data_item(Data, Tags, Wallet) ->
+    %% Build item structure
+    Anchor = crypto:strong_rand_bytes(32),
+
+    UnsignedItem = #{
+        <<"data">> => Data,
+        <<"tags">> => format_tags(Tags),
+        <<"anchor">> => base64:encode(Anchor),
+        <<"target">> => <<>>
+    },
+
+    %% Sign the item
+    sign_data_item(UnsignedItem, Wallet).
+
+sign_data_item(Item, Wallet) ->
+    %% Create signature
+    DataToSign = serialize_for_signing(Item),
+    Signature = ar_wallet:sign(Wallet, DataToSign),
+    Owner = ar_wallet:get_public_key(Wallet),
+
+    %% Generate ID from signature
+    Id = crypto:hash(sha256, Signature),
+
+    Item#{
+        <<"id">> => base64:encode(Id),
+        <<"signature">> => base64:encode(Signature),
+        <<"owner">> => base64:encode(Owner)
+    }.
+
+serialize_for_signing(Item) ->
+    %% Deep tag encoding for signing
+    Data = maps:get(<<"data">>, Item, <<>>),
+    Tags = maps:get(<<"tags">>, Item, []),
+    Anchor = maps:get(<<"anchor">>, Item, <<>>),
+    Target = maps:get(<<"target">>, Item, <<>>),
+
+    %% Concatenate fields for signing
+    TagsEncoded = encode_tags_for_signing(Tags),
+    <<Data/binary, TagsEncoded/binary, Anchor/binary, Target/binary>>.
+
+encode_tags_for_signing(Tags) ->
+    lists:foldl(fun(Tag, Acc) ->
+        Name = maps:get(<<"name">>, Tag, <<>>),
+        Value = maps:get(<<"value">>, Tag, <<>>),
+        <<Acc/binary, Name/binary, Value/binary>>
+    end, <<>>, Tags).
+
+format_tags(Tags) when is_map(Tags) ->
+    maps:fold(fun(Name, Value, Acc) ->
+        [#{<<"name">> => to_binary(Name),
+           <<"value">> => to_binary(Value)} | Acc]
+    end, [], Tags);
+format_tags(Tags) when is_list(Tags) ->
+    Tags.
+
+to_binary(V) when is_binary(V) -> V;
+to_binary(V) when is_list(V) -> list_to_binary(V);
+to_binary(V) when is_atom(V) -> atom_to_binary(V, utf8);
+to_binary(V) when is_integer(V) -> integer_to_binary(V).
+
+store_item(M1, ItemId, Item, Opts) ->
+    %% Store in hb_cache with content addressing
+    CacheKey = <<"item:", ItemId/binary>>,
+    hb_cache:write(M1, CacheKey, Item, Opts).
+
+get_item(M1, ItemId, Opts) ->
+    CacheKey = <<"item:", ItemId/binary>>,
+    case hb_cache:read(M1, CacheKey, Opts) of
+        {ok, Item} -> {ok, Item};
+        _ -> not_found
+    end.
+
+get_all_item_ids(M1, Opts) ->
+    case hb_private:get(M1, <<"item_index">>, Opts) of
+        {ok, Index} -> Index;
+        _ -> []
+    end.
+
+store_bundle(M1, BundleId, Bundle, Opts) ->
+    CacheKey = <<"bundle:", BundleId/binary>>,
+    hb_cache:write(M1, CacheKey, Bundle, Opts),
+
+    %% Update bundle index
+    BundleIndex = case hb_private:get(M1, <<"bundle_index">>, Opts) of
+        {ok, Existing} -> Existing;
+        _ -> []
+    end,
+    hb_private:set(M1, <<"bundle_index">>, [BundleId | BundleIndex], Opts).
+
+store_bundle_meta(M1, BundleId, Meta, Opts) ->
+    MetaKey = <<"bundle_meta:", BundleId/binary>>,
+    hb_cache:write(M1, MetaKey, Meta, Opts).
+
+get_stored_bundle(M1, BundleId, Opts) ->
+    CacheKey = <<"bundle:", BundleId/binary>>,
+    hb_cache:read(M1, CacheKey, Opts).
+
+generate_bundle_id(Bundle) ->
+    %% Hash the bundle contents for ID
+    Serialized = term_to_binary(Bundle),
+    Hash = crypto:hash(sha256, Serialized),
+    base64:encode(Hash).
+
+verify_bundle_internal(Bundle) ->
+    Items = maps:get(<<"items">>, Bundle, []),
+    case Items of
+        [] -> {error, <<"empty_bundle">>};
+        _ ->
+            %% Verify each item signature
+            Results = lists:map(fun(Item) ->
+                verify_item_signature(Item)
+            end, Items),
+
+            case lists:all(fun(R) -> R =:= true end, Results) of
+                true -> {ok, Items};
+                false -> {error, <<"invalid_signatures">>}
+            end
+    end.
+
+verify_item_signature(Item) ->
+    %% Simplified verification
+    case maps:get(<<"signature">>, Item, undefined) of
+        undefined -> false;
+        _ -> true  % In production, verify cryptographically
+    end.
+
+%%% ============================================================
+%%% Internal Functions - Replication
+%%% ============================================================
+
+get_remote_nodes(M1, Opts) ->
+    case hb_private:get(M1, <<"remote_nodes">>, Opts) of
+        {ok, Nodes} -> Nodes;
+        _ -> []
+    end.
+
+save_remote_nodes(M1, Nodes, Opts) ->
+    hb_private:set(M1, <<"remote_nodes">>, Nodes, Opts).
+
+update_upload_status(M1, ItemId, Status, Opts) ->
+    StatusKey = <<"upload_status:", ItemId/binary>>,
+    hb_private:set(M1, StatusKey, #{
+        <<"status">> => Status,
+        <<"updated_at">> => erlang:system_time(second)
+    }, Opts).
+
+get_upload_status(M1, ItemId, Opts) ->
+    StatusKey = <<"upload_status:", ItemId/binary>>,
+    case hb_private:get(M1, StatusKey, Opts) of
+        {ok, Status} -> Status;
+        _ -> #{<<"status">> => <<"unknown">>}
+    end.
+
+update_replica_status(M1, ItemId, Node, Status, Opts) ->
+    ReplicaKey = <<"replica:", ItemId/binary, ":", Node/binary>>,
+    hb_private:set(M1, ReplicaKey, #{
+        <<"node">> => Node,
+        <<"status">> => Status,
+        <<"updated_at">> => erlang:system_time(second)
+    }, Opts).
+
+get_replica_status(M1, ItemId, Opts) ->
+    Nodes = get_remote_nodes(M1, Opts),
+    lists:filtermap(fun(Node) ->
+        ReplicaKey = <<"replica:", ItemId/binary, ":", Node/binary>>,
+        case hb_private:get(M1, ReplicaKey, Opts) of
+            {ok, Status} -> {true, Status};
+            _ -> false
+        end
+    end, Nodes).
+
+spawn_replication(M1, ItemId, Item, Opts) ->
+    %% Async replication to all nodes
+    spawn(fun() ->
+        Nodes = get_remote_nodes(M1, Opts),
+        lists:foreach(fun(Node) ->
+            case replicate_to_node(Node, ItemId, Item, Opts) of
+                ok ->
+                    update_replica_status(M1, ItemId, Node, <<"synced">>, Opts);
+                {error, _} ->
+                    update_replica_status(M1, ItemId, Node, <<"failed">>, Opts)
+            end
+        end, Nodes)
+    end).
+
+replicate_to_node(Node, _ItemId, Item, Opts) ->
+    %% Use hb_store_remote_node pattern
+    Timeout = maps:get(timeout, Opts, 30000),
+
+    try
+        %% HTTP POST to remote node
+        Url = <<Node/binary, "/~dataplatform@1.0/upload">>,
+        Body = jiffy:encode(#{<<"data">> => Item}),
+
+        case httpc:request(post,
+            {binary_to_list(Url), [], "application/json", Body},
+            [{timeout, Timeout}], []) of
+            {ok, {{_, 200, _}, _, _}} -> ok;
+            {ok, {{_, Code, _}, _, _}} -> {error, Code};
+            {error, Reason} -> {error, Reason}
+        end
+    catch
+        _:E -> {error, E}
+    end.
+
+check_node_status(Node, Opts) ->
+    Timeout = maps:get(timeout, Opts, 5000),
+    try
+        Url = <<Node/binary, "/~meta@1.0/info">>,
+        case httpc:request(get,
+            {binary_to_list(Url), []},
+            [{timeout, Timeout}], []) of
+            {ok, {{_, 200, _}, _, _}} -> <<"online">>;
+            _ -> <<"offline">>
+        end
+    catch
+        _:_ -> <<"unreachable">>
+    end.
+
+query_nodes(ItemId, Nodes, Opts) ->
+    %% Query each node in parallel
+    Parent = self(),
+    Refs = lists:map(fun(Node) ->
+        Ref = make_ref(),
+        spawn(fun() ->
+            Result = query_single_node(Node, ItemId, Opts),
+            Parent ! {Ref, Result}
+        end),
+        {Ref, Node}
+    end, Nodes),
+
+    %% Collect results with timeout
+    Timeout = maps:get(timeout, Opts, 10000),
+    collect_query_results(Refs, Timeout, ItemId).
+
+query_single_node(Node, ItemId, Opts) ->
+    Timeout = maps:get(timeout, Opts, 10000),
+    try
+        Url = <<Node/binary, "/~dataplatform@1.0/query?id=", ItemId/binary>>,
+        case httpc:request(get,
+            {binary_to_list(Url), []},
+            [{timeout, Timeout}], []) of
+            {ok, {{_, 200, _}, _, Body}} ->
+                {ok, Node, jiffy:decode(Body, [return_maps])};
+            _ ->
+                {error, not_found}
+        end
+    catch
+        _:_ -> {error, unreachable}
+    end.
+
+collect_query_results([], _Timeout, ItemId) ->
+    {error, #{<<"error">> => <<"not_found">>, <<"id">> => ItemId}};
+collect_query_results([{Ref, Node} | Rest], Timeout, ItemId) ->
+    receive
+        {Ref, {ok, _, Data}} ->
+            {ok, #{
+                <<"id">> => ItemId,
+                <<"source">> => Node,
+                <<"data">> => Data
+            }}
+    after Timeout ->
+        collect_query_results(Rest, Timeout, ItemId)
+    end.
+
+get_remote_item_ids(Node, Opts) ->
+    Timeout = maps:get(timeout, Opts, 10000),
+    try
+        Url = <<Node/binary, "/~dataplatform@1.0/list_ids">>,
+        case httpc:request(get,
+            {binary_to_list(Url), []},
+            [{timeout, Timeout}], []) of
+            {ok, {{_, 200, _}, _, Body}} ->
+                Result = jiffy:decode(Body, [return_maps]),
+                maps:get(<<"ids">>, Result, []);
+            _ ->
+                []
+        end
+    catch
+        _:_ -> []
+    end.
+
+sync_push(M1, Node, ItemIds, Opts) ->
+    lists:filtermap(fun(ItemId) ->
+        case get_item(M1, ItemId, Opts) of
+            {ok, Item} ->
+                case replicate_to_node(Node, ItemId, Item, Opts) of
+                    ok -> {true, ItemId};
+                    _ -> false
+                end;
+            _ ->
+                false
+        end
+    end, ItemIds).
+
+sync_pull(M1, Node, ItemIds, Opts) ->
+    lists:filtermap(fun(ItemId) ->
+        case query_single_node(Node, ItemId, Opts) of
+            {ok, _, Data} ->
+                store_item(M1, ItemId, Data, Opts),
+                {true, ItemId};
+            _ ->
+                false
+        end
+    end, ItemIds).
+
+matches_tags(ItemTags, QueryTags) when is_map(QueryTags) ->
+    maps:fold(fun(Name, Value, Acc) ->
+        Acc andalso has_tag(ItemTags, Name, Value)
+    end, true, QueryTags);
+matches_tags(_ItemTags, _) ->
+    true.
+
+has_tag(Tags, Name, Value) ->
+    lists:any(fun(Tag) ->
+        maps:get(<<"name">>, Tag, <<>>) =:= Name andalso
+        maps:get(<<"value">>, Tag, <<>>) =:= Value
+    end, Tags).
+
+%%% ============================================================
+%%% Tests
+%%% ============================================================
+
+upload_test() ->
+    M1 = #{<<"device">> => <<"dataplatform@1.0">>},
+    M2 = #{
+        <<"path">> => <<"upload">>,
+        <<"data">> => <<"Hello Arweave">>,
+        <<"tags">> => #{<<"Content-Type">> => <<"text/plain">>}
+    },
+    {ok, Result} = hb_ao:resolve(M1, M2, #{}),
+    ?assertMatch(#{<<"id">> := _}, Result).
+
+create_bundle_test() ->
+    M1 = #{<<"device">> => <<"dataplatform@1.0">>},
+    M2 = #{
+        <<"path">> => <<"create_bundle">>,
+        <<"items">> => [
+            #{<<"data">> => <<"Item 1">>, <<"tags">> => #{}},
+            #{<<"data">> => <<"Item 2">>, <<"tags">> => #{}}
+        ]
+    },
+    {ok, Result} = hb_ao:resolve(M1, M2, #{}),
+    ?assertEqual(2, maps:get(<<"item_count">>, Result)).
+```
+
+## Part 3: Remote Node Store Backend
+
+Create a custom store backend for replicating to remote HyperBEAM nodes.
+
+Add to `HyperBEAM/src/dev_dataplatform_store.erl`:
+
+```erlang
+-module(dev_dataplatform_store).
+-behavior(hb_store).
+
+-export([scope/1, type/1]).
+-export([make_group/2, make_link/2]).
+-export([read/2, write/3, list/2, resolve/2]).
+
+%% Store pointing to remote HyperBEAM nodes
+
+scope(Opts) ->
+    %% Return scope identifier
+    Node = maps:get(node, Opts, <<"unknown">>),
+    {remote_platform, Node}.
+
+type(_Opts) ->
+    remote_platform.
+
+make_group(Path, Opts) ->
+    %% Groups are directories on remote
+    Node = maps:get(node, Opts),
+    #{type => group, node => Node, path => Path}.
+
+make_link(Path, Opts) ->
+    Node = maps:get(node, Opts),
+    #{type => link, node => Node, path => Path}.
+
+read(Key, Opts) ->
+    Node = maps:get(node, Opts),
+    Timeout = maps:get(timeout, Opts, 10000),
+
+    Url = build_url(Node, <<"read">>, Key),
+    case http_get(Url, Timeout) of
+        {ok, Data} -> {ok, Data};
+        {error, _} -> not_found
+    end.
+
+write(Key, Value, Opts) ->
+    Node = maps:get(node, Opts),
+    Timeout = maps:get(timeout, Opts, 10000),
+
+    Url = build_url(Node, <<"write">>, Key),
+    case http_post(Url, Value, Timeout) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+list(Prefix, Opts) ->
+    Node = maps:get(node, Opts),
+    Timeout = maps:get(timeout, Opts, 10000),
+
+    Url = build_url(Node, <<"list">>, Prefix),
+    case http_get(Url, Timeout) of
+        {ok, Data} ->
+            {ok, jiffy:decode(Data, [return_maps])};
+        {error, _} ->
+            {ok, []}
+    end.
+
+resolve(Key, Opts) ->
+    %% Try to resolve a link
+    case read(Key, Opts) of
+        {ok, Data} when is_map(Data) ->
+            case maps:get(<<"type">>, Data, undefined) of
+                <<"link">> ->
+                    Target = maps:get(<<"target">>, Data),
+                    resolve(Target, Opts);
+                _ ->
+                    {ok, Data}
+            end;
+        {ok, Data} ->
+            {ok, Data};
+        not_found ->
+            not_found
+    end.
+
+%% Internal HTTP helpers
+
+build_url(Node, Op, Key) ->
+    EncodedKey = http_uri:encode(binary_to_list(Key)),
+    <<Node/binary, "/~dataplatform@1.0/store/",
+      Op/binary, "?key=", (list_to_binary(EncodedKey))/binary>>.
+
+http_get(Url, Timeout) ->
+    case httpc:request(get,
+        {binary_to_list(Url), []},
+        [{timeout, Timeout}], [{body_format, binary}]) of
+        {ok, {{_, 200, _}, _, Body}} -> {ok, Body};
+        {ok, {{_, Code, _}, _, _}} -> {error, Code};
+        {error, Reason} -> {error, Reason}
+    end.
+
+http_post(Url, Body, Timeout) ->
+    case httpc:request(post,
+        {binary_to_list(Url), [], "application/octet-stream", Body},
+        [{timeout, Timeout}], []) of
+        {ok, {{_, 200, _}, _, _}} -> ok;
+        {ok, {{_, Code, _}, _, _}} -> {error, Code};
+        {error, Reason} -> {error, Reason}
+    end.
+```
+
+## Part 4: Persistent Background Worker
+
+For continuous replication, create a persistent worker process.
+
+Add to `HyperBEAM/src/dev_dataplatform_worker.erl`:
+
+```erlang
+-module(dev_dataplatform_worker).
+-behaviour(gen_server).
+
+%% API
+-export([start_link/1, stop/1]).
+-export([trigger_sync/1, get_status/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+-record(state, {
+    device_msg,
+    opts,
+    sync_interval,
+    last_sync,
+    status
+}).
+
+%% Start a persistent worker for a device instance
+start_link(Opts) ->
+    Name = maps:get(name, Opts, ?MODULE),
+    gen_server:start_link({local, Name}, ?MODULE, Opts, []).
+
+stop(Name) ->
+    gen_server:stop(Name).
+
+trigger_sync(Name) ->
+    gen_server:cast(Name, sync).
+
+get_status(Name) ->
+    gen_server:call(Name, status).
+
+%% gen_server callbacks
+
+init(Opts) ->
+    DeviceMsg = maps:get(device_msg, Opts, #{}),
+    SyncInterval = maps:get(sync_interval, Opts, 60000), % 1 minute default
+
+    %% Register with hb_name for discovery
+    hb_name:register(self(), {dataplatform_worker, DeviceMsg}),
+
+    %% Schedule first sync
+    erlang:send_after(SyncInterval, self(), sync_tick),
+
+    {ok, #state{
+        device_msg = DeviceMsg,
+        opts = Opts,
+        sync_interval = SyncInterval,
+        last_sync = undefined,
+        status = idle
+    }}.
+
+handle_call(status, _From, State) ->
+    Status = #{
+        last_sync => State#state.last_sync,
+        status => State#state.status,
+        sync_interval => State#state.sync_interval
+    },
+    {reply, Status, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, ok, State}.
+
+handle_cast(sync, State) ->
+    NewState = do_sync(State),
+    {noreply, NewState};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(sync_tick, State) ->
+    %% Perform periodic sync
+    NewState = do_sync(State),
+
+    %% Schedule next sync
+    erlang:send_after(State#state.sync_interval, self(), sync_tick),
+
+    {noreply, NewState};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% Internal
+
+do_sync(State) ->
+    State1 = State#state{status = syncing},
+
+    try
+        M1 = State#state.device_msg,
+        M2 = #{<<"path">> => <<"sync">>, <<"direction">> => <<"both">>},
+        Opts = State#state.opts,
+
+        case dev_dataplatform:sync(M1, M2, Opts) of
+            {ok, _Result} ->
+                State1#state{
+                    last_sync = erlang:system_time(second),
+                    status = idle
+                };
+            {error, _} ->
+                State1#state{status = error}
+        end
+    catch
+        _:_ ->
+            State1#state{status = error}
+    end.
+```
+
+## Part 5: Register the Device
+
+Add to `HyperBEAM/src/hb_opts.erl`:
+
+```erlang
+preloaded_devices => [
+    ...
+    #{<<"name">> => <<"dataplatform@1.0">>, <<"module">> => dev_dataplatform},
+    ...
+],
+```
+
+## Part 6: WAO SDK Integration
+
+### Basic Usage
+
+```javascript
+import { HB } from "wao/hb"
+
+const hb = await new HB().init()
+
+// Upload data
+const upload = await hb.send({
+  path: "/~dataplatform@1.0/upload",
+  data: "Hello permanent storage!",
+  tags: {
+    "Content-Type": "text/plain",
+    "App-Name": "MyDapp"
+  }
+})
+const itemId = upload.headers.get("id")
+console.log("Uploaded:", itemId)
+
+// Query data
+const item = await hb.send({
+  path: "/~dataplatform@1.0/query",
+  id: itemId
+})
+console.log("Data:", item.headers.get("data"))
+```
+
+### Bundle Operations
+
+```javascript
+// Create a bundle with multiple items
+const bundle = await hb.send({
+  path: "/~dataplatform@1.0/create_bundle",
+  items: [
+    { data: "Document 1", tags: { type: "doc" } },
+    { data: "Document 2", tags: { type: "doc" } },
+    { data: "Index", tags: { type: "index" } }
+  ]
+})
+
+console.log("Bundle ID:", bundle.headers.get("bundle_id"))
+console.log("Item count:", bundle.headers.get("item_count"))
+
+// Verify bundle
+const verified = await hb.send({
+  path: "/~dataplatform@1.0/verify_bundle",
+  bundle_id: bundle.headers.get("bundle_id")
+})
+console.log("Valid:", verified.headers.get("valid"))
+```
+
+### Node Management
+
+```javascript
+// Add remote nodes for replication
+await hb.send({
+  path: "/~dataplatform@1.0/add_node",
+  url: "https://node1.hyperbeam.example"
+})
+
+await hb.send({
+  path: "/~dataplatform@1.0/add_node",
+  url: "https://node2.hyperbeam.example"
+})
+
+// Check node status
+const nodes = await hb.send({
+  path: "/~dataplatform@1.0/nodes"
+})
+console.log("Nodes:", JSON.parse(nodes.headers.get("nodes")))
+
+// Replicate specific item
+await hb.send({
+  path: "/~dataplatform@1.0/replicate",
+  id: itemId
+})
+```
+
+### Distributed Queries
+
+```javascript
+// Query across all nodes
+const result = await hb.send({
+  path: "/~dataplatform@1.0/query_remote",
+  id: itemId
+})
+
+console.log("Source:", result.headers.get("source"))
+console.log("Data:", result.headers.get("data"))
+
+// Query by tags
+const docs = await hb.send({
+  path: "/~dataplatform@1.0/query_by_tags",
+  tags: { type: "doc" },
+  limit: 10
+})
+
+console.log("Found:", JSON.parse(docs.headers.get("results")))
+```
+
+### Full Sync
+
+```javascript
+// Sync all data with remote nodes
+const sync = await hb.send({
+  path: "/~dataplatform@1.0/sync",
+  direction: "both"  // or "push" / "pull"
+})
+
+const results = JSON.parse(sync.headers.get("sync_results"))
+results.forEach(r => {
+  console.log(`${r.node}: uploaded=${r.uploaded}, downloaded=${r.downloaded}`)
+})
+```
+
+## Part 7: Complete Test Suite
+
+```javascript
+import { describe, it } from "node:test"
+import assert from "node:assert"
+import { HB } from "wao/hb"
+
+describe("Data Platform Device", () => {
+  let hb
+
+  before(async () => {
+    hb = await new HB().init()
+  })
+
+  describe("Upload Operations", () => {
+    it("should upload data and return ID", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/upload",
+        data: "Test data",
+        tags: { "Content-Type": "text/plain" }
+      })
+
+      assert.ok(res.headers.get("id"))
+      assert.equal(res.headers.get("status"), "uploaded")
+    })
+
+    it("should require data parameter", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/upload"
+      })
+
+      assert.equal(res.headers.get("error"), "data_required")
+    })
+  })
+
+  describe("Query Operations", () => {
+    let uploadedId
+
+    before(async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/upload",
+        data: "Query test data",
+        tags: { category: "test" }
+      })
+      uploadedId = res.headers.get("id")
+    })
+
+    it("should query by ID", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/query",
+        id: uploadedId
+      })
+
+      assert.equal(res.headers.get("id"), uploadedId)
+      assert.ok(res.headers.get("data"))
+    })
+
+    it("should query by tags", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/query_by_tags",
+        tags: { category: "test" }
+      })
+
+      const results = JSON.parse(res.headers.get("results"))
+      assert.ok(results.length > 0)
+    })
+  })
+
+  describe("Bundle Operations", () => {
+    it("should create and verify bundle", async () => {
+      const bundle = await hb.send({
+        path: "/~dataplatform@1.0/create_bundle",
+        items: [
+          { data: "Item A", tags: {} },
+          { data: "Item B", tags: {} }
+        ]
+      })
+
+      assert.ok(bundle.headers.get("bundle_id"))
+      assert.equal(bundle.headers.get("item_count"), "2")
+
+      const verify = await hb.send({
+        path: "/~dataplatform@1.0/verify_bundle",
+        bundle_id: bundle.headers.get("bundle_id")
+      })
+
+      assert.equal(verify.headers.get("valid"), "true")
+    })
+  })
+
+  describe("Node Management", () => {
+    it("should list nodes (initially empty)", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/nodes"
+      })
+
+      const nodes = JSON.parse(res.headers.get("nodes"))
+      assert.ok(Array.isArray(nodes))
+    })
+
+    it("should reject unreachable nodes", async () => {
+      const res = await hb.send({
+        path: "/~dataplatform@1.0/add_node",
+        url: "https://nonexistent.invalid"
+      })
+
+      assert.equal(res.headers.get("error"), "node_unreachable")
+    })
+  })
+
+  describe("Replication", () => {
+    it("should check upload status", async () => {
+      const upload = await hb.send({
+        path: "/~dataplatform@1.0/upload",
+        data: "Replication test"
+      })
+
+      const status = await hb.send({
+        path: "/~dataplatform@1.0/upload_status",
+        id: upload.headers.get("id")
+      })
+
+      assert.ok(status.headers.get("local_status"))
+    })
+  })
+})
+```
+
+## Erlang Unit Tests
+
+Add tests to your module using `hb_ao:resolve` with the `{as, Module, Msg}` pattern:
+
+```erlang
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test device info via hb_ao:resolve
+info_test() ->
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_dataplatform, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
+    ?assertEqual(<<"dataplatform">>, maps:get(<<"name">>, Info)).
+
+%% Test upload via hb_ao:resolve
+upload_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    {ok, Result} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{
+            <<"path">> => <<"upload">>,
+            <<"data">> => <<"Hello Arweave">>,
+            <<"tags">> => #{<<"Content-Type">> => <<"text/plain">>}
+        },
+        #{}
+    ),
+    ?assertMatch(#{<<"id">> := _, <<"status">> := <<"uploaded">>}, Result).
+
+%% Test query via hb_ao:resolve
+query_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    %% First upload
+    {ok, UploadRes} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{<<"path">> => <<"upload">>, <<"data">> => <<"Test data">>},
+        #{}
+    ),
+    ItemId = maps:get(<<"id">>, UploadRes),
+
+    %% Then query
+    {ok, QueryRes} = hb_ao:resolve(
+        {as, dev_dataplatform, UploadRes},
+        #{<<"path">> => <<"query">>, <<"id">> => ItemId},
+        #{}
+    ),
+    ?assertEqual(ItemId, maps:get(<<"id">>, QueryRes)),
+    ?assertEqual(<<"Test data">>, maps:get(<<"data">>, QueryRes)).
+
+%% Test bundle creation via hb_ao:resolve
+create_bundle_test() ->
+    application:ensure_all_started(hb),
+    M1 = #{},
+    {ok, Result} = hb_ao:resolve(
+        {as, dev_dataplatform, M1},
+        #{
+            <<"path">> => <<"create_bundle">>,
+            <<"items">> => [
+                #{<<"data">> => <<"Item 1">>, <<"tags">> => #{}},
+                #{<<"data">> => <<"Item 2">>, <<"tags">> => #{}}
+            ]
+        },
+        #{}
+    ),
+    ?assertEqual(2, maps:get(<<"item_count">>, Result)),
+    ?assertMatch(#{<<"bundle_id">> := _}, Result).
+
+-endif.
+```
+
+---
+
+## Key Concepts Covered
+
+### 1. ANS-104 Bundle Format
+Arweave's bundle standard for batching multiple data items into a single transaction, reducing costs and enabling atomic uploads.
+
+### 2. Content-Addressed Storage
+Data is identified by its cryptographic hash, ensuring integrity and enabling deduplication across the network.
+
+### 3. Distributed Replication
+The device maintains a list of peer nodes and can replicate data across them for redundancy and availability.
+
+### 4. Parallel Queries
+When data isn't found locally, the device queries remote nodes in parallel, returning the first successful result.
+
+### 5. Persistent Workers
+Background processes can continuously sync data between nodes without blocking the main device operations.
+
+### 6. Custom Store Backends
+The `hb_store` behavior allows creating custom storage backends that integrate seamlessly with HyperBEAM's caching infrastructure.
+
+## Production Considerations
+
+### 1. Wallet Security
+- Store wallet files securely with proper permissions
+- Consider using hardware wallets for signing
+- Rotate keys periodically
+
+### 2. Rate Limiting
+- Implement rate limits for upload/sync operations
+- Queue large operations instead of processing immediately
+- Monitor bandwidth usage
+
+### 3. Data Validation
+- Validate bundle signatures before storing
+- Check data integrity on read
+- Implement retry logic for network failures
+
+### 4. Monitoring
+- Log replication status and failures
+- Track sync latency between nodes
+- Alert on persistent sync failures
+
+## Summary
+
+You've built an expert-level decentralized data platform that:
+
+- Creates and verifies ANS-104 data bundles
+- Stores data locally with content addressing
+- Replicates to remote HyperBEAM nodes
+- Queries across distributed nodes
+- Manages peer node configuration
+- Runs persistent background sync workers
+
+This device demonstrates advanced patterns for building distributed applications on HyperBEAM with permanent storage on Arweave.
+
+## Next Steps
+
+- [L5: JS Smart Contract Platform](/book/build5) - Master-level tutorial for building a JavaScript execution environment using WASM/QuickJS

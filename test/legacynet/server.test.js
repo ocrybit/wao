@@ -201,6 +201,7 @@ describe("ArMem", () => {
   })
 
   it("should connect with web-proxy", async () => {
+    const server = new Server({ port: 4000, log: false })
     let ao = await new AO(4000).init(acc[0])
     const src_data = `local count = 0
 
@@ -230,6 +231,7 @@ end)`
     assert.equal(await p.d("Get"), "0")
     assert.equal(await p.m("Inc", false), "Incremented!")
     assert.equal(await p.d("Get"), "1")
+    server.end()
     return
   })
 })

@@ -172,6 +172,8 @@ class Adaptor {
     switch (req.path) {
       case "/":
         return await this.cu_get_root(req)
+      case "/status":
+        return await this.cu_get_root(req)
       case "/result/:mid":
         return await this.cu_get_result(req)
       case "/results/:pid":

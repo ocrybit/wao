@@ -1,0 +1,856 @@
+# L5: JavaScript Smart Contract Platform
+
+Build a master-level device that runs JavaScript smart contracts using QuickJS compiled to WebAssembly.
+
+## What You'll Learn
+
+| Component | Purpose |
+|-----------|---------|
+| `hb_beamr` | WASM runtime interface |
+| `hb_beamr_io` | Memory I/O for WASM |
+| `dev_wasm` | WebAssembly execution |
+| `dev_wasi` | WASI system interface |
+| `dev_stack` | Device composition |
+| QuickJS | JavaScript engine in WASM |
+
+## Prerequisites
+
+Complete [L1](/book/build1) through [L4](/book/build4) tutorials first.
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    HyperBEAM Node                           │
+├─────────────────────────────────────────────────────────────┤
+│  dev_aojs.erl (Erlang)                                      │
+│  - Manages WASM instance lifecycle                          │
+│  - Routes messages to JavaScript handlers                   │
+│  - Serializes/deserializes JSON                             │
+├─────────────────────────────────────────────────────────────┤
+│  ao-runtime.js (JavaScript)                                 │
+│  - Provides Handlers API for smart contracts                │
+│  - Manages state and outbox                                 │
+│  - Implements ao.send() for message passing                 │
+├─────────────────────────────────────────────────────────────┤
+│  ao_runtime.c (C)                                           │
+│  - Minimal wrapper around QuickJS                           │
+│  - Only exports: qjs_init, qjs_eval                         │
+├─────────────────────────────────────────────────────────────┤
+│  QuickJS (JavaScript Engine)                                │
+│  - Full ES2020 JavaScript implementation                    │
+│  - Compiled to WASM for sandboxed execution                 │
+├─────────────────────────────────────────────────────────────┤
+│  WASI (WebAssembly System Interface)                        │
+│  - Provides minimal system calls                            │
+│  - Memory management, basic I/O                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+
+1. **Minimal C code**: The C layer only initializes QuickJS and evaluates JavaScript. All AO logic lives in JavaScript.
+2. **JSON-based communication**: Erlang and JavaScript communicate via JSON strings.
+3. **Stateful instance**: The QuickJS context persists across calls, maintaining JavaScript state.
+
+## Part 1: The C Runtime
+
+The C code is intentionally minimal - only 56 lines plus 17 lines of WASI stubs.
+
+### wasi_stubs.h
+
+WASI doesn't provide all standard C library functions. This header provides stubs:
+
+```c
+#ifndef WASI_STUBS_H
+#define WASI_STUBS_H
+#include <stddef.h>
+
+// Floating-point environment stubs (WASI doesn't support fenv.h)
+#define FE_DOWNWARD 0x400
+#define FE_UPWARD 0x800
+#define FE_TOWARDZERO 0xC00
+static inline int fesetround(int r) { (void)r; return 0; }
+static inline int fegetround(void) { return 0; }
+
+// Memory introspection stub (not available in WASI)
+static inline size_t malloc_usable_size(void *p) { (void)p; return 0; }
+
+#endif
+```
+
+### ao_runtime.c
+
+```c
+#include "quickjs.h"
+#include <string.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+// Pthread stubs (WASI has no threads)
+#define STUB(ret, name, args) ret name args { return 0; }
+STUB(int, pthread_mutex_init, (pthread_mutex_t *m, const pthread_mutexattr_t *a))
+STUB(int, pthread_mutex_destroy, (pthread_mutex_t *m))
+STUB(int, pthread_mutex_lock, (pthread_mutex_t *m))
+STUB(int, pthread_mutex_unlock, (pthread_mutex_t *m))
+STUB(int, pthread_mutex_trylock, (pthread_mutex_t *m))
+STUB(int, pthread_cond_init, (pthread_cond_t *c, const pthread_condattr_t *a))
+STUB(int, pthread_cond_destroy, (pthread_cond_t *c))
+STUB(int, pthread_cond_signal, (pthread_cond_t *c))
+STUB(int, pthread_cond_broadcast, (pthread_cond_t *c))
+STUB(int, pthread_cond_wait, (pthread_cond_t *c, pthread_mutex_t *m))
+STUB(int, pthread_cond_timedwait, (pthread_cond_t *c, pthread_mutex_t *m, const struct timespec *t))
+
+// Global QuickJS runtime and context
+static JSRuntime *rt;
+static JSContext *ctx;
+
+// Initialize the QuickJS runtime
+int qjs_init(void) {
+    if (rt) return 0;  // Already initialized
+    if (!(rt = JS_NewRuntime())) return -1;
+    JS_SetMemoryLimit(rt, 16*1024*1024);   // 16MB memory limit
+    JS_SetMaxStackSize(rt, 256*1024);       // 256KB stack limit
+    if (!(ctx = JS_NewContext(rt))) return -2;
+    return 0;
+}
+
+// Evaluate JavaScript code and return the result as a string
+int qjs_eval(const char *code, int len, char *out, int out_size) {
+    if (!ctx) return -1;
+    JSValue r = JS_Eval(ctx, code, len, "<eval>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r)) {
+        JSValue e = JS_GetException(ctx);
+        const char *s = JS_ToCString(ctx, e);
+        int n = snprintf(out, out_size, "{\"error\":\"%s\"}", s ? s : "?");
+        if (s) JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, e);
+        JS_FreeValue(ctx, r);
+        return n;
+    }
+    int n = 0;
+    if (!JS_IsUndefined(r)) {
+        const char *s = JS_ToCString(ctx, r);
+        if (s) { n = snprintf(out, out_size, "%s", s); JS_FreeCString(ctx, s); }
+    }
+    JS_FreeValue(ctx, r);
+    return n;
+}
+
+// Entry point - initialize runtime when WASM starts
+int main(void) { return qjs_init(); }
+```
+
+**Key Points:**
+
+1. **STUB macro**: Generates no-op pthread functions. QuickJS uses mutexes even in single-threaded builds.
+2. **Global state**: `rt` and `ctx` persist between calls, allowing JavaScript state to accumulate.
+3. **Memory limits**: 16MB heap and 256KB stack prevent runaway contracts.
+4. **Error handling**: JavaScript exceptions are returned as JSON `{"error": "..."}`.
+
+## Part 2: The JavaScript Runtime
+
+The JavaScript runtime (23 lines) provides the AO programming model:
+
+### ao-runtime.js
+
+```javascript
+// AO Runtime for HyperBEAM JavaScript smart contracts
+var _outbox = [];
+globalThis.state = {};
+globalThis.msg = {};
+globalThis.env = {};
+globalThis._getOutbox = function() { return JSON.stringify(_outbox); };
+globalThis._clearOutbox = function() { _outbox.length = 0; };
+
+globalThis.Handlers = {
+    _h: {},
+    add: function(n, f) { this._h[n] = f; },
+    remove: function(n) { delete this._h[n]; },
+    list: function() { return Object.keys(this._h); },
+    handle: function(m) {
+        var h = this._h[m.Action || m.action] || this._h['default'];
+        return h ? h(m) : { error: 'No handler: ' + (m.Action || m.action) };
+    }
+};
+
+globalThis.ao = {
+    send: function(m) { if (m && m.Target) _outbox.push(JSON.parse(JSON.stringify(m))); },
+    log: function() {}
+};
+```
+
+**How It Works:**
+
+1. **Handlers.add(action, fn)**: Contracts register functions to handle specific actions.
+2. **Handlers.handle(msg)**: Erlang calls this to dispatch incoming messages.
+3. **ao.send(msg)**: Contracts queue outgoing messages in `_outbox`.
+4. **_getOutbox()/_clearOutbox()**: Erlang retrieves and clears queued messages.
+
+## Part 3: The Erlang Device
+
+Create `HyperBEAM/src/dev_aojs.erl`:
+
+```erlang
+-module(dev_aojs).
+-export([info/3, init/3, compute/3, snapshot/3, normalize/3]).
+-export([load_js_module/2]).
+
+-include("include/hb.hrl").
+
+-define(RESULT_BUF_SIZE, 65536).
+
+%%% ============================================================
+%%% Device Info
+%%% ============================================================
+
+info(_M1, _M2, _Opts) ->
+    {ok, #{
+        <<"name">> => <<"aojs@1.0">>,
+        <<"description">> => <<"JavaScript Smart Contract Runtime">>,
+        <<"exports">> => [<<"init">>, <<"compute">>, <<"snapshot">>, <<"normalize">>]
+    }}.
+
+%%% ============================================================
+%%% Initialize
+%%% ============================================================
+
+init(M1, _M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, #{}, Opts),
+
+    %% Check if already initialized
+    case hb_private:get(prefixed_key(Prefix, <<"initialized">>), M1, not_found, Opts) of
+        true ->
+            {ok, M1};
+        _ ->
+            do_init(M1, Prefix, Opts)
+    end.
+
+do_init(M1, Prefix, Opts) ->
+    %% Get WASM instance (created by dev_wasm below us in the stack)
+    Instance = hb_private:get(prefixed_key(Prefix, <<"instance">>), M1, not_found, Opts),
+
+    case Instance of
+        not_found ->
+            {error, #{<<"error">> => <<"wasm_instance_not_found">>}};
+        _ ->
+            {ok, hb_private:set(M1, prefixed_key(Prefix, <<"ready">>), true, Opts)}
+    end.
+
+%%% ============================================================
+%%% Load JavaScript Module
+%%% ============================================================
+
+load_js_module(M1, Opts) ->
+    Prefix = dev_stack:prefix(M1, #{}, Opts),
+    Instance = hb_private:get(prefixed_key(Prefix, <<"instance">>), M1, not_found, Opts),
+
+    %% Inject AO runtime if needed
+    case needs_runtime_injection(M1, Instance, Opts) of
+        true ->
+            inject_ao_runtime(Instance, Opts);
+        false ->
+            ok
+    end,
+
+    %% Get and load the JavaScript module source
+    case find_module_source(M1, Opts) of
+        not_found ->
+            {ok, M1};
+        Source when is_binary(Source) ->
+            case eval_js(Instance, Source, Opts) of
+                {ok, _} -> {ok, M1};
+                {error, Error} -> {error, #{<<"error">> => Error}}
+            end
+    end.
+
+needs_runtime_injection(_M1, Instance, Opts) ->
+    case eval_js(Instance, <<"typeof Handlers">>, Opts) of
+        {ok, <<"object">>} -> false;
+        _ -> true
+    end.
+
+inject_ao_runtime(Instance, Opts) ->
+    Runtime = ao_runtime_js(),
+    eval_js(Instance, Runtime, Opts).
+
+ao_runtime_js() ->
+    %% Read from aojs/ao-runtime.js
+    {ok, Content} = file:read_file("aojs/ao-runtime.js"),
+    Content.
+
+find_module_source(M1, Opts) ->
+    %% Check for module in message or load from file
+    case hb_maps:get(<<"aojs-module">>, M1, not_found, Opts) of
+        not_found ->
+            case hb_maps:get(<<"module-id">>, M1, not_found, Opts) of
+                not_found -> not_found;
+                ModuleId ->
+                    Path = <<"aojs/aojs-modules/", ModuleId/binary, ".js">>,
+                    case file:read_file(Path) of
+                        {ok, Content} -> Content;
+                        _ -> not_found
+                    end
+            end;
+        Source ->
+            Source
+    end.
+
+%%% ============================================================
+%%% Compute - Handle Messages
+%%% ============================================================
+
+compute(M1, M2, Opts) ->
+    %% Ensure module is loaded
+    {ok, M1Loaded} = load_js_module(M1, Opts),
+    execute_handler(M1Loaded, M2, Opts).
+
+execute_handler(M1, M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, M2, Opts),
+    Instance = hb_private:get(prefixed_key(Prefix, <<"instance">>), M1, not_found, Opts),
+
+    %% Get message and process info
+    Message = hb_maps:get(<<"body">>, M2, #{}, Opts),
+    Process = hb_maps:get(<<"process">>, M1, #{}, Opts),
+
+    %% Build JSON for JavaScript
+    MsgJson = build_msg_json(Message, M2, Opts),
+    EnvJson = build_env_json(Process, Opts),
+
+    %% Execute handler
+    JsCode = iolist_to_binary([
+        <<"_clearOutbox();globalThis.msg=">>, MsgJson,
+        <<";globalThis.env=">>, EnvJson,
+        <<";JSON.stringify(Handlers.handle(msg))">>
+    ]),
+
+    case eval_js(Instance, JsCode, Opts) of
+        {ok, ResultJson} ->
+            OutboxJson = read_outbox(Instance, Opts),
+            process_results(M1, ResultJson, OutboxJson, Opts);
+        {error, Error} ->
+            {error, #{<<"error">> => Error}}
+    end.
+
+build_msg_json(Message, M2, Opts) ->
+    Id = hb_maps:get(<<"id">>, Message, <<>>, Opts),
+    From = hb_maps:get(<<"from-process">>, Message, <<>>, Opts),
+    Action = hb_maps:get(<<"action">>, Message, <<"default">>, Opts),
+    Data = hb_maps:get(<<"data">>, Message, <<>>, Opts),
+    BlockHeight = hb_maps:get(<<"block-height">>, M2, 0, Opts),
+
+    MsgMap = #{
+        <<"Id">> => Id,
+        <<"From">> => From,
+        <<"Action">> => Action,
+        <<"Data">> => Data,
+        <<"Tags">> => build_tags(Message, Opts),
+        <<"Block-Height">> => BlockHeight
+    },
+    hb_json:encode(MsgMap).
+
+build_env_json(Process, Opts) ->
+    ProcId = hb_maps:get(<<"id">>, Process, <<>>, Opts),
+    EnvMap = #{
+        <<"Process">> => #{<<"Id">> => ProcId}
+    },
+    hb_json:encode(EnvMap).
+
+build_tags(Message, _Opts) when is_map(Message) ->
+    ExcludeKeys = [<<"id">>, <<"from">>, <<"action">>, <<"data">>, <<"priv">>],
+    maps:fold(fun(Key, Value, Acc) ->
+        case lists:member(hb_ao:normalize_key(Key), ExcludeKeys) of
+            true -> Acc;
+            false when is_binary(Value); is_integer(Value) ->
+                Acc#{Key => Value};
+            false -> Acc
+        end
+    end, #{}, Message);
+build_tags(_, _) -> #{}.
+
+%%% ============================================================
+%%% JavaScript Evaluation (WASM Interface)
+%%% ============================================================
+
+eval_js(Instance, Code, _Opts) ->
+    %% Write code to WASM memory
+    case hb_beamr_io:write_string(Instance, Code) of
+        {ok, CodePtr} ->
+            CodeLen = byte_size(Code),
+            %% Allocate result buffer
+            case hb_beamr_io:malloc(Instance, ?RESULT_BUF_SIZE) of
+                {ok, ResultPtr} ->
+                    %% Call qjs_eval(code, len, out, out_size)
+                    Result = hb_beamr:call(Instance, "qjs_eval",
+                        [CodePtr, CodeLen, ResultPtr, ?RESULT_BUF_SIZE]),
+
+                    EvalResult = case Result of
+                        {ok, [Length]} when Length >= 0 ->
+                            {ok, ResultBin} = hb_beamr_io:read(Instance, ResultPtr, max(1, Length)),
+                            {ok, ResultBin};
+                        {ok, [Length]} when Length < 0 ->
+                            {ok, ErrorBin} = hb_beamr_io:read_string(Instance, ResultPtr),
+                            {error, ErrorBin};
+                        {error, E} ->
+                            {error, E}
+                    end,
+
+                    %% Free memory
+                    hb_beamr_io:free(Instance, CodePtr),
+                    hb_beamr_io:free(Instance, ResultPtr),
+                    EvalResult;
+                {error, E} ->
+                    hb_beamr_io:free(Instance, CodePtr),
+                    {error, E}
+            end;
+        {error, E} ->
+            {error, E}
+    end.
+
+read_outbox(Instance, Opts) ->
+    case eval_js(Instance, <<"_getOutbox()">>, Opts) of
+        {ok, OutboxJson} -> OutboxJson;
+        _ -> <<"[]">>
+    end.
+
+process_results(M1, ResultJson, OutboxJson, _Opts) ->
+    Result = hb_json:decode(ResultJson),
+    Outbox = hb_json:decode(OutboxJson),
+    {ok, M1#{
+        <<"results">> => #{
+            <<"data">> => ResultJson,
+            <<"outbox">> => Outbox
+        }
+    }}.
+
+%%% ============================================================
+%%% Snapshot and Normalize (State Persistence)
+%%% ============================================================
+
+snapshot(M1, _M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, #{}, Opts),
+    Instance = hb_private:get(prefixed_key(Prefix, <<"instance">>), M1, not_found, Opts),
+    case Instance of
+        not_found ->
+            {error, <<"no_wasm_instance">>};
+        _ ->
+            case hb_beamr:serialize(Instance) of
+                {ok, Snapshot} -> {ok, M1#{<<"snapshot">> => Snapshot}};
+                {error, E} -> {error, E}
+            end
+    end.
+
+normalize(M1, _M2, Opts) ->
+    case hb_maps:get(<<"snapshot">>, M1, not_found, Opts) of
+        not_found ->
+            {ok, M1};
+        Snapshot ->
+            Prefix = dev_stack:prefix(M1, #{}, Opts),
+            Instance = hb_private:get(prefixed_key(Prefix, <<"instance">>), M1, not_found, Opts),
+            case hb_beamr:deserialize(Instance, Snapshot) of
+                ok -> {ok, maps:remove(<<"snapshot">>, M1)};
+                {error, E} -> {error, E}
+            end
+    end.
+
+%%% ============================================================
+%%% Helpers
+%%% ============================================================
+
+prefixed_key(<<>>, Key) -> Key;
+prefixed_key(Prefix, Key) -> <<Prefix/binary, "/", Key/binary>>.
+```
+
+## Part 4: Writing Smart Contracts
+
+### Counter Contract
+
+```javascript
+// aojs/aojs-modules/counter.js
+state.count = state.count || 0;
+
+Handlers.add('Increment', function(msg) {
+    state.count = state.count + 1;
+    return { count: state.count };
+});
+
+Handlers.add('Decrement', function(msg) {
+    state.count = state.count - 1;
+    return { count: state.count };
+});
+
+Handlers.add('GetCount', function(msg) {
+    return { count: state.count };
+});
+
+Handlers.add('Reset', function(msg) {
+    state.count = 0;
+    return { count: 0 };
+});
+```
+
+### Token Contract
+
+```javascript
+// aojs/aojs-modules/token.js
+state.balances = state.balances || {};
+state.name = state.name || 'TestToken';
+state.ticker = state.ticker || 'TST';
+state.totalSupply = state.totalSupply || 0;
+
+Handlers.add('Info', function(msg) {
+    return {
+        name: state.name,
+        ticker: state.ticker,
+        totalSupply: state.totalSupply
+    };
+});
+
+Handlers.add('Balance', function(msg) {
+    var target = (msg.Tags && msg.Tags.Target) || msg.From || 'unknown';
+    return { balance: state.balances[target] || 0 };
+});
+
+Handlers.add('Mint', function(msg) {
+    var qty = parseInt((msg.Tags && msg.Tags.Quantity) || '0');
+    var recipient = msg.From || 'unknown';
+    state.balances[recipient] = (state.balances[recipient] || 0) + qty;
+    state.totalSupply = state.totalSupply + qty;
+    return { success: true, balance: state.balances[recipient] };
+});
+
+Handlers.add('Transfer', function(msg) {
+    var from = msg.From || 'unknown';
+    var to = msg.Tags && msg.Tags.Recipient;
+    var qty = parseInt((msg.Tags && msg.Tags.Quantity) || '0');
+
+    if (!to || qty <= 0) {
+        return { error: 'Invalid transfer' };
+    }
+
+    var fromBalance = state.balances[from] || 0;
+    if (fromBalance < qty) {
+        return { error: 'Insufficient balance' };
+    }
+
+    state.balances[from] = fromBalance - qty;
+    state.balances[to] = (state.balances[to] || 0) + qty;
+
+    // Send notification to recipient
+    ao.send({
+        Target: to,
+        Action: 'Credit-Notice',
+        Quantity: String(qty),
+        Sender: from
+    });
+
+    return { success: true };
+});
+```
+
+## Part 5: Building the WASM
+
+### Makefile
+
+```makefile
+# AOJS WASM Build
+WASI_SDK_VERSION = 24.0
+WASI_SDK = wasi-sdk-$(WASI_SDK_VERSION)-x86_64-linux
+SYSROOT = $(WASI_SDK)/share/wasi-sysroot
+CC = $(WASI_SDK)/bin/clang
+
+QJS_VERSION = 2024-01-13
+QJS = quickjs-$(QJS_VERSION)
+
+CFLAGS = \
+    --sysroot=$(SYSROOT) \
+    --target=wasm32-wasi \
+    -O1 \
+    -DCONFIG_VERSION=\"$(QJS_VERSION)\" \
+    -D_WASI_EMULATED_SIGNAL \
+    -D_WASI_EMULATED_PROCESS_CLOCKS \
+    -DCONFIG_BIGNUM \
+    -include wasi_stubs.h
+
+LDFLAGS = \
+    --sysroot=$(SYSROOT) \
+    --target=wasm32-wasi \
+    -Wl,-z,stack-size=1048576 \
+    -Wl,--initial-memory=16777216 \
+    -Wl,--max-memory=67108864 \
+    -Wl,--export=malloc \
+    -Wl,--export=free \
+    -Wl,--export=qjs_init \
+    -Wl,--export=qjs_eval \
+    -lwasi-emulated-signal \
+    -lwasi-emulated-process-clocks
+
+all: aojs.wasm
+
+aojs.wasm: ao_runtime.o quickjs.o
+	$(CC) $(LDFLAGS) $^ -o $@
+
+clean:
+	rm -f *.o aojs.wasm
+```
+
+### Build and Test
+
+```bash
+# Build WASM
+cd aojs && make
+
+# Run tests
+erl -pa _build/default/lib/*/ebin -noshell -eval '
+application:ensure_all_started(hb),
+eunit:test(dev_aojs, [verbose]),
+init:stop().'
+```
+
+## Part 6: Message Flow
+
+```
+1. Message arrives at HyperBEAM
+   ↓
+2. dev_aojs:compute/3 called
+   ↓
+3. WASM instance retrieved (or created)
+   ↓
+4. Message serialized to JSON
+   ↓
+5. JavaScript executed:
+   _clearOutbox();
+   globalThis.msg = {...};
+   globalThis.env = {...};
+   JSON.stringify(Handlers.handle(msg))
+   ↓
+6. Handler function runs
+   ↓
+7. ao.send() queues outgoing messages
+   ↓
+8. Result returned to Erlang
+   ↓
+9. Outbox retrieved via _getOutbox()
+   ↓
+10. Results processed, messages dispatched
+```
+
+## Part 7: Token Contract Walkthrough
+
+### State Flow
+
+```
+Message 1 (Info):
+  state = {}
+  → {name: "TestToken", ticker: "TST", totalSupply: 0}
+
+Message 2 (Mint from alice, qty=1000):
+  state.balances = {}
+  → state.balances = {"alice": 1000}
+  → state.totalSupply = 1000
+  → {success: true, balance: 1000}
+
+Message 3 (Balance for alice):
+  state.balances = {"alice": 1000}
+  → {balance: 1000}
+
+Message 4 (Transfer alice→bob, qty=250):
+  state.balances = {"alice": 1000}
+  → state.balances = {"alice": 750, "bob": 250}
+  → outbox = [{Target: "bob", Action: "Credit-Notice", ...}]
+  → {success: true}
+```
+
+### Erlang Unit Tests
+
+Add tests to your module using `hb_ao:resolve` with device stack composition:
+
+```erlang
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test device info via hb_ao:resolve with {as, Module, Msg}
+info_test() ->
+    application:ensure_all_started(hb),
+    {ok, Info} = hb_ao:resolve(
+        {as, dev_aojs, #{}},
+        #{<<"path">> => <<"info">>},
+        #{}
+    ),
+    ?assertEqual(<<"aojs@1.0">>, maps:get(<<"name">>, Info)),
+    ?assertEqual(<<"JavaScript Smart Contract Runtime">>, maps:get(<<"description">>, Info)).
+
+%% Test WASM-based token contract using device stack
+aojs_token_test_() ->
+    {timeout, 60, fun aojs_token_test/0}.
+
+aojs_token_test() ->
+    application:ensure_all_started(hb),
+    Opts = #{store => hb_opts:get(store)},
+
+    %% Create stack with token module
+    Stack = #{
+        <<"device">> => <<"stack@1.0">>,
+        <<"device-stack">> => [<<"wasm-64@1.0">>],
+        <<"stack-keys">> => [<<"init">>, <<"compute">>]
+    },
+
+    %% Initialize
+    {ok, M1} = hb_ao:resolve(Stack, #{<<"path">> => <<"init">>}, Opts),
+
+    %% Get token info
+    InfoMsg = #{<<"path">> => <<"compute">>, <<"body">> => #{<<"action">> => <<"Info">>}},
+    {ok, InfoResult} = hb_ao:resolve(M1, InfoMsg, Opts),
+    ?assertMatch(#{}, InfoResult),
+
+    %% Mint tokens
+    MintMsg = #{
+        <<"path">> => <<"compute">>,
+        <<"body">> => #{
+            <<"action">> => <<"Mint">>,
+            <<"quantity">> => <<"1000">>,
+            <<"from-process">> => <<"alice">>
+        }
+    },
+    {ok, MintResult} = hb_ao:resolve(InfoResult, MintMsg, Opts),
+
+    %% Check balance
+    BalanceMsg = #{
+        <<"path">> => <<"compute">>,
+        <<"body">> => #{<<"action">> => <<"Balance">>, <<"from-process">> => <<"alice">>}
+    },
+    {ok, BalanceResult} = hb_ao:resolve(MintResult, BalanceMsg, Opts),
+
+    %% Transfer
+    TransferMsg = #{
+        <<"path">> => <<"compute">>,
+        <<"body">> => #{
+            <<"action">> => <<"Transfer">>,
+            <<"recipient">> => <<"bob">>,
+            <<"quantity">> => <<"250">>,
+            <<"from-process">> => <<"alice">>
+        }
+    },
+    {ok, _TransferResult} = hb_ao:resolve(BalanceResult, TransferMsg, Opts),
+    ok.
+
+-endif.
+```
+
+### WAO SDK Integration Tests
+
+```javascript
+import assert from "assert"
+import { describe, it, before, after } from "node:test"
+import HyperBEAM from "../../src/hyperbeam.js"
+
+describe("L5 - JavaScript Smart Contract Platform (aojs@1.0)", function () {
+  let hb, hbeam
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true }).ready()
+    hb = hbeam.hb
+  })
+
+  after(async () => hbeam.kill())
+
+  it("should return device info", async () => {
+    const info = await hb.g("/~aojs@1.0/info")
+    assert.equal(info.name, "aojs@1.0")
+    assert.ok(info.description.includes("JavaScript"))
+  })
+
+  it("should verify stack device is available", async () => {
+    const info = await hb.g("/~stack@1.0/info")
+    assert.ok(info.name)
+  })
+
+  it("should verify wasm-64 device is available", async () => {
+    const info = await hb.g("/~wasm-64@1.0/info")
+    assert.ok(info.name)
+  })
+})
+```
+
+## Key Concepts
+
+### 1. Device Stack Composition
+
+The AOJS device sits on top of `wasm-64@1.0` and `wasi@1.0`:
+
+```erlang
+Stack = #{
+    <<"device">> => <<"stack@1.0">>,
+    <<"stack">> => [
+        #{<<"device">> => <<"wasi@1.0">>},        % WASI system calls
+        #{<<"device">> => <<"wasm-64@1.0">>},     % WASM execution
+        #{<<"device">> => <<"aojs@1.0">>}         % JavaScript runtime
+    ]
+}
+```
+
+### 2. WASM Memory Interface
+
+```erlang
+%% Write string to WASM memory
+{ok, Ptr} = hb_beamr_io:write_string(Instance, Data),
+
+%% Call WASM function
+{ok, [Result]} = hb_beamr:call(Instance, "function_name", [arg1, arg2]),
+
+%% Read from WASM memory
+{ok, Data} = hb_beamr_io:read(Instance, Ptr, Length),
+
+%% Free memory
+hb_beamr_io:free(Instance, Ptr).
+```
+
+### 3. State Persistence
+
+JavaScript `state` persists in WASM memory. For long-term storage:
+
+```erlang
+%% Save WASM state
+{ok, Snapshot} = hb_beamr:serialize(Instance),
+
+%% Restore WASM state
+ok = hb_beamr:deserialize(Instance, Snapshot).
+```
+
+### 4. Inter-Process Communication
+
+Contracts use `ao.send()` to communicate:
+
+```javascript
+ao.send({
+    Target: "process_id",
+    Action: "DoSomething",
+    Data: "payload"
+});
+```
+
+Messages are collected in the outbox and processed by HyperBEAM after handler execution.
+
+## Summary
+
+| Component | Lines | Purpose |
+|-----------|-------|---------|
+| ao_runtime.c | 56 | QuickJS wrapper |
+| wasi_stubs.h | 17 | WASI compatibility |
+| ao-runtime.js | 23 | Handlers, state, ao.send |
+| dev_aojs.erl | ~300 | Erlang device |
+| **Total** | **~400** | Complete runtime |
+
+The key insight is keeping the C layer minimal. By moving all AO logic to JavaScript:
+
+1. **Simplicity**: ~100 lines of low-level code
+2. **Flexibility**: Easy to modify handler logic
+3. **Debuggability**: JavaScript is easier to debug than C
+4. **Security**: QuickJS sandboxes JavaScript execution
+5. **Compatibility**: Standard ES2020 JavaScript
+
+## Next Steps
+
+- Explore the [full AOJS implementation](https://github.com/ocrybit/aojs)
+- Read the [HyperBEAM source code](https://github.com/permaweb/HyperBEAM)
+- Build your own JavaScript smart contracts

@@ -24,6 +24,7 @@ export function decodeSigInput(signatureInput, signatureName = null) {
       }
 
       // Extract from signature name to the next signature (if any) or end
+      // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
       const nextSigMatch = signatureInput
         .substring(startIndex + signatureName.length)
         .match(/,\s*[a-zA-Z0-9_-]+=/)
@@ -38,12 +39,14 @@ export function decodeSigInput(signatureInput, signatureName = null) {
     const signatures = {}
 
     // Split by signature entries (handle multiple signatures)
+    // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
     const entries = inputToDecode.split(/,(?=\s*[a-zA-Z0-9_-]+=)/)
 
     for (const entry of entries) {
       const trimmedEntry = entry.trim()
 
       // Match signature-name=(components);params format
+      // Note: signature names can contain underscores (e.g., sig-xxx_yyy)
       const match = trimmedEntry.match(/^([a-zA-Z0-9_-]+)=\(([^)]*)\)(.*)$/)
       if (!match) {
         continue
@@ -125,16 +128,45 @@ export function extractPubKey(headers, signatureName) {
 
   if (!decoded) return null
 
-  // If we decoded a specific signature, use its keyid
-  const keyid =
-    signatureName && decoded.params
-      ? decoded.params.keyid
-      : Object.values(decoded)[0]?.params?.keyid
+  const pubkeyPrefix = "publickey:"
+  let keyid = null
+
+  if (signatureName && decoded.params) {
+    // If specific signature was requested, use its keyid
+    keyid = decoded.params.keyid
+  } else {
+    // No specific signature requested - find one with a publickey: keyid
+    // This handles beta3 which may have multiple signatures (HMAC and RSA)
+    for (const sig of Object.values(decoded)) {
+      if (sig.params?.keyid?.startsWith(pubkeyPrefix)) {
+        keyid = sig.params.keyid
+        break
+      }
+    }
+    // Fall back to first signature's keyid if no publickey: found
+    if (!keyid) {
+      keyid = Object.values(decoded)[0]?.params?.keyid
+    }
+  }
 
   if (!keyid) return null
 
   try {
-    return base64url.toBuffer(keyid)
+    // Handle "publickey:<base64-encoded-key>" format (beta3)
+    // Strip the prefix to get the actual base64-encoded key
+    const keyData = keyid.startsWith(pubkeyPrefix)
+      ? keyid.slice(pubkeyPrefix.length)
+      : keyid
+
+    // Handle both standard base64 (with + and /) and base64url (with - and _)
+    // HyperBEAM uses standard base64, but we may also receive base64url
+    if (keyData.includes("+") || keyData.includes("/")) {
+      // Standard base64 - use Buffer.from
+      return Buffer.from(keyData, "base64")
+    } else {
+      // base64url - use base64url library
+      return base64url.toBuffer(keyData)
+    }
   } catch (error) {
     return null
   }

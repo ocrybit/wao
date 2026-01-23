@@ -166,7 +166,9 @@ function resetHmac(msg) {
   const nonHmacCommitments = {}
 
   for (const [id, commitment] of Object.entries(commitments)) {
-    if (commitment.alg !== "hmac-sha256") {
+    // Support both 'type' (new) and 'alg' (legacy) field names
+    const algType = commitment.type || commitment.alg
+    if (algType !== "hmac-sha256") {
       nonHmacCommitments[id] = commitment
     }
   }
@@ -197,7 +199,8 @@ function resetHmac(msg) {
     ...nonHmacCommitments,
     [hmacId]: {
       "commitment-device": "httpsig@1.0",
-      alg: "hmac-sha256",
+      type: "hmac-sha256",
+      alg: "hmac-sha256", // Include both for HyperBEAM compatibility
       signature: firstCommitment.signature,
       "signature-input": firstCommitment["signature-input"],
     },

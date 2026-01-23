@@ -1,0 +1,30 @@
+import assert from "assert"
+import { after, describe, it, before, beforeEach } from "node:test"
+import HyperBEAM from "../../../src/hyperbeam.js"
+
+describe("Relay Device", function () {
+  let hb, hbeam
+
+  before(async () => {
+    hbeam = await new HyperBEAM({ reset: true, timeout: 60 }).ready()
+  })
+
+  beforeEach(async () => {
+    hb = hbeam.hb
+  })
+
+  after(async () => {
+    hbeam.kill()
+  })
+
+  it("should test relay@1.0 cast", async () => {
+    // Test relay cast - should return immediately with "OK"
+    // Cast is async so it doesn't wait for the relay to complete
+    const res = await hb.post({
+      path: "/~relay@1.0/cast",
+      "relay-path": `${hbeam.url}/~meta@1.0/info`,
+      "relay-method": "GET",
+    })
+    assert.equal(res.body, "OK", "Cast should return OK immediately")
+  })
+})

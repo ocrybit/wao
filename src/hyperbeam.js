@@ -1,24 +1,36 @@
-import { spawn } from "child_process"
+import { spawn, spawnSync } from "child_process"
 import { resolve } from "path"
 import { isNil, map } from "ramda"
 import { toAddr } from "./test.js"
 import HB from "./hb.js"
-import { rmSync, readFileSync, readdirSync } from "fs"
+import { rmSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import devs from "./devs.js"
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.hyperbeam" })
+
+// HyperBEAM version paths
+const HB_PATHS = {
+  beta1: "/root/HyperBEAM-beta1",
+  beta3: "/root/HyperBEAM",
+}
+
+// Get default CWD based on HB_VERSION (default: beta3)
+function getDefaultCwd() {
+  const version = process.env.HB_VERSION || "beta3"
+  return process.env.CWD || HB_PATHS[version] || HB_PATHS.beta3
+}
 
 export default class HyperBEAM {
   static OPERATOR = Symbol("operator")
   constructor({
     port = 10001,
-    //cu = 6363,
+    cu_port = 6363, // Must match route in hb_opts.erl which hardcodes localhost:6363
     as = [],
     bundler,
     gateway,
     wallet = ".wallet.json",
     reset,
-    cwd = process.env.CWD ?? "./HyperBEAM",
+    cwd = getDefaultCwd(),
     c,
     cmake,
     faff,
@@ -33,7 +45,29 @@ export default class HyperBEAM {
     logs = true,
     shell = true,
     devices,
+    genesis_wasm = false,
+    arweave_gateway, // Remote Arweave gateway URL (e.g., "https://g8way.io") for proxy environments
+    rebar3, // Use original rebar3 shell (true) or direct erl mode (false). Default: true, can be overridden by HB_REBAR3 env var
+    timeout, // Auto-kill timeout in seconds. Uses SIGKILL which Erlang cannot trap. Falls back to HB_TIMEOUT env var.
+    prometheus = false, // Enable prometheus metrics. Default: false (beta3 lacks prometheus dependency)
   } = {}) {
+    this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
+    // Determine rebar3 mode: option > env var > default (true)
+    const envRebar3 = process.env.HB_REBAR3
+    if (rebar3 !== undefined) {
+      this.rebar3 = rebar3
+    } else if (envRebar3 !== undefined) {
+      this.rebar3 = envRebar3.toLowerCase() !== "false"
+    } else {
+      this.rebar3 = true // default to rebar3 mode
+    }
+    // Timeout in seconds - option > HB_TIMEOUT env var > no timeout
+    const envTimeout = process.env.HB_TIMEOUT ? parseInt(process.env.HB_TIMEOUT, 10) : undefined
+    this.timeout = timeout !== undefined ? timeout : envTimeout
+    this.timeoutTimer = null
+    this.prometheus = prometheus
+    this.genesis_wasm = genesis_wasm
+    this.cu_port = cu_port
     this.devices = devices
     this.p4_non_chargable_routes = p4_non_chargable_routes
     this.logs = logs
@@ -44,10 +78,17 @@ export default class HyperBEAM {
     this.jwk = JSON.parse(this.file(this.wallet_location))
     this.addr = toAddr(this.jwk.n)
     if (reset) {
+      // Kill any existing HyperBEAM processes first
+      spawnSync("pkill", ["-9", "-f", "beam.smp"], { stdio: "ignore" })
+      spawnSync("pkill", ["-9", "-f", "epmd"], { stdio: "ignore" })
+      // Wait for port to be freed
+      spawnSync("sleep", ["1"])
+
+      // Use bash rm -rf for more reliable cache clearing
       for (let v of readdirSync(this.dirname)) {
         if (/^cache-/.test(v)) {
           try {
-            rmSync(resolve(this.dirname, v), { recursive: true, force: true })
+            spawnSync("rm", ["-rf", resolve(this.dirname, v)], { stdio: "ignore" })
           } catch (e) {
             console.log(e)
           }
@@ -85,30 +126,122 @@ export default class HyperBEAM {
     if (shell) this.shell()
   }
   shell() {
-    const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
-    this._shell = spawn(
-      "rebar3",
-      [
+    // Use erl with spawn to keep the process as a managed child
+    const evalCmd = this.genEval({ gateway: this.gateway, wallet: this.wallet })
+    // Remove trailing period and add receive to keep VM alive
+    const evalWithSleep = evalCmd.replace(/\.$/, ", receive after infinity -> ok end.")
+
+    // Write eval command to a temp file to avoid shell escaping issues
+    const evalFile = resolve(this.dirname, ".hb_eval_cmd")
+    writeFileSync(evalFile, evalWithSleep)
+
+    // Remove any existing crash dump
+    spawnSync("rm", ["-f", resolve(this.dirname, "erl_crash.dump")], { stdio: "ignore" })
+
+    if (this.rebar3) {
+      // Rebar3 mode (default/original) - spawn rebar3 directly like the working version
+      // This keeps the Erlang shell interactive and prevents premature termination
+      const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
+
+      // Ensure asdf shims are in PATH for rebar3/erlang to be found
+      const home = process.env.HOME || ""
+      const asdfShims = `${home}/.asdf/shims`
+      const asdfBin = `${home}/.asdf/bin`
+      const currentPath = process.env.PATH || ""
+      const pathWithAsdf = currentPath.includes(asdfShims)
+        ? currentPath
+        : `${asdfShims}:${asdfBin}:${currentPath}`
+
+      this.proc = spawn("rebar3", [
         ..._as,
         "shell",
         "--eval",
-        this.genEval({ gateway: this.gateway, wallet: this.wallet }),
-      ],
-      {
+        evalCmd,
+      ], {
+        env: { ...process.env, ...this.genEnv(), PATH: pathWithAsdf },
+        cwd: resolve(process.cwd(), this.cwd),
+      })
+
+      if (this.logs) {
+        this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
+        this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+        this.proc.on("error", err => console.error(`failed to start process: ${err}`))
+        this.proc.on("close", code => {
+          console.log(`child process exited with code ${code}`)
+        })
+      }
+    } else {
+      // Direct erl mode - use erl with rebar3-compiled beam files
+      // Beta1's prometheus_cowboy uses prometheus_buckets:exponential/3 which doesn't exist.
+      // We manually register the required cowboy metrics with linear buckets instead.
+      // Beta3 doesn't include prometheus, so wrap in try-catch to handle gracefully.
+      const cowboyMetricsSetup = `
+        try
+          application:ensure_all_started(prometheus),
+          prometheus_counter:declare([{name, cowboy_early_errors_total}, {labels, [method, reason]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_protocol_upgrades_total}, {labels, [method, status, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_requests_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_spawned_processes_total}, {labels, [method, reason, status_class]}, {help, <<"">>}]),
+          prometheus_counter:declare([{name, cowboy_errors_total}, {labels, [method, reason, error]}, {help, <<"">>}]),
+          Buckets = [0, 100, 1000, 10000, 100000, 1000000, 10000000],
+          prometheus_histogram:declare([{name, cowboy_receive_body_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_request_duration_seconds}, {labels, [method, reason, status_class]}, {buckets, [0.01, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0]}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_request_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}]),
+          prometheus_histogram:declare([{name, cowboy_response_body_size_bytes}, {labels, [method, reason, status_class]}, {buckets, Buckets}, {help, <<"">>}])
+        catch _:_ -> ok end,
+        timer:sleep(100)
+      `.replace(/\n\s*/g, ' ')
+      const prometheusSetup = cowboyMetricsSetup
+      // Parse proxy URL and extract host, port, and optional userinfo (username:password) for authentication
+      // Note: uri_string:parse may return strings or binaries depending on Erlang version, so we handle both
+      const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
+      const proxySetup = `${prometheusSetup}, case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end`
+
+      // Use default profile beam files
+      // Source asdf.sh only if it exists (for asdf-managed Erlang), otherwise assume erl is in PATH
+      const cmd = `[ -f "$HOME/.asdf/asdf.sh" ] && . "$HOME/.asdf/asdf.sh"; erl -pa _build/default/lib/*/ebin -noshell -eval '${proxySetup}' -eval "$(cat ${evalFile})"`
+
+      this.proc = spawn("bash", ["-c", cmd], {
         env: { ...process.env, ...this.genEnv() },
         cwd: resolve(process.cwd(), this.cwd),
-      }
-    )
-    if (this.logs) {
-      this._shell.stdout.on("data", chunk => console.log(chunk.toString()))
-      this._shell.stderr.on("data", err => console.error(err.toString()))
-      this._shell.on("error", err =>
-        console.error(`failed to start process: ${err}`)
-      )
-      this._shell.on("close", code => {
-        console.log(`child process exited with code ${code}`)
-        delete this._shell
+        detached: true,
+        stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
       })
+
+      // Don't let parent wait for this child
+      this.proc.unref()
+
+      if (this.logs && this.proc.stdout) {
+        this.proc.stdout.on("data", chunk => console.log(chunk.toString()))
+        this.proc.stderr.on("data", chunk => console.error(chunk.toString()))
+      }
+    }
+
+    if (this.logs) {
+      console.log(`HyperBEAM starting on port ${this.port} (rebar3=${this.rebar3})...`)
+    }
+
+    // Set up auto-kill timeout if specified (uses SIGKILL which Erlang cannot trap)
+    if (this.timeout && this.timeout > 0) {
+      if (this.logs) {
+        console.log(`Auto-kill timeout set: ${this.timeout} seconds`)
+      }
+      this.timeoutTimer = setTimeout(() => {
+        if (this.logs) {
+          console.error(`HyperBEAM timeout (${this.timeout}s) exceeded - sending SIGKILL`)
+        }
+        this.kill()
+      }, this.timeout * 1000)
+
+      // Clear timeout if process exits before timeout
+      if (this.proc) {
+        this.proc.on("exit", () => {
+          if (this.timeoutTimer) {
+            clearTimeout(this.timeoutTimer)
+            this.timeoutTimer = null
+          }
+        })
+      }
     }
   }
   file(path, type = "utf8") {
@@ -171,16 +304,26 @@ export default class HyperBEAM {
       return false
     }
   }
-  async ready(timeout = 30000) {
+  async ready(timeout = 60000) {
+    // Start CU server if genesis_wasm is enabled
+    if (this.genesis_wasm) {
+      await this.startCU()
+    }
+
+    // Wait a bit for HyperBEAM to initialize before polling
+    await new Promise(r => setTimeout(r, 3000))
+
     const start = Date.now()
     return new Promise(res => {
       const to = setInterval(async () => {
         try {
-          if (Date.now() - start > 30000) {
+          if (Date.now() - start > timeout) {
             clearInterval(to)
             res(false)
           } else {
             if (await this.ok()) {
+              // Wait a bit more after first successful response
+              await new Promise(r => setTimeout(r, 1000))
               clearInterval(to)
               res(this)
             }
@@ -188,6 +331,73 @@ export default class HyperBEAM {
         } catch (e) {}
       }, 1000)
     })
+  }
+
+  // Start the genesis-wasm CU server
+  async startCU() {
+    const cuDir = resolve(this.dirname, "_build/genesis-wasm-server")
+    const dbDir = resolve(this.dirname, "cache-mainnet/genesis-wasm")
+
+    // Ensure DB directory exists
+    spawnSync("mkdir", ["-p", dbDir])
+
+    // Use arweave_gateway option or ARWEAVE_GATEWAY env var for proxy environments
+    // Default to arweave.net, but g8way.io works better through some proxies
+    const gatewayUrl = this.arweave_gateway || process.env.GATEWAY_URL || "https://arweave.net"
+    const graphqlUrl = process.env.GRAPHQL_URL || `${gatewayUrl}/graphql`
+
+    const env = {
+      ...process.env,
+      UNIT_MODE: "hbu",
+      HB_URL: `http://localhost:${this.port}`,
+      NODE_CONFIG_ENV: "development",
+      DB_URL: resolve(dbDir, "genesis-wasm-db"),
+      PORT: String(this.cu_port),
+      WALLET_FILE: this.wallet_location,
+      DISABLE_PROCESS_FILE_CHECKPOINT_CREATION: "false",
+      PROCESS_MEMORY_FILE_CHECKPOINTS_DIR: resolve(dbDir, "checkpoints"),
+      GATEWAY_URL: gatewayUrl,
+      ARWEAVE_URL: gatewayUrl,
+      GRAPHQL_URL: graphqlUrl,
+      GRAPHQL_URLS: graphqlUrl,  // Only use proxied URL, no direct goldsky fallback
+      CHECKPOINT_GRAPHQL_URL: graphqlUrl,
+    }
+
+    this.cuProc = spawn("node", ["--experimental-wasm-memory64", "-r", "dotenv/config", "src/app.js"], {
+      cwd: cuDir,
+      env,
+      detached: true,
+      stdio: this.logs ? ["ignore", "pipe", "pipe"] : "ignore"
+    })
+
+    this.cuProc.unref()
+
+    if (this.logs) {
+      console.log(`CU server starting on port ${this.cu_port}...`)
+      if (this.cuProc.stdout) {
+        this.cuProc.stdout.on("data", chunk => console.log(`[CU] ${chunk.toString().trim()}`))
+      }
+      if (this.cuProc.stderr) {
+        this.cuProc.stderr.on("data", chunk => console.error(`[CU] ${chunk.toString().trim()}`))
+      }
+    }
+
+    // Wait for CU to be ready
+    const start = Date.now()
+    while (Date.now() - start < 30000) {
+      try {
+        const res = await fetch(`http://localhost:${this.cu_port}/status`)
+        if (res.ok) {
+          if (this.logs) console.log("CU server ready")
+          return true
+        }
+      } catch (e) {
+        // Not ready yet
+      }
+      await new Promise(r => setTimeout(r, 500))
+    }
+    console.error("CU server failed to start within 30 seconds")
+    return false
   }
   genEnv() {
     let _env = {}
@@ -217,9 +427,12 @@ export default class HyperBEAM {
       _devices = `, preloaded_devices => [${_devs.join(", ")}]`
     }
     const _wallet = `, priv_key_location => <<"${wallet}">>`
+    // Local gateway port takes precedence, then remote arweave_gateway URL
     const _gateway = gateway
       ? `, gateway => <<"http://localhost:${gateway}">>`
-      : ""
+      : this.arweave_gateway
+        ? `, gateway => <<"${this.arweave_gateway}">>`
+        : ""
 
     // store option will be overwritten by hb.erl
     const _store = this.store_prefix
@@ -228,12 +441,11 @@ export default class HyperBEAM {
     let _bundler = this.bundler
       ? `, bundler_httpsig => <<"${this.bundler}">>`
       : ""
-    let _bundler_ans104 =
-      this.bundler_ans104 === false
-        ? ", bundler_ans104 => false"
-        : this.bundler_ans104
-          ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
-          : ""
+    // Don't pass bundler_ans104 if false - Erlang code can't handle boolean false
+    // Only pass it when it's a truthy value (port number or URL)
+    let _bundler_ans104 = this.bundler_ans104 && this.bundler_ans104 !== false
+      ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
+      : ""
     /*
     const _routes = `, routes => [#{ <<"template">> => <<"/result/.*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu}">> } }, #{ <<\"template\">> => <<\"/dry-run\">>, <<\"node\">> => #{ <<\"prefix\">> => <<\"http://localhost:${this.cu}\">> } }, #{ <<"template">> => <<"/graphql">>, <<"nodes">> => [#{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => httpc, protocol => http2 } }, #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }] }, #{ <<"template">> => <<"/raw">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } } }]`
     */
@@ -251,6 +463,9 @@ export default class HyperBEAM {
       ? `, operator => <<"${this.operator}">>`
       : ""
     const _spp = this.spp ? `, simple_pay_price => ${this.spp}` : ""
+    const _genesis_wasm_port = this.genesis_wasm ? `, genesis_wasm_port => ${this.cu_port}` : ""
+    // Disable prometheus metrics by default (beta3 lacks prometheus dependency, causes cowboy crash)
+    const _prometheus = this.prometheus ? "" : ", prometheus => false"
 
     const _node_processes = this.p4_lua
       ? `, node_processes => #{ <<"ledger">> => #{ <<"device">> => <<"process@1.0">>, <<"execution-device">> => <<"lua@5.3a">>, <<"scheduler-device">> => <<"scheduler@1.0">>, <<"module">> => <<"${this.p4_lua.processor}">>, <<"operator">> => <<"${this.operator}">> } }`
@@ -270,11 +485,41 @@ export default class HyperBEAM {
         : !isNil(this.faff)
           ? `, on => #{ <<"request">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> }, <<"response">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> } }`
           : ""
-    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_devices}${_node_processes}}).`
+    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_prometheus}${_devices}${_node_processes}}).`
     return start
   }
 
   kill() {
-    this._shell.kill("SIGKILL")
+    // Clear any pending timeout timer
+    if (this.timeoutTimer) {
+      clearTimeout(this.timeoutTimer)
+      this.timeoutTimer = null
+    }
+    // Kill CU server if we started it
+    if (this.cuProc && this.cuProc.pid) {
+      try {
+        process.kill(-this.cuProc.pid, "SIGKILL")
+      } catch (e) {
+        // Process may already be dead
+      }
+    }
+    // Kill our process - method depends on whether detached or not
+    if (this.proc && this.proc.pid) {
+      try {
+        if (this.rebar3) {
+          // rebar3 mode: not detached, kill directly with SIGKILL
+          this.proc.kill("SIGKILL")
+        } else {
+          // erl mode: detached, kill process group
+          process.kill(-this.proc.pid, "SIGKILL")
+        }
+      } catch (e) {
+        // Process may already be dead
+      }
+    }
+    // Also kill any remaining beam.smp processes on our port
+    spawnSync("pkill", ["-9", "-f", `beam.smp.*${this.port}`])
+    // Fallback: kill all beam.smp processes
+    spawnSync("pkill", ["-9", "-f", "beam.smp"])
   }
 }

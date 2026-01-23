@@ -883,13 +883,31 @@ export const result = async response => {
   const body = Buffer.from(msg.body).toString()
   const http = { headers, body }
   const _from = from(http)
+
+  // Determine the output value
+  let outValue = out
+  if (out["ao-result"]) {
+    if (_from) {
+      // Signed response - use the extracted output
+      outValue = _from.out
+    } else {
+      // Unsigned response with ao-result - handle directly
+      const aoResult = out["ao-result"]
+      if (aoResult === "body") {
+        outValue = body
+      } else {
+        outValue = out[aoResult] ?? ""
+      }
+    }
+  }
+
   return {
     signer: _from?.signer ?? null,
     hashpath: _from?.hashpath ?? null,
     headers,
     status: response.status,
     body,
-    out: out["ao-result"] ? _from?.out : out,
+    out: outValue,
   }
 }
 
@@ -925,16 +943,18 @@ export const from = http => {
 
     // Handle ao-result pointing to body
     if (aoResult === "body") {
+      // Use http.body directly since body may not be a signed component
+      const bodyContent = extractedComponents.body || http.body
       // Handle empty body case
-      if (!extractedComponents.body) {
+      if (!bodyContent) {
         return { out: "", ...ret } // Return empty string for empty body
       }
       // Check if body is binary data
-      if (isBinaryString(extractedComponents.body)) {
-        return { out: stringToBuffer(extractedComponents.body), ...ret }
+      if (isBinaryString(bodyContent)) {
+        return { out: stringToBuffer(bodyContent), ...ret }
       }
       // Return body as-is if it's not binary
-      return { out: extractedComponents.body, ...ret }
+      return { out: bodyContent, ...ret }
     }
 
     // Convert the extracted components to JSON format

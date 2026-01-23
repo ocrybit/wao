@@ -684,6 +684,34 @@ export function httpsig_from(http) {
   delete result.commitments
   delete result["content-digest"]
 
+  // Remove HTTP-specific response headers that are not part of the message content
+  const httpHeaders = [
+    "access-control-allow-methods",
+    "access-control-allow-origin",
+    "access-control-allow-headers",
+    "access-control-expose-headers",
+    "access-control-max-age",
+    "access-control-allow-credentials",
+    "date",
+    "server",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "vary",
+    "cache-control",
+    "pragma",
+    "expires",
+    "status",
+    "content-length"
+  ]
+  for (const header of httpHeaders) {
+    delete result[header]
+  }
+  // Remove empty body
+  if (result.body && (result.body.length === 0 || (Buffer.isBuffer(result.body) && result.body.length === 0))) {
+    delete result.body
+  }
+
   // Extract hashpaths if any
   for (const key of Object.keys(result)) {
     if (key.startsWith("hashpath")) {

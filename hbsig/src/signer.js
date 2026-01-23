@@ -114,6 +114,13 @@ const isSimpleArray = value => {
   })
 }
 
+// Fields that should be encoded as numbered dictionaries instead of lists
+// These are sent as structured field dictionary strings (1="val1", 2="val2")
+// BUT they are NOT marked as "map" type in ao-types, so they stay as strings
+// and don't get linkified by HyperBEAM. This allows them to be signed and verified.
+// dev_stack.erl will parse the dictionary string when needed.
+const DICTIONARY_FIELDS = new Set(["device-stack", "as"])
+
 // Helper to encode array as structured field list
 const encodeAsStructuredFieldList = arr => {
   return arr
@@ -134,6 +141,34 @@ const encodeAsStructuredFieldList = arr => {
       } else {
         // Fallback
         return `"${String(item)}"`
+      }
+    })
+    .join(", ")
+}
+
+// Helper to encode array as structured field dictionary (1-indexed)
+// Format: 1="value1", 2="value2", 3="value3"
+// HyperBEAM parses this to a map that matches JSON {"1": "value1", "2": "value2"}
+const encodeAsStructuredFieldDictionary = arr => {
+  return arr
+    .map((item, idx) => {
+      const key = idx + 1 // 1-indexed
+      if (typeof item === "string") {
+        // String values are quoted
+        return `${key}="${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+      } else if (typeof item === "number") {
+        // Numbers are bare
+        return `${key}=${item}`
+      } else if (typeof item === "boolean") {
+        // Booleans use ?0 or ?1
+        return `${key}=${item ? "?1" : "?0"}`
+      } else if (isBytes(item)) {
+        // Binary data as byte sequences
+        const buffer = Buffer.isBuffer(item) ? item : Buffer.from(item)
+        return `${key}=:${buffer.toString("base64")}:`
+      } else {
+        // Fallback
+        return `${key}="${String(item)}"`
       }
     })
     .join(", ")
@@ -202,8 +237,19 @@ const smartSign = async (obj, path) => {
         ) {
           types.push(`${key}="empty-message"`)
         } else if (isSimpleArray(value)) {
-          types.push(`${key}="list"`)
-          message[key] = encodeAsStructuredFieldList(value)
+          // Fields that should be encoded as dictionaries (1-indexed maps)
+          // These are encoded as: 1="val1", 2="val2"
+          if (DICTIONARY_FIELDS.has(key)) {
+            // Encode as dictionary string but DON'T add "map" type
+            // This keeps it as a string so it doesn't get linkified
+            // and can be signed and verified correctly.
+            // No ao-types entry means it's treated as a plain string
+            message[key] = encodeAsStructuredFieldDictionary(value)
+          } else {
+            // Regular list fields - these get linkified so exclude from signing
+            types.push(`${key}="list"`)
+            message[key] = encodeAsStructuredFieldList(value)
+          }
         } else if (typeof value === "number") {
           types.push(
             `${key}="${Number.isInteger(value) ? "integer" : "float"}"`
@@ -366,10 +412,54 @@ async function _sign({
         .map(k => k.trim())
     : []
 
+  // Parse ao-types to identify list and map fields that should be excluded from signing
+  // HyperBEAM converts arrays and maps to +link references, which would cause commitment validation to fail
+  const aoTypes = lowercaseHeaders["ao-types"] || ""
+  const listFields = new Set()
+  const mapFields = new Set()
+  const listTypesRegex = /([a-zA-Z0-9_-]+)="list"/g
+  const mapTypesRegex = /([a-zA-Z0-9_-]+)="map"/g
+  let aoMatch
+  while ((aoMatch = listTypesRegex.exec(aoTypes)) !== null) {
+    listFields.add(aoMatch[1])
+  }
+  while ((aoMatch = mapTypesRegex.exec(aoTypes)) !== null) {
+    mapFields.add(aoMatch[1])
+  }
+
+  // Metadata fields that are not part of the message body
+  // These get removed from the final committed message, so should not be signed
+  const metadataFields = new Set(["inline-body-key"])
+
+  // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
+  // "authority" conflicts with the HTTP :authority pseudo-header - when HyperBEAM
+  // reconstructs the signature base, it sees the HTTP header value instead of our message field
+  // Note: "content-digest" was previously excluded but is now included to ensure
+  // body commitment - the digest mismatch issue was resolved by computing the digest
+  // from the exact body bytes that will be sent
+  const httpPseudoHeaders = new Set(["authority"])
+
+  // Check if ao-types contains any "list" or "map" declarations
+  // If so, exclude ao-types from signing because HyperBEAM may modify these values
+  // during processing (lists get converted to +link references, maps get normalized)
+  const hasComplexTypesInAoTypes = aoTypes.includes('"list"') || aoTypes.includes('"map"')
+
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    return key !== "body-keys" && key !== "path" && !bodyKeys.includes(key)
+    // Exclude body-keys, path, body keys, list fields, map fields, metadata fields, and HTTP pseudo-headers from signing
+    // Also exclude ao-types if it contains list or map declarations
+    // Map fields (device-stack, as) are NOT signed because HyperBEAM converts maps to +link references
+    return (
+      key !== "body-keys" &&
+      key !== "path" &&
+      !bodyKeys.includes(key) &&
+      !listFields.has(key) &&
+      !mapFields.has(key) &&
+      !metadataFields.has(key) &&
+      !httpPseudoHeaders.has(key) &&
+      !(key === "ao-types" && hasComplexTypesInAoTypes)
+    )
   })
 
   // Only add @path if signPath is enabled AND path header exists
