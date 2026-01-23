@@ -127,8 +127,9 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       const input = normalize(_pmod)
       const output = erl_str_from(out)
       const expected = normalize(mod(_pmod), true)
-      const output_b = erl_str_from(out, true)
-      assert.deepEqual(expected, output_b)
+      // Use non-binary mode output for comparison since expected contains strings
+      const output_normalized = normalize(output, true)
+      assert.deepEqual(expected, output_normalized)
       success.push(v)
     } catch (e) {
       console.log(e)
@@ -136,19 +137,42 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
     }
   }
   console.log(`${err.length} / ${cases.length} failed!`)
-  if (err) {
+  if (err.length > 0) {
     for (let v of err) console.log(v)
+    throw new Error(`${err.length} / ${cases.length} test cases failed`)
   }
 }
 
 const genTest = ({ desc = "HyperBEAM", its = [] }) => {
   describe(desc, function () {
-    let hbeam, sign
+    let hbeam, sign, externalHB = false
     before(async () => {
+      // Check if external HyperBEAM is already running
+      const url = process.env.HYPERBEAM_URL || "http://localhost:10001"
+      try {
+        const res = await fetch(`${url}/~meta@1.0/info/address`)
+        if (res.ok) {
+          externalHB = true
+          // Create minimal hbeam object for external connection
+          const { readFileSync } = await import("fs")
+          const { resolve } = await import("path")
+          const cwd = process.env.CWD || "./HyperBEAM"
+          const walletPath = resolve(process.cwd(), cwd, ".wallet.json")
+          hbeam = {
+            url,
+            jwk: JSON.parse(readFileSync(walletPath, "utf8")),
+            kill: () => {} // No-op for external HyperBEAM
+          }
+          sign = createSigner(hbeam.jwk, hbeam.url)
+          return
+        }
+      } catch (e) {
+        // External HyperBEAM not running, start our own
+      }
       hbeam = await new HyperBEAM({ reset: true }).ready()
       sign = createSigner(hbeam.jwk, hbeam.url)
     })
-    after(async () => hbeam.kill())
+    after(async () => { if (!externalHB) hbeam.kill() })
     for (const v of its) {
       it(
         v.it ?? "should run",
