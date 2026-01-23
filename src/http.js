@@ -200,6 +200,7 @@ function resetHmac(msg) {
     [hmacId]: {
       "commitment-device": "httpsig@1.0",
       type: "hmac-sha256",
+      alg: "hmac-sha256", // Include both for HyperBEAM compatibility
       signature: firstCommitment.signature,
       "signature-input": firstCommitment["signature-input"],
     },
