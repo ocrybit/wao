@@ -212,11 +212,13 @@ class HB {
       })
       return { slot: res.out.slot, res, pid }
     } else {
-      // Use commit + fetch pattern for beta3 HTTP signatures
+      // Use JSON POST with commitment signatures (beta3-compatible approach)
+      // This avoids content-digest issues with HTTP signatures
       let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
+
       const committed = await this.commit(_tags, { path: false })
-      const response = await fetch(`${this.url}/${pid}/schedule`, {
+      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(committed),
@@ -228,9 +230,9 @@ class HB {
       }
 
       return {
-        slot: response.headers.get("slot"),
+        slot: parseInt(response.headers.get("slot")),
         pid,
-        status: response.status,
+        res: { status: response.status },
       }
     }
   }
@@ -301,7 +303,7 @@ class HB {
       })
       return { res, pid: res.out.process }
     } else {
-      // Use commit + fetch pattern for beta3 HTTP signatures
+      // Use JSON POST with commitment signatures (beta3-compatible approach)
       const spawnTags = mergeLeft(tags, {
         "random-seed": seed(16),
         type: "Process",
@@ -309,6 +311,7 @@ class HB {
         device: "process@1.0",
         scheduler: this.addr,
       })
+
       const committed = await this.commit(spawnTags, { path: false })
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
@@ -323,8 +326,8 @@ class HB {
 
       return {
         pid: response.headers.get("process"),
-        slot: response.headers.get("slot"),
-        status: response.status,
+        slot: parseInt(response.headers.get("slot")),
+        res: { status: response.status },
       }
     }
   }
@@ -332,7 +335,6 @@ class HB {
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
     // Use genesis-wasm directly as execution-device for legacynet AOS
-    // Beta3 HTTP signatures have issues with device-stack arrays
     const legacyTags = {
       "data-protocol": "ao",
       variant: "ao.TN.1",
@@ -347,7 +349,7 @@ class HB {
     const t = mergeLeft(tags, legacyTags)
     if (data) t.data = data
 
-    // Use commit + fetch pattern that works in beta3
+    // Use JSON POST with commitment signatures (beta3-compatible approach)
     const committed = await this.commit(t, { path: false })
     const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
       method: "POST",
@@ -357,13 +359,13 @@ class HB {
 
     if (!response.ok) {
       const text = await response.text()
-      throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
+      throw new Error(`SpawnLegacy failed: ${response.status} - ${text.substring(0, 200)}`)
     }
 
     return {
       pid: response.headers.get("process"),
-      slot: response.headers.get("slot"),
-      status: response.status,
+      slot: parseInt(response.headers.get("slot")),
+      res: { status: response.status },
     }
   }
 
@@ -419,7 +421,16 @@ class HB {
   async post(obj, opt = {}) {
     const _json = opt.json ? "/~json@1.0/serialize" : ""
     obj.path += _json
+    console.log("[DEBUG] pre-sign obj:", JSON.stringify(obj, null, 2))
     const signed = await this.sign(obj, opt)
+    console.log("[DEBUG] signed message:", JSON.stringify({
+      url: signed.url,
+      method: signed.method,
+      headers: signed.headers,
+      bodyType: signed.body ? (typeof signed.body === 'string' ? 'string' : signed.body.constructor?.name) : 'undefined',
+      bodyLength: signed.body?.length || signed.body?.size || 0,
+      bodyValue: signed.body ? (typeof signed.body === 'string' ? signed.body.substring(0, 100) : '<binary>') : 'undefined'
+    }, null, 2))
     return await this.send(signed)
   }
 
@@ -458,9 +469,7 @@ class HB {
   async spawnAOS(image) {
     await this.setInfo()
     image ??= this.image ?? (await this.getImage())
-    // Use commit + JSON POST pattern (same as spawn/spawnLegacy)
-    // This allows device-stack to be in committed keys without being signed
-    // HTTP Signature POST doesn't work because committed keys are derived from signature-input
+    // Use JSON POST with commitment signatures (beta3-compatible approach)
     const tags = {
       "data-protocol": "ao",
       variant: "ao.N.1",
@@ -484,6 +493,7 @@ class HB {
       device: "process@1.0",
       scheduler: this.addr,
     }
+
     const committed = await this.commit(tags, { path: false })
     const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
       method: "POST",
@@ -498,8 +508,8 @@ class HB {
 
     return {
       pid: response.headers.get("process"),
-      slot: response.headers.get("slot"),
-      status: response.status,
+      slot: parseInt(response.headers.get("slot")),
+      res: { status: response.status },
     }
   }
 

@@ -763,6 +763,8 @@ export function httpsig_to(tabm) {
     }
 
     // Handle inline body key - move data from inline key to body
+    // This ALWAYS moves the value to body to match HyperBEAM's inline_key behavior
+    // HyperBEAM always treats the data field as body content with ao-body-key header
     if (inlineKeyVal && inlineKeyVal !== "body" && result[inlineKeyVal]) {
       result.body = result[inlineKeyVal]
       delete result[inlineKeyVal]

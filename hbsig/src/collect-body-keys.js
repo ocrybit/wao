@@ -157,6 +157,7 @@ class BodyKeyCollector {
   }
 
   // Check if field is special data/body field
+  // The data/body field is ALWAYS treated as body content to match HyperBEAM's inline_key behavior
   isSpecialDataBodyField(key, value, objKeys) {
     if (
       (key === "data" || key === "body") &&
@@ -173,6 +174,9 @@ class BodyKeyCollector {
       ) {
         return false
       }
+
+      // Always treat data/body as body content - HyperBEAM's inline_key
+      // function always moves data to body with ao-body-key header
       return true
     }
     return false

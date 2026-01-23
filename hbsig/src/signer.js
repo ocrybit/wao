@@ -434,10 +434,9 @@ async function _sign({
   // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
   // "authority" conflicts with the HTTP :authority pseudo-header - when HyperBEAM
   // reconstructs the signature base, it sees the HTTP header value instead of our message field
-  // Note: "content-digest" was previously excluded but is now included to ensure
-  // body commitment - the digest mismatch issue was resolved by computing the digest
-  // from the exact body bytes that will be sent
-  const httpPseudoHeaders = new Set(["authority"])
+  // "content-digest" must be excluded because when the committed message is sent as JSON POST,
+  // HyperBEAM cannot recompute the content-digest (the JSON body is different from the signed body)
+  const httpPseudoHeaders = new Set(["authority", "content-digest"])
 
   // Check if ao-types contains any "list" or "map" declarations
   // If so, exclude ao-types from signing because HyperBEAM may modify these values
