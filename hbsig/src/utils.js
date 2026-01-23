@@ -1,4 +1,6 @@
 import sha256 from "fast-sha256"
+import { fileURLToPath } from "url"
+import { dirname as pathDirname } from "path"
 
 function base64urlDecode(str) {
   str = str.replace(/-/g, "+").replace(/_/g, "/")
@@ -26,4 +28,12 @@ function toAddr(n) {
   return base64urlEncode(hash)
 }
 
-export { toAddr }
+function dirname(meta) {
+  return pathDirname(fileURLToPath(meta.url))
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export { toAddr, dirname, wait }
