@@ -131,6 +131,7 @@ describe("GraphQL", () => {
 describe("Aoconnect", () => {
   it("should work with pre-loaded packages", async () => {
     const server = new Server({ port: 4000, log: false })
+    await wait(100) // wait for server to start listening
     const ar = new AR({ host: "localhost", port: 4000 })
     await ar.post({ data: "abc", tags: { test: 3 }, jwk })
     server.end()

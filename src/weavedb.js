@@ -13,7 +13,7 @@ import {
   decode,
   Decoder,
   Parser,
-} from "../../arjson/sdk/src/index.js"
+} from "arjson"
 function tobits(arr, cursor = 0) {
   let bitStr = ""
   for (let i = 0; i < arr.length; i++) {

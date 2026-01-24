@@ -6,7 +6,7 @@ describe("Meta Device", function () {
   let hb, hbeam
 
   before(async () => {
-    hbeam = await new HyperBEAM({ reset: true, timeout: 60 }).ready()
+    hbeam = await new HyperBEAM({ reset: true, timeout: 120 }).ready()
   })
 
   beforeEach(async () => {
