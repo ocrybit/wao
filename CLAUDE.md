@@ -1069,3 +1069,261 @@ describe('My App/Device', () => {
   })
 })
 ```
+
+---
+
+## Supplemental: HyperBEAM from Source Installation
+
+**Use this guide when you need to install HyperBEAM from a specific git branch (e.g., wao-m3) instead of the pre-built tarball.**
+
+### Why This Guide Exists
+
+The default setup uses `hyperbeam-wao-ready.tar.xz` which contains a pre-built HyperBEAM. However, when working with specific branches like `ocrybit/HyperBEAM:wao-m3`, you need to:
+1. Clone the source from git
+2. Use pre-built dependencies from tarball (hexpm is unavailable in this environment)
+3. Compile the new source code
+4. Extract pre-built NIFs from tarball
+
+### Prerequisites
+
+These are already available via tarballs:
+- Erlang 27.3.4.6 (via asdf)
+- Rebar3 3.26.0 (via asdf)
+- Rust (for WASM runtime)
+- Node.js 22+
+
+### Step-by-Step Installation
+
+**Step 1: Extract base tarballs (Erlang, Node modules)**
+
+```bash
+cd ~ && tar -xJf /home/user/wao/claude/installation/asdf-erlang-rebar.tar.xz
+cd /home/user/wao && tar -xJf /home/user/wao/claude/installation/wao-node-modules.tar.xz
+
+# Setup Erlang
+. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
+```
+
+**Step 2: Clone HyperBEAM from source**
+
+```bash
+# Clone specific branch (example: wao-m3 from ocrybit fork)
+cd ~ && git clone --branch wao-m3 https://github.com/ocrybit/HyperBEAM.git
+
+# Or for main HyperBEAM repo:
+# cd ~ && git clone --branch edge https://github.com/permaweb/HyperBEAM.git
+```
+
+**Step 3: Extract pre-built dependencies from tarball**
+
+The environment cannot fetch packages from hexpm, so we extract the `_build` directory from the tarball:
+
+```bash
+# Extract _build directory (contains cowboy, ranch, gun, luerl, etc.)
+cd /tmp && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/_build
+cp -r /tmp/HyperBEAM/_build ~/HyperBEAM/
+rm -rf /tmp/HyperBEAM
+```
+
+**Step 4: Configure rebar for offline compilation**
+
+The source's `rebar.lock` references hexpm packages. Remove it and use git-based config:
+
+```bash
+cd ~/HyperBEAM
+
+# Remove lock file (forces use of existing _build deps)
+rm -f rebar.lock
+
+# Use the installation's rebar.config (git-based deps, not hexpm)
+cp /home/user/wao/claude/installation/hyperbeam_rebar.config rebar.config
+```
+
+**Step 5: Compile HyperBEAM**
+
+```bash
+cd ~/HyperBEAM
+. ~/.asdf/asdf.sh
+rebar3 compile
+```
+
+This will:
+- Build WASM runtime (wamr) with cmake
+- Compile all Erlang source files
+- Skip dependency fetching (uses existing _build)
+
+Expected output:
+- ~150 .beam files in `_build/default/lib/hb/ebin/`
+- WASM library at `_build/wamr/lib/libvmlib.a`
+
+**Step 6: Extract pre-built NIFs**
+
+The native NIFs (hb_beamr.so, hb_keccak.so) require the port_compiler plugin which isn't available. Extract from tarball:
+
+```bash
+# Extract NIFs
+cd /tmp && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/priv
+
+# Copy to HyperBEAM
+cp -r /tmp/HyperBEAM/priv/* ~/HyperBEAM/priv/
+mkdir -p ~/HyperBEAM/_build/default/lib/hb/priv
+cp -r /tmp/HyperBEAM/priv/* ~/HyperBEAM/_build/default/lib/hb/priv/
+
+# Cleanup
+rm -rf /tmp/HyperBEAM
+```
+
+**Step 7: Register custom devices (optional)**
+
+```bash
+# Copy dev_dex device
+cp /home/user/wao/claude/devices/dev_dex.erl ~/HyperBEAM/src/
+
+# Register in hb_opts.erl (if not already present)
+grep -q 'dev_dex' ~/HyperBEAM/src/hb_opts.erl || \
+  sed -i 's/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois},\n            #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}/' ~/HyperBEAM/src/hb_opts.erl
+
+# Recompile
+cd ~/HyperBEAM && rebar3 compile
+```
+
+**Step 8: Complete WAO SDK setup**
+
+```bash
+# Install WAO dependencies
+cd /home/user/wao && npm install --silent 2>/dev/null
+
+# Build and link hbsig
+cd /home/user/wao/hbsig && npm install --silent 2>/dev/null && npm run build --silent 2>/dev/null
+rm -f /home/user/wao/node_modules/hbsig
+ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+
+# Create workspaces directory
+mkdir -p /home/user/wao/workspaces
+
+# Configure environment
+cd /home/user/wao
+cat > .env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+```
+
+### Verification
+
+```bash
+# Check installation
+cd ~/HyperBEAM
+echo "Branch: $(git branch --show-current)"
+echo "Commit: $(git log --oneline -1)"
+echo "Beam files: $(ls _build/default/lib/hb/ebin/*.beam | wc -l)"
+echo "NIFs: $(ls priv/*.so)"
+echo "WASM: $(ls _build/wamr/lib/libvmlib.a && echo OK)"
+```
+
+Expected output:
+```
+Branch: wao-m3
+Commit: ac68932c refactor: simplify dev_hbsig...
+Beam files: 151
+NIFs: priv/hb_beamr.so priv/hb_keccak.so
+WASM: _build/wamr/lib/libvmlib.a
+OK
+```
+
+### Complete One-Liner Script
+
+For convenience, here's the complete installation as a single script:
+
+```bash
+#!/bin/bash
+# HyperBEAM from Source Installation (wao-m3 branch)
+# Usage: bash install-hyperbeam-source.sh [branch] [repo]
+# Default: wao-m3 from ocrybit/HyperBEAM
+
+BRANCH=${1:-wao-m3}
+REPO=${2:-https://github.com/ocrybit/HyperBEAM.git}
+
+set -e
+
+echo "Installing HyperBEAM from $REPO branch $BRANCH"
+
+# Step 1: Base tarballs
+cd ~ && tar -xJf /home/user/wao/claude/installation/asdf-erlang-rebar.tar.xz
+cd /home/user/wao && tar -xJf /home/user/wao/claude/installation/wao-node-modules.tar.xz
+. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
+
+# Step 2: Clone source
+rm -rf ~/HyperBEAM
+cd ~ && git clone --branch $BRANCH $REPO HyperBEAM
+
+# Step 3: Extract dependencies
+cd /tmp && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/_build
+cp -r /tmp/HyperBEAM/_build ~/HyperBEAM/
+rm -rf /tmp/HyperBEAM
+
+# Step 4: Configure rebar
+cd ~/HyperBEAM
+rm -f rebar.lock
+cp /home/user/wao/claude/installation/hyperbeam_rebar.config rebar.config
+
+# Step 5: Compile
+rebar3 compile
+
+# Step 6: Extract NIFs
+cd /tmp && tar -xJf /home/user/wao/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/priv
+cp -r /tmp/HyperBEAM/priv/* ~/HyperBEAM/priv/
+mkdir -p ~/HyperBEAM/_build/default/lib/hb/priv
+cp -r /tmp/HyperBEAM/priv/* ~/HyperBEAM/_build/default/lib/hb/priv/
+rm -rf /tmp/HyperBEAM
+
+# Step 7: Register dev_dex
+cp /home/user/wao/claude/devices/dev_dex.erl ~/HyperBEAM/src/
+grep -q 'dev_dex' ~/HyperBEAM/src/hb_opts.erl || \
+  sed -i 's/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois}/#{<<"name">> => <<"whois@1.0">>, <<"module">> => dev_whois},\n            #{<<"name">> => <<"dex@1.0">>, <<"module">> => dev_dex}/' ~/HyperBEAM/src/hb_opts.erl
+cd ~/HyperBEAM && rebar3 compile
+
+# Step 8: WAO SDK setup
+cd /home/user/wao && npm install --silent 2>/dev/null
+cd /home/user/wao/hbsig && npm install --silent 2>/dev/null && npm run build --silent 2>/dev/null
+rm -f /home/user/wao/node_modules/hbsig
+ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+mkdir -p /home/user/wao/workspaces
+cat > /home/user/wao/.env.hyperbeam << 'EOF'
+ARWEAVE_GATEWAY=https://arweave-proxy.ocrybit.workers.dev
+HB_REBAR3=false
+EOF
+
+echo "Installation complete!"
+echo "Branch: $(cd ~/HyperBEAM && git branch --show-current)"
+echo "Commit: $(cd ~/HyperBEAM && git log --oneline -1)"
+```
+
+### Troubleshooting Source Installation
+
+**"Package not found in any repo: cowboy"**
+- Cause: rebar.lock forcing hexpm lookup
+- Fix: `rm -f ~/HyperBEAM/rebar.lock`
+
+**"Failed to update package pc from repo hexpm"**
+- Cause: Port compiler plugin unavailable
+- Fix: Use pre-built NIFs from tarball (Step 6)
+
+**Compilation fails with missing headers**
+- Cause: _build directory not copied
+- Fix: Re-run Step 3 to extract dependencies
+
+**"device_not_loadable" for custom devices**
+- Cause: Device not registered in hb_opts.erl
+- Fix: Add device to `preloaded_devices` list and recompile
+
+### Differences: Source vs Tarball
+
+| Aspect | Source Install | Tarball Install |
+|--------|---------------|-----------------|
+| Flexibility | Any branch/commit | Fixed version |
+| Git history | Full history | None |
+| Custom code | Can modify source | Pre-compiled |
+| Dependencies | From tarball _build | Pre-built |
+| NIFs | From tarball priv/ | Pre-built |
+| Build time | ~60 seconds | ~30 seconds |
