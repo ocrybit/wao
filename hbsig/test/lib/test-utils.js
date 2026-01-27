@@ -369,6 +369,21 @@ const modOut = out => {
   delete output["content-length"]
   delete output["content-type"]
   delete output["inline-body-key"]
+  // Delete HyperBEAM-specific headers
+  delete output["accept"]
+  delete output["accept-bundle"]
+  delete output["accept-encoding"]
+  delete output["accept-language"]
+  delete output["host"]
+  delete output["connection"]
+  delete output["user-agent"]
+  delete output["cache-control"]
+  delete output["pragma"]
+  delete output["date"]
+  delete output["server"]
+  delete output["transfer-encoding"]
+  delete output["vary"]
+  delete output["expires"]
   return output
 }
 const modIn = inp => {
