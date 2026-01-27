@@ -373,12 +373,16 @@ function from(msg) {
         values.push([normKey, encoded])
       } else if (shouldConvertToNumberedMap(value)) {
         // Convert to numbered map (1-based indexing)
-        const numberedMap = {}
+        // Erlang puts ao-types INSIDE the numbered map with .="list"
+        const numberedMap = { "ao-types": '.="list"' }
         value.forEach((item, idx) => {
-          numberedMap[(idx + 1).toString()] = item
+          // Recursively encode each item
+          const encodedItem = typeof item === "object" && item !== null && !Array.isArray(item) && !Buffer.isBuffer(item)
+            ? from(item)
+            : item
+          numberedMap[(idx + 1).toString()] = encodedItem
         })
-        types.push([normKey, "list"])
-        values.push([normKey, from(numberedMap)])
+        values.push([normKey, numberedMap])
       } else {
         // Encode as list string
         const [_type, encoded] = encodeValue(value)
@@ -421,43 +425,11 @@ function from(msg) {
 
 /**
  * Check if an array should be converted to numbered map
- * Rules based on Erlang behavior:
- * 1. Contains any objects/maps → convert
- * 2. Contains empty arrays (but NOT empty buffers) → convert
- * 3. All items are arrays (array of arrays) → convert
- * 4. Otherwise → encode as string
+ * Erlang beta3 always converts lists to numbered maps, so we do the same
  */
 function shouldConvertToNumberedMap(arr) {
-  let allArrays = true
-  let hasObjects = false
-  let hasEmptyArrays = false
-
-  for (const item of arr) {
-    // Check for objects (not arrays or buffers)
-    if (
-      typeof item === "object" &&
-      item !== null &&
-      !Array.isArray(item) &&
-      !Buffer.isBuffer(item)
-    ) {
-      hasObjects = true
-    }
-    // Check for empty arrays only (NOT empty buffers)
-    else if (Array.isArray(item) && item.length === 0) {
-      hasEmptyArrays = true
-    }
-    // Track if all items are arrays
-    else if (!Array.isArray(item)) {
-      allArrays = false
-    }
-  }
-
-  // Convert if: has objects, has empty arrays, or all items are non-empty arrays
-  return (
-    hasObjects ||
-    hasEmptyArrays ||
-    (allArrays && arr.length > 0 && arr.every(item => Array.isArray(item)))
-  )
+  // Always convert to numbered map to match Erlang beta3 behavior
+  return true
 }
 
 /**
