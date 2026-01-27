@@ -4,10 +4,10 @@ This guide explains how to install HyperBEAM from the submodule and run tests.
 
 ## Prerequisites
 
-The installation uses pre-built tarballs located in `wao-hb/claude/installation/`:
-- `asdf-erlang-rebar.tar.xz` - Erlang 27.3.4.6 and Rebar3 3.26.0
-- `hyperbeam-wao-ready.tar.xz` - Pre-built HyperBEAM dependencies and NIFs
-- `hyperbeam_rebar.config` - Offline rebar configuration
+The installation uses pre-built tarballs:
+- `wao-hb/claude/installation/asdf-erlang-rebar.tar.xz` - Erlang 27.3.4.6 and Rebar3 3.26.0
+- `installation/hyperbeam-prebuilt.tar.xz` - Pre-built HyperBEAM dependencies and NIFs (included in this repo)
+- `wao-hb/claude/installation/hyperbeam_rebar.config` - Offline rebar configuration
 
 ## Installation Steps
 
@@ -28,9 +28,7 @@ git submodule update --init --recursive
 ### Step 3: Extract pre-built dependencies
 
 ```bash
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/_build
-cp -r /tmp/HyperBEAM/_build /home/user/wao/HyperBEAM/
-rm -rf /tmp/HyperBEAM
+cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz _build
 ```
 
 ### Step 4: Configure rebar for offline compilation
@@ -52,19 +50,15 @@ rm -rf _build/wamr/lib/CMakeCache.txt _build/wamr/lib/CMakeFiles
 ### Step 6: Extract pre-built NIFs
 
 ```bash
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/priv
-cp -r /tmp/HyperBEAM/priv/* /home/user/wao/HyperBEAM/priv/
+cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz priv
 mkdir -p /home/user/wao/HyperBEAM/_build/default/lib/hb/priv
-cp -r /tmp/HyperBEAM/priv/* /home/user/wao/HyperBEAM/_build/default/lib/hb/priv/
-rm -rf /tmp/HyperBEAM
+cp -r /home/user/wao/HyperBEAM/priv/* /home/user/wao/HyperBEAM/_build/default/lib/hb/priv/
 ```
 
 ### Step 7: Extract wallet file
 
 ```bash
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/.wallet.json
-cp /tmp/HyperBEAM/.wallet.json /home/user/wao/HyperBEAM/
-rm -rf /tmp/HyperBEAM
+cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz .wallet.json
 ```
 
 ### Step 8: Create symlink for tests
@@ -184,12 +178,10 @@ cd ~ && tar -xJf /home/user/wao-hb/claude/installation/asdf-erlang-rebar.tar.xz
 cd /home/user/wao && git submodule update --init --recursive
 
 # Step 3: Dependencies
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/_build
-cp -r /tmp/HyperBEAM/_build /home/user/wao/HyperBEAM/
-rm -rf /tmp/HyperBEAM
+cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz _build
 
 # Step 4: Rebar config
-cd /home/user/wao/HyperBEAM && rm -f rebar.lock
+rm -f rebar.lock
 cp /home/user/wao-hb/claude/installation/hyperbeam_rebar.config rebar.config
 
 # Step 5: Compile
@@ -197,16 +189,12 @@ rm -rf _build/wamr/lib/CMakeCache.txt _build/wamr/lib/CMakeFiles
 rebar3 compile
 
 # Step 6: NIFs
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/priv
-cp -r /tmp/HyperBEAM/priv/* /home/user/wao/HyperBEAM/priv/
-mkdir -p /home/user/wao/HyperBEAM/_build/default/lib/hb/priv
-cp -r /tmp/HyperBEAM/priv/* /home/user/wao/HyperBEAM/_build/default/lib/hb/priv/
-rm -rf /tmp/HyperBEAM
+tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz priv
+mkdir -p _build/default/lib/hb/priv
+cp -r priv/* _build/default/lib/hb/priv/
 
 # Step 7: Wallet
-cd /tmp && tar -xJf /home/user/wao-hb/claude/installation/hyperbeam-wao-ready.tar.xz HyperBEAM/.wallet.json
-cp /tmp/HyperBEAM/.wallet.json /home/user/wao/HyperBEAM/
-rm -rf /tmp/HyperBEAM
+tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz .wallet.json
 
 # Step 8: Symlink
 ln -sfn /home/user/wao/HyperBEAM ~/HyperBEAM
