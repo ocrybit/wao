@@ -6,10 +6,10 @@
 import { erl_str_from } from "./erl_str.js"
 
 /**
- * Convert from structured format (rich message to TABM)
- * Mirrors Erlang's from/1 function
- * @param {*} obj - Rich message object
- * @returns {*} - TABM object
+ * Convert from TABM format to rich message (decode)
+ * Mirrors Erlang's dev_codec_structured:from/3 function
+ * @param {*} obj - TABM object (with ao-types)
+ * @returns {*} - Rich message object (with native types)
  */
 export function structured_from(obj) {
   // Handle binary input
@@ -26,24 +26,29 @@ export function structured_from(obj) {
     return obj
   }
 
-  // Convert rich message to TABM
-  return from(obj)
+  // Convert TABM to rich message (decode ao-types)
+  return to(obj)
 }
 
 /**
- * Convert to structured format (TABM to rich message)
- * Mirrors Erlang's to/1 function
- * @param {string|object} input - Erlang term string or TABM object
- * @returns {object} - Rich message object
+ * Convert from rich message to TABM format (encode)
+ * Mirrors Erlang's dev_codec_structured:to/3 function
+ * @param {string|object} input - Erlang term string or rich message object
+ * @returns {object} - TABM object (with ao-types)
  */
 export function structured_to(input) {
-  // If input is a string (Erlang response), parse it
+  // If input is a string (Erlang response), parse it first
   if (typeof input === "string") {
     return erl_str_from(input, false)
   }
 
-  // Otherwise convert TABM to rich message
-  return to(input)
+  // Handle non-object input
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return input
+  }
+
+  // Convert rich message to TABM (encode with ao-types)
+  return from(input)
 }
 
 /**
