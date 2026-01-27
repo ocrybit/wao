@@ -4,17 +4,17 @@ This guide explains how to install HyperBEAM from the submodule and run tests.
 
 ## Prerequisites
 
-The installation uses pre-built tarballs:
-- `wao-hb/claude/installation/asdf-erlang-rebar.tar.xz` - Erlang 27.3.4.6 and Rebar3 3.26.0
-- `installation/hyperbeam-prebuilt.tar.xz` - Pre-built HyperBEAM dependencies and NIFs (included in this repo)
-- `wao-hb/claude/installation/hyperbeam_rebar.config` - Offline rebar configuration
+The installation uses pre-built tarballs (all included in this repo under `installation/`):
+- `asdf-erlang-rebar.tar.xz` - Erlang 27.3.4.6 and Rebar3 3.26.0
+- `hyperbeam-prebuilt.tar.xz` - Pre-built HyperBEAM dependencies and NIFs
+- `hyperbeam_rebar.config` - Offline rebar configuration
 
 ## Installation Steps
 
 ### Step 1: Extract Erlang and setup asdf
 
 ```bash
-cd ~ && tar -xJf /home/user/wao-hb/claude/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 ```
 
@@ -36,7 +36,7 @@ cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-pr
 ```bash
 cd /home/user/wao/HyperBEAM
 rm -f rebar.lock
-cp /home/user/wao-hb/claude/installation/hyperbeam_rebar.config rebar.config
+cp /home/user/wao/installation/hyperbeam_rebar.config rebar.config
 ```
 
 ### Step 5: Compile HyperBEAM
@@ -136,7 +136,7 @@ Load asdf before running tests:
 ### "Package not found in any repo: luerl"
 Apply the offline rebar config:
 ```bash
-cp /home/user/wao-hb/claude/installation/hyperbeam_rebar.config /home/user/wao/HyperBEAM/rebar.config
+cp /home/user/wao/installation/hyperbeam_rebar.config /home/user/wao/HyperBEAM/rebar.config
 rm -f /home/user/wao/HyperBEAM/rebar.lock
 ```
 
@@ -171,7 +171,7 @@ Run all setup steps at once:
 set -e
 
 # Step 1: Erlang
-cd ~ && tar -xJf /home/user/wao-hb/claude/installation/asdf-erlang-rebar.tar.xz
+cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
 # Step 2: Submodule
@@ -182,7 +182,7 @@ cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-pr
 
 # Step 4: Rebar config
 rm -f rebar.lock
-cp /home/user/wao-hb/claude/installation/hyperbeam_rebar.config rebar.config
+cp /home/user/wao/installation/hyperbeam_rebar.config rebar.config
 
 # Step 5: Compile
 rm -rf _build/wamr/lib/CMakeCache.txt _build/wamr/lib/CMakeFiles
