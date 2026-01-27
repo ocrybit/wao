@@ -83,25 +83,10 @@ function to(tabm, parentTypes = null, currentPath = "") {
     types[key] = type
   }
 
-  // Build result with empty values first
+  // Build result (don't materialize empty values from ao-types alone - match Erlang behavior)
   const result = {}
 
-  // Add empty values based on their types
-  for (const [key, type] of Object.entries(types)) {
-    // Only process keys at current path level
-    const fullKey = currentPath ? `${currentPath}/${key}` : key
-    if (!key.includes("/") || key === fullKey) {
-      if (type === "empty-binary") {
-        result[key] = ""
-      } else if (type === "empty-list") {
-        result[key] = []
-      } else if (type === "empty-message") {
-        result[key] = {}
-      }
-    }
-  }
-
-  // Process all other key-value pairs
+  // Process all key-value pairs
   for (const [rawKey, value] of Object.entries(tabm)) {
     // Skip ao-types field
     if (rawKey === "ao-types") {
@@ -226,11 +211,12 @@ function decodeValue(type, value) {
       return parseFloat(value)
 
     case "atom":
+    case "boolean": // boolean is an alias for atom
       const atomItem = parseStructuredItem(value)
       const atomValue = atomItem.replace(/^"|"$/g, "") // Remove quotes
       // Convert common atom values to their JavaScript equivalents
-      if (atomValue === "true") return true
-      if (atomValue === "false") return false
+      if (atomValue === "true" || atomValue === "?1") return true
+      if (atomValue === "false" || atomValue === "?0") return false
       if (atomValue === "null" || atomValue === "nil") return null
       if (atomValue === "undefined") return undefined
       return atomValue
@@ -330,14 +316,15 @@ function from(msg) {
   for (const normKey of sortedKeys) {
     const value = normalizedMap[normKey]
 
-    // Handle empty values
+    // Handle empty values - add only to values (not types) to match Erlang behavior
+    // Erlang doesn't add ao-types annotations for empty values at top level
     if (value === "" || (value instanceof Buffer && value.length === 0)) {
-      types.push([normKey, "empty-binary"])
+      values.push([normKey, Buffer.from([])])
       continue
     }
 
     if (Array.isArray(value) && value.length === 0) {
-      types.push([normKey, "empty-list"])
+      values.push([normKey, { "ao-types": '.="list"' }])
       continue
     }
 
@@ -348,7 +335,7 @@ function from(msg) {
       !(value instanceof Buffer) &&
       Object.keys(value).length === 0
     ) {
-      types.push([normKey, "empty-message"])
+      values.push([normKey, {}])
       continue
     }
 
@@ -506,9 +493,9 @@ function encodeAsDictionary(arr) {
  * Encode a value with its type
  */
 function encodeValue(value) {
-  // Null (as atom)
+  // Null (as atom) - no quotes to match Erlang behavior
   if (value === null) {
-    return ["atom", '"null"']
+    return ["atom", "null"]
   }
 
   // Integer
@@ -527,15 +514,15 @@ function encodeValue(value) {
     return ["float", str]
   }
 
-  // Boolean (as atom)
+  // Boolean (as atom) - no quotes to match Erlang behavior
   if (typeof value === "boolean") {
-    return ["atom", `"${value}"`]
+    return ["atom", `${value}`]
   }
 
-  // Symbol (as atom)
+  // Symbol (as atom) - no quotes to match Erlang behavior
   if (typeof value === "symbol") {
     const name = Symbol.keyFor(value) || value.description || ""
-    return ["atom", `"${name}"`]
+    return ["atom", `${name}`]
   }
 
   // List
