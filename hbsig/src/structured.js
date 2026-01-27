@@ -49,9 +49,11 @@ export function structured_to(input) {
 /**
  * Convert a TABM into a rich message (mirrors Erlang's to/1)
  * @param {*} tabm - Type-Annotated-Binary-Message
+ * @param {object} parentTypes - Types from parent ao-types (for path-based types)
+ * @param {string} currentPath - Current path prefix
  * @returns {*} - Rich message
  */
-function to(tabm) {
+function to(tabm, parentTypes = null, currentPath = "") {
   // Handle binary input
   if (
     typeof tabm === "string" ||
@@ -66,21 +68,31 @@ function to(tabm) {
     return tabm
   }
 
-  // Parse ao-types if present
+  // Parse ao-types if present at this level
   const aoTypesStr = tabm["ao-types"] || ""
-  const types = parseAoTypes(aoTypesStr)
+  const localTypes = parseAoTypes(aoTypesStr)
+
+  // Merge with parent path-based types
+  const types = parentTypes ? { ...parentTypes } : {}
+  for (const [key, type] of Object.entries(localTypes)) {
+    types[key] = type
+  }
 
   // Build result with empty values first
   const result = {}
 
   // Add empty values based on their types
   for (const [key, type] of Object.entries(types)) {
-    if (type === "empty-binary") {
-      result[key] = ""
-    } else if (type === "empty-list") {
-      result[key] = []
-    } else if (type === "empty-message") {
-      result[key] = {}
+    // Only process keys at current path level
+    const fullKey = currentPath ? `${currentPath}/${key}` : key
+    if (!key.includes("/") || key === fullKey) {
+      if (type === "empty-binary") {
+        result[key] = ""
+      } else if (type === "empty-list") {
+        result[key] = []
+      } else if (type === "empty-message") {
+        result[key] = {}
+      }
     }
   }
 
@@ -92,13 +104,15 @@ function to(tabm) {
     }
 
     const normalizedKey = rawKey.toLowerCase()
+    const fullPath = currentPath ? `${currentPath}/${normalizedKey}` : normalizedKey
 
     if (
       typeof value === "string" ||
       value instanceof Buffer ||
       value instanceof Uint8Array
     ) {
-      const type = types[normalizedKey]
+      // Look for type at current key or full path
+      const type = types[normalizedKey] || types[fullPath]
       if (type) {
         // Decode according to type
         result[rawKey] = decodeValue(type, value)
@@ -111,9 +125,9 @@ function to(tabm) {
       value !== null &&
       !Array.isArray(value)
     ) {
-      // Recursively decode child TABM
-      const childDecoded = to(value)
-      const type = types[normalizedKey]
+      // Recursively decode child TABM, passing path-based types
+      const childDecoded = to(value, types, fullPath)
+      const type = types[normalizedKey] || types[fullPath]
 
       if (type === "list") {
         // Convert numbered map back to ordered list
@@ -208,7 +222,13 @@ function decodeValue(type, value) {
 
     case "atom":
       const atomItem = parseStructuredItem(value)
-      return atomItem.replace(/^"|"$/g, "") // Remove quotes
+      const atomValue = atomItem.replace(/^"|"$/g, "") // Remove quotes
+      // Convert common atom values to their JavaScript equivalents
+      if (atomValue === "true") return true
+      if (atomValue === "false") return false
+      if (atomValue === "null" || atomValue === "nil") return null
+      if (atomValue === "undefined") return undefined
+      return atomValue
 
     case "list":
       return parseStructuredList(value).map(item => {

@@ -1,6 +1,7 @@
 import { send } from "../../src/send.js"
 import { erl_json_to, normalize } from "../../src/erl_json.js"
 import { erl_str_from } from "../../src/erl_str.js"
+import { structured_to } from "../../src/structured.js"
 import assert from "assert"
 import { describe, it, before, after } from "node:test"
 import { HyperBEAM } from "../../../src/test.js"
@@ -126,9 +127,11 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       const { out } = await send(signed)
       const input = normalize(_pmod)
       const output = erl_str_from(out)
+      // Apply structured_to to convert values based on ao-types
+      const output_converted = structured_to(output)
       const expected = normalize(mod(_pmod), true)
       // Use non-binary mode output for comparison since expected contains strings
-      const output_normalized = normalize(output, true)
+      const output_normalized = normalize(output_converted, true)
       assert.deepEqual(expected, output_normalized)
       success.push(v)
     } catch (e) {
