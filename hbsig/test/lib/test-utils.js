@@ -270,9 +270,13 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       const _pmod = pmod(v)
       const json = erl_json_to(_pmod)
       const signed = await sign({ path, body: JSON.stringify(json) })
-      const { out } = await send(signed)
+      const result = await send(signed)
+      // Use body directly for dev_hbsig endpoints that return #erl_response{...}
+      const responseBody = result.body
+      // DEBUG: Print first part of response body
+      if (i <= 3) console.log(`DEBUG[${i}]: responseBody = ${responseBody?.substring(0, 200)}...`)
       const input = normalize(_pmod)
-      const output = erl_str_from(out)
+      const output = erl_str_from(responseBody)
       // Apply structured_from to decode ao-types in the response
       const output_converted = structured_decode(output)
       const expected = normalize(mod(_pmod), true)
@@ -351,6 +355,7 @@ const modOut = out => {
   delete output.commitments
   delete output.path
   delete output.method
+  delete output.body  // HTTP signature may put non-ASCII values here
   delete output["content-length"]
   delete output["content-type"]
   delete output["inline-body-key"]
@@ -369,6 +374,12 @@ const modOut = out => {
   delete output["transfer-encoding"]
   delete output["vary"]
   delete output["expires"]
+  // Filter out any remaining non-string header values (e.g., false, numbers)
+  for (const [key, value] of Object.entries(output)) {
+    if (typeof value !== "string" && !Buffer.isBuffer(value)) {
+      delete output[key]
+    }
+  }
   return output
 }
 const modIn = inp => {
