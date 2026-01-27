@@ -261,24 +261,10 @@ function isLinkifyingPath(path) {
 const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
   let err = []
   let success = []
-  let skipped = []
   let i = 0
-
-  // Skip flat_to test entirely - it fundamentally can't work due to linkification
-  if (isLinkifyingPath(path)) {
-    console.log(`Skipping ${cases.length} cases for ${path} (linkification incompatible)`)
-    return
-  }
 
   for (const v of cases) {
     console.log(`[${++i}]...........................................`, v)
-
-    // Skip cases with unsupported values (arrays, nested objects, booleans)
-    if (containsUnsupportedValues(v)) {
-      console.log("  Skipping (contains unsupported values)")
-      skipped.push(v)
-      continue
-    }
 
     try {
       const _pmod = pmod(v)
@@ -307,11 +293,10 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
     }
   }
 
-  const tested = cases.length - skipped.length
-  console.log(`${err.length} / ${tested} failed! (${skipped.length} skipped)`)
+  console.log(`${err.length} / ${cases.length} failed!`)
   if (err.length > 0) {
     for (let v of err) console.log(v)
-    throw new Error(`${err.length} / ${tested} test cases failed`)
+    throw new Error(`${err.length} / ${cases.length} test cases failed`)
   }
 }
 
