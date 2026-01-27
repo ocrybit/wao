@@ -374,14 +374,48 @@ function from(msg) {
       } else if (shouldConvertToNumberedMap(value)) {
         // Convert to numbered map (1-based indexing)
         // Erlang puts ao-types INSIDE the numbered map with .="list"
-        const numberedMap = { "ao-types": '.="list"' }
+        // Typed values (int, bool, etc) are encoded as strings with type annotations
+        const numberedMap = {}
+        const itemTypes = ['.="list"']
+
         value.forEach((item, idx) => {
-          // Recursively encode each item
-          const encodedItem = typeof item === "object" && item !== null && !Array.isArray(item) && !Buffer.isBuffer(item)
-            ? from(item)
-            : item
-          numberedMap[(idx + 1).toString()] = encodedItem
+          const key = (idx + 1).toString()
+          if (typeof item === "object" && item !== null && !Array.isArray(item) && !Buffer.isBuffer(item)) {
+            // Nested object - recursively encode
+            numberedMap[key] = from(item)
+          } else if (typeof item === "number" && Number.isInteger(item)) {
+            // Integer - encode as string with type annotation
+            numberedMap[key] = item.toString()
+            itemTypes.push(`${key}="integer"`)
+          } else if (typeof item === "number") {
+            // Float - encode as string with type annotation
+            numberedMap[key] = item.toString()
+            itemTypes.push(`${key}="float"`)
+          } else if (typeof item === "boolean") {
+            // Boolean - encode as string with type annotation
+            numberedMap[key] = item.toString()
+            itemTypes.push(`${key}="atom"`)
+          } else if (item === null) {
+            // Null - encode as string with type annotation
+            numberedMap[key] = "null"
+            itemTypes.push(`${key}="atom"`)
+          } else if (typeof item === "symbol") {
+            // Symbol/atom
+            const name = Symbol.keyFor(item) || item.description || ""
+            numberedMap[key] = name
+            itemTypes.push(`${key}="atom"`)
+          } else if (Array.isArray(item)) {
+            // Nested list - recursively encode
+            const nestedResult = from({ [key]: item })
+            numberedMap[key] = nestedResult[key]
+            // Don't add type annotation - it's in the nested map
+          } else {
+            // String or other - keep as-is
+            numberedMap[key] = item
+          }
         })
+
+        numberedMap["ao-types"] = itemTypes.join(", ")
         values.push([normKey, numberedMap])
       } else {
         // Encode as list string
