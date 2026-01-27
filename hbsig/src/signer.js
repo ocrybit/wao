@@ -5,6 +5,24 @@ import { enc } from "./encode.js"
 import { isBytes } from "./encode-utils.js"
 import { createSigner as _createSigner } from "@permaweb/aoconnect"
 import { toHttpSigner } from "./send.js"
+import { createHash } from "crypto"
+
+// Compute content-digest header value from body content
+// Format: sha-256=:base64hash:
+const computeContentDigest = body => {
+  let data
+  if (typeof body === "string") {
+    data = Buffer.from(body)
+  } else if (Buffer.isBuffer(body)) {
+    data = body
+  } else if (body instanceof Uint8Array) {
+    data = Buffer.from(body)
+  } else {
+    return null
+  }
+  const hash = createHash("sha256").update(data).digest("base64")
+  return `sha-256=:${hash}:`
+}
 
 // Export verify from signer-utils.js for compatibility
 export { verify } from "./signer-utils.js"
@@ -327,6 +345,13 @@ const encode = async (obj, path) => {
   // Only add path if explicitly provided
   if (path) fields.path = path
 
+  // Rename "body" to "json-body" for string bodies to avoid httpsig special handling
+  // httpsig codec treats "body" as HTTP body content and removes it
+  if (fields.body && typeof fields.body === "string") {
+    fields["json-body"] = fields.body
+    delete fields.body
+  }
+
   // Try the standard encoding pipeline
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))
 
@@ -336,10 +361,15 @@ const encode = async (obj, path) => {
     return await enc(filtered)
   }
 
-  // For non-binary data, return in the same format as enc()
-  // httpsig_to returns a flattened object, so we need to separate headers and body
+  // For non-binary data, separate headers and body
   const { body, ...headers } = encoded
-  return { headers, body }
+  if (body) {
+    // Return body (string or binary) separately from headers
+    return { headers, body }
+  }
+
+  // No body
+  return { headers: encoded, body: undefined }
 }
 
 // Helper to join URL and path
@@ -405,6 +435,25 @@ async function _sign({
     lowercaseHeaders[key.toLowerCase()] = value
   }
 
+  // Handle "body" field - convert to content-digest for signing
+  // For "data" field (string), just keep it as-is and sign directly
+  // This avoids content-digest complexity for JSON POST
+  let bodyFieldValue = null
+  let bodyFieldKey = null
+
+  // Check for "body" - convert to content-digest
+  if (lowercaseHeaders.body != null) {
+    bodyFieldValue = lowercaseHeaders.body
+    bodyFieldKey = "body"
+    const contentDigest = computeContentDigest(lowercaseHeaders.body)
+    if (contentDigest) {
+      lowercaseHeaders["content-digest"] = contentDigest
+    }
+    delete lowercaseHeaders.body
+  }
+  // For "data" field as string, keep it as regular field to be signed directly
+  // Don't convert to content-digest - just sign the data string
+
   const bodyKeys = headersObj["body-keys"]
     ? headersObj["body-keys"]
         .replace(/"/g, "")
@@ -412,8 +461,10 @@ async function _sign({
         .map(k => k.trim())
     : []
 
-  // Parse ao-types to identify list and map fields that should be excluded from signing
-  // HyperBEAM converts arrays and maps to +link references, which would cause commitment validation to fail
+  // Parse ao-types to identify list and map fields
+  // Only exclude them from signing if they're in body-keys (multipart)
+  // Arrays/maps in headers (as structured field strings) CAN be signed
+  // because HyperBEAM treats them as regular strings, not links
   const aoTypes = lowercaseHeaders["ao-types"] || ""
   const listFields = new Set()
   const mapFields = new Set()
@@ -427,37 +478,38 @@ async function _sign({
     mapFields.add(aoMatch[1])
   }
 
+  // Only exclude list/map fields from signing if they're in body-keys
+  // Fields encoded as header strings are safe to sign
+  const bodyListFields = new Set([...listFields].filter(f => bodyKeys.includes(f)))
+  const bodyMapFields = new Set([...mapFields].filter(f => bodyKeys.includes(f)))
+
   // Metadata fields that are not part of the message body
   // These get removed from the final committed message, so should not be signed
   const metadataFields = new Set(["inline-body-key"])
 
   // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
-  // "authority" conflicts with the HTTP :authority pseudo-header - when HyperBEAM
-  // reconstructs the signature base, it sees the HTTP header value instead of our message field
-  // "content-digest" must be excluded because when the committed message is sent as JSON POST,
-  // HyperBEAM cannot recompute the content-digest (the JSON body is different from the signed body)
-  const httpPseudoHeaders = new Set(["authority", "content-digest"])
+  // "authority" conflicts with the HTTP :authority pseudo-header
+  const httpPseudoHeaders = new Set(["authority"])
 
-  // Check if ao-types contains any "list" or "map" declarations
-  // If so, exclude ao-types from signing because HyperBEAM may modify these values
-  // during processing (lists get converted to +link references, maps get normalized)
-  const hasComplexTypesInAoTypes = aoTypes.includes('"list"') || aoTypes.includes('"map"')
+  // Check if ao-types contains list/map declarations for body keys
+  // If so, exclude ao-types from signing because HyperBEAM may modify body values
+  const hasBodyListOrMap = bodyListFields.size > 0 || bodyMapFields.size > 0
 
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    // Exclude body-keys, path, body keys, list fields, map fields, metadata fields, and HTTP pseudo-headers from signing
-    // Also exclude ao-types if it contains list or map declarations
-    // Map fields (device-stack, as) are NOT signed because HyperBEAM converts maps to +link references
+    // Exclude body-keys, path, body keys, body list/map fields, metadata fields, and HTTP pseudo-headers
+    // List/map fields in HEADERS (not body-keys) are signed because they're just strings
+    // ao-types is NEVER signed - it causes HyperBEAM to convert values which breaks verification
     return (
       key !== "body-keys" &&
       key !== "path" &&
+      key !== "ao-types" &&
       !bodyKeys.includes(key) &&
-      !listFields.has(key) &&
-      !mapFields.has(key) &&
+      !bodyListFields.has(key) &&
+      !bodyMapFields.has(key) &&
       !metadataFields.has(key) &&
-      !httpPseudoHeaders.has(key) &&
-      !(key === "ao-types" && hasComplexTypesInAoTypes)
+      !httpPseudoHeaders.has(key)
     )
   })
 
@@ -472,6 +524,18 @@ async function _sign({
   const finalHeaders = {}
   for (const [key, value] of Object.entries(headersObj)) {
     finalHeaders[key] = value
+  }
+
+  // Add the body/data field back to headers (for commit.js to access)
+  // along with content-digest that was computed for signing
+  if (bodyFieldValue != null && bodyFieldKey) {
+    finalHeaders[bodyFieldKey] = bodyFieldValue
+    if (lowercaseHeaders["content-digest"]) {
+      finalHeaders["content-digest"] = lowercaseHeaders["content-digest"]
+    }
+    if (bodyFieldKey === "data") {
+      finalHeaders["inline-body-key"] = "data"
+    }
   }
 
   finalHeaders["signature"] = signedRequest.headers["signature"]

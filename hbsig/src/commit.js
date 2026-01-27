@@ -253,16 +253,23 @@ export const commit = async (obj, opts) => {
 
   // Also include non-signed fields (like list fields) in the body
   // These headers should be in the message but are not cryptographically committed
+  // NOTE: content-digest is NOT excluded - it must be in the body for HyperBEAM verification
+  const hasContentDigest = components.includes("content-digest") || msg.headers["content-digest"]
   const excludedHeaders = new Set([
     "signature",
     "signature-input",
-    "content-digest",
     "content-length",
     "content-type",
     "body-keys",
     "inline-body-key",
     "path", // Don't include path in body - it's for routing only
+    "body", // Body is represented by content-digest when signed
+    "ao-types", // Don't include ao-types - HyperBEAM would convert values and break signature verification
   ])
+  // If content-digest is used, also exclude "data" (inline body content)
+  if (hasContentDigest) {
+    excludedHeaders.add("data")
+  }
   for (const [key, value] of Object.entries(msg.headers)) {
     if (!body.hasOwnProperty(key) && !excludedHeaders.has(key) && value !== undefined) {
       body[key] = value
@@ -270,7 +277,9 @@ export const commit = async (obj, opts) => {
   }
 
   // Handle body resolution
-  if (msg.body) {
+  // When content-digest is used, the data is committed via the digest hash
+  // Don't include raw body data in JSON - HyperBEAM uses content-digest for verification
+  if (msg.body && !hasContentDigest) {
     let bodyContent
 
     if (msg.body instanceof Blob) {
@@ -304,7 +313,6 @@ export const commit = async (obj, opts) => {
   const sigName = Object.keys(signatures)[0]
 
   // Parse ao-types to identify fields explicitly marked as "list"
-  // These are excluded from committedKeys since HyperBEAM converts them to +link references
   const aoTypes = parseAoTypes(msg.headers["ao-types"])
   const explicitListFields = new Set(
     Object.entries(aoTypes)
@@ -312,63 +320,63 @@ export const commit = async (obj, opts) => {
       .map(([field, _]) => field)
   )
 
-  // Track which fields were converted from structured field lists
-  const detectedArrayFields = new Set()
+  // IMPORTANT: Fields in `components` were SIGNED and will be VERIFIED by HyperBEAM.
+  // We MUST keep their values as-is (strings) so they match the signed values.
+  // Converting them to arrays would break commitment verification!
+  const signedFieldsSet = new Set(components.map(c => c === "@path" ? "path" : c))
 
-  // Convert structured field strings to proper format
-  // NUMBERED_MAP_FIELDS (like device-stack) are kept as dictionary strings in the JSON body
-  // This ensures the JSON value matches the signed header value for commitment verification
-  // HyperBEAM's structured codec will parse the dictionary string back to a map
-  // Other list fields get converted to arrays
+  // Convert structured field strings to arrays ONLY for non-signed fields
+  // (fields in body-keys that weren't signed)
   for (const [key, value] of Object.entries(body)) {
     if (typeof value === "string") {
-      // NUMBERED_MAP_FIELDS stay as dictionary strings - don't convert!
-      // The dictionary format (1="val1", 2="val2") is kept as-is so it matches
-      // the signed value. HyperBEAM's structured codec parses it to a map.
-      if (NUMBERED_MAP_FIELDS.has(key)) {
-        // Keep as string - don't convert to numbered map
-        // This ensures the JSON value matches the signed header value
+      // NEVER convert signed fields - the JSON value must match the signed value
+      if (signedFieldsSet.has(key)) {
         continue
       }
 
-      // Check if this should be converted to an array
+      // NUMBERED_MAP_FIELDS stay as dictionary strings
+      if (NUMBERED_MAP_FIELDS.has(key)) {
+        continue
+      }
+
+      // Convert non-signed list fields to arrays
       const shouldConvert =
         explicitListFields.has(key) ||
         isStructuredFieldList(value)
 
       if (shouldConvert) {
         body[key] = parseStructuredFieldList(value)
-        if (!explicitListFields.has(key)) {
-          detectedArrayFields.add(key)
-        }
       }
     }
   }
 
   // Beta3 requires 'committed' array listing the signed keys in each commitment
-  // Exclude both explicit list fields AND detected array fields from committedKeys
-  // because HyperBEAM converts arrays to +link references, which breaks commitment validation
-  // (the signed value was a string, but actual value becomes a link)
-  // Also exclude inline-body-key as it's metadata that gets removed from the final body
+  // If a field was signed (in components), it should be in committedKeys
+  // because the signer only signs fields that won't be modified by HyperBEAM
+  //
+  // List/map fields encoded as HEADER strings (not body-keys) are now signed,
+  // so they appear in components and should be in committedKeys.
+  // List/map fields in body-keys are NOT signed, so they won't be in components.
+  //
+  // The detectedArrayFields are strings that we parsed into arrays for the JSON body.
+  // These are safe to include in committedKeys because the header value matches
+  // what was signed.
   const metadataFields = new Set(["inline-body-key"])
 
   // HTTP pseudo-header fields that conflict with RFC 9421 signature verification
   // "authority" conflicts with the HTTP :authority pseudo-header
-  // "content-digest" conflicts when using commit + JSON POST (different HTTP body)
-  const httpPseudoHeaders = new Set(["authority", "content-digest"])
+  const httpPseudoHeaders = new Set(["authority"])
 
-  // Check if ao-types contains any "list" declarations
-  // If so, exclude ao-types from committed fields because HyperBEAM may modify list values
-  const hasListTypes = explicitListFields.size > 0 || detectedArrayFields.size > 0
+  // Fields that were signed but should NOT be in committedKeys
+  // ao-types: causes HyperBEAM to convert values which breaks signature verification
+  const signedButNotCommitted = new Set(["ao-types"])
 
   const committedKeys = components
     .map(v => (v === "@path" ? "path" : v))
     .filter(key =>
-      !explicitListFields.has(key) &&
-      !detectedArrayFields.has(key) &&
       !metadataFields.has(key) &&
       !httpPseudoHeaders.has(key) &&
-      !(key === "ao-types" && hasListTypes)
+      !signedButNotCommitted.has(key)
     )
 
   // NOTE: NUMBERED_MAP_FIELDS (device-stack, as) are now INCLUDED in committedKeys!

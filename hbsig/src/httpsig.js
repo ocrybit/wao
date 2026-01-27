@@ -762,16 +762,16 @@ export function httpsig_to(tabm) {
       result[key] = value
     }
 
-    // Handle inline body key - move data from inline key to body
-    // This ALWAYS moves the value to body to match HyperBEAM's inline_key behavior
-    // HyperBEAM always treats the data field as body content with ao-body-key header
-    if (inlineKeyVal && inlineKeyVal !== "body" && result[inlineKeyVal]) {
+    // For "data" field, keep it as-is for JSON POST signing
+    // Don't convert to body/content-digest - just sign the data string directly
+    // This simplifies JSON POST and avoids content-digest verification complexity
+    if (inlineKeyVal && inlineKeyVal !== "body" && inlineKeyVal !== "data" && result[inlineKeyVal]) {
       result.body = result[inlineKeyVal]
       delete result[inlineKeyVal]
     }
 
-    // If there's a body, add content-digest
-    if (result.body) {
+    // If there's a body (but not data), add content-digest
+    if (result.body && !result.data) {
       return addContentDigest(result)
     }
 

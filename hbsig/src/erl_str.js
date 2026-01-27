@@ -250,6 +250,21 @@ function buildTypeMap(rawStr) {
         while (pos < str.length && /\s/.test(str[pos])) pos++
         if (str[pos] === ",") pos++
       }
+    } else if (str[pos] === "{") {
+      // Tuple - scan elements but don't record types
+      pos++
+      let tupleIndex = 0
+
+      while (pos < str.length) {
+        while (pos < str.length && /\s/.test(str[pos])) pos++
+        if (str[pos] === "}") return pos + 1
+
+        pos = scanValue(str, pos, [...path, tupleIndex])
+        tupleIndex++
+
+        while (pos < str.length && /\s/.test(str[pos])) pos++
+        if (str[pos] === ",") pos++
+      }
     } else {
       // Skip other values
       while (pos < str.length && !/[\s,\]}=>]/.test(str[pos])) {
@@ -315,6 +330,10 @@ class TypeAwareParser {
       return this.parseList()
     }
 
+    if (ch === "{") {
+      return this.parseTuple()
+    }
+
     if (ch === "'") {
       return this.parseQuotedAtom()
     }
@@ -324,6 +343,39 @@ class TypeAwareParser {
     }
 
     return this.parseAtomOrNumber()
+  }
+
+  parseTuple() {
+    this.advance() // skip {
+    const elements = []
+
+    while (true) {
+      this.skipWhitespace()
+
+      if (this.peek() === "}") {
+        this.advance()
+        break
+      }
+
+      elements.push(this.parseValue())
+
+      this.skipWhitespace()
+      if (this.peek() === ",") {
+        this.advance()
+      }
+    }
+
+    // For {ok, X} tuples, unwrap and return just X
+    // This is common in Erlang for success responses
+    // Note: ok is parsed as Symbol.for("ok")
+    const firstElem = elements[0]
+    const isOk = firstElem === Symbol.for("ok") || firstElem === "ok"
+    if (elements.length === 2 && isOk) {
+      return elements[1]
+    }
+
+    // For other tuples, return as array
+    return elements
   }
 
   parseMap() {
@@ -379,7 +431,7 @@ class TypeAwareParser {
     const currentPath = this.path.join(".")
     const type = this.typeMap.get(currentPath) || "binary"
 
-    // Parse the formatted version (always byte format)
+    // Parse the formatted version (can be byte format or quoted string format)
     this.advance(2) // skip <<
 
     if (this.peek() === ">" && this.peek(1) === ">") {
@@ -387,6 +439,44 @@ class TypeAwareParser {
       return Buffer.alloc(0)
     }
 
+    // Check if it's a quoted string format: <<"string">>
+    if (this.peek() === '"') {
+      this.advance() // skip opening "
+      let str = ""
+      while (!(this.peek() === '"' && this.peek(1) === ">" && this.peek(2) === ">")) {
+        if (this.peek() === "\\") {
+          this.advance()
+          const escaped = this.peek()
+          switch (escaped) {
+            case '"': str += '"'; break
+            case '\\': str += '\\'; break
+            case 'n': str += '\n'; break
+            case 'r': str += '\r'; break
+            case 't': str += '\t'; break
+            default:
+              // Check for octal escape \NNN
+              if (/[0-7]/.test(escaped)) {
+                let octal = escaped
+                this.advance()
+                if (/[0-7]/.test(this.peek())) { octal += this.peek(); this.advance() }
+                if (/[0-7]/.test(this.peek())) { octal += this.peek() }
+                else { this.pos-- }
+                str += String.fromCharCode(parseInt(octal, 8))
+              } else {
+                str += escaped
+              }
+          }
+          this.advance()
+        } else {
+          str += this.peek()
+          this.advance()
+        }
+      }
+      this.advance(3) // skip ">>
+      return str
+    }
+
+    // Numeric byte format: <<72,101,108,...>>
     const bytes = []
     while (!(this.peek() === ">" && this.peek(1) === ">")) {
       this.skipWhitespace()
@@ -656,6 +746,11 @@ class ErlangParser {
       return this.parseList()
     }
 
+    // Tuple: {...}
+    if (ch === "{") {
+      return this.parseTuple()
+    }
+
     // Quoted atom: 'atom'
     if (ch === "'") {
       return this.parseQuotedAtom()
@@ -916,6 +1011,37 @@ class ErlangParser {
     }
 
     return list
+  }
+
+  parseTuple() {
+    this.advance() // skip {
+    const elements = []
+
+    while (true) {
+      this.skipWhitespace()
+
+      if (this.peek() === "}") {
+        this.advance()
+        break
+      }
+
+      elements.push(this.parseValue())
+
+      this.skipWhitespace()
+      if (this.peek() === ",") {
+        this.advance()
+      }
+    }
+
+    // For {ok, X} tuples, unwrap and return just X
+    // Note: ok is parsed as Symbol.for("ok")
+    const firstElem = elements[0]
+    const isOk = firstElem === Symbol.for("ok") || firstElem === "ok"
+    if (elements.length === 2 && isOk) {
+      return elements[1]
+    }
+
+    return elements
   }
 
   parseQuotedAtom() {

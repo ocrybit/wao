@@ -313,6 +313,7 @@ class HB {
       })
 
       const committed = await this.commit(spawnTags, { path: false })
+      console.log("[DEBUG spawn] committed message:", JSON.stringify(committed, null, 2))
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -321,6 +322,7 @@ class HB {
 
       if (!response.ok) {
         const text = await response.text()
+        console.log("[DEBUG spawn] error response:", text)
         throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
       }
 
