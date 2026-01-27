@@ -92,14 +92,18 @@ export function extractHeader(header, params, messageOrHeaders, req) {
     return [
       values
         .map(val => {
-          const encoded = Buffer.from(val.trim().replace(/\n\s*/gm, " "))
+          const strVal = typeof val === "string" ? val : String(val)
+          const encoded = Buffer.from(strVal.trim().replace(/\n\s*/gm, " "))
           return `:${encoded.toString("base64")}:`
         })
         .join(", "),
     ]
   }
   // raw encoding
-  return [values.map(val => val.trim().replace(/\n\s*/gm, " ")).join(", ")]
+  return [values.map(val => {
+    const strVal = typeof val === "string" ? val : String(val)
+    return strVal.trim().replace(/\n\s*/gm, " ")
+  }).join(", ")]
 }
 
 function normaliseParams(params) {
