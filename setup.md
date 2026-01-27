@@ -77,12 +77,11 @@ HB_REBAR3=false
 EOF
 ```
 
-### Step 10: Build and link hbsig
+### Step 10: Build hbsig and install dependencies
 
 ```bash
 cd /home/user/wao/hbsig && npm install && npm run build
-rm -f /home/user/wao/node_modules/hbsig
-ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+cd /home/user/wao && npm install
 ```
 
 ## Verification
@@ -141,11 +140,10 @@ rm -f /home/user/wao/HyperBEAM/rebar.lock
 ```
 
 ### "Cannot find module hbsig"
-Rebuild and relink hbsig:
+Rebuild hbsig and reinstall:
 ```bash
 cd /home/user/wao/hbsig && npm run build
-rm -f /home/user/wao/node_modules/hbsig
-ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+cd /home/user/wao && npm install
 ```
 
 ### Tests hang or timeout
@@ -208,8 +206,7 @@ EOF
 
 # Step 10: hbsig
 cd /home/user/wao/hbsig && npm install && npm run build
-rm -f /home/user/wao/node_modules/hbsig
-ln -s ../hbsig/dist /home/user/wao/node_modules/hbsig
+cd /home/user/wao && npm install
 
 echo "Setup complete!"
 ```
