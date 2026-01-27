@@ -388,8 +388,11 @@ function from(msg) {
             numberedMap[key] = item.toString()
             itemTypes.push(`${key}="integer"`)
           } else if (typeof item === "number") {
-            // Float - encode as string with type annotation
-            numberedMap[key] = item.toString()
+            // Float - encode in Erlang scientific notation format with full precision
+            let str = item.toExponential(20)
+            // Ensure 2-digit exponent
+            str = str.replace(/e([+-])(\d)$/, "e$10$2")
+            numberedMap[key] = str
             itemTypes.push(`${key}="float"`)
           } else if (typeof item === "boolean") {
             // Boolean - encode as string with type annotation
@@ -511,10 +514,8 @@ function encodeValue(value) {
 
   // Float
   if (typeof value === "number") {
-    // Format like Erlang with scientific notation
+    // Format like Erlang with scientific notation and full precision
     let str = value.toExponential(20)
-    // Remove trailing zeros but keep at least one
-    str = str.replace(/(\.\d*?)0+e/, "$1e").replace(/\.e/, ".0e")
     // Ensure 2-digit exponent
     str = str.replace(/e([+-])(\d)$/, "e$10$2")
     return ["float", str]

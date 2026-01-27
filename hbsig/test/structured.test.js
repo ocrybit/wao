@@ -22,7 +22,9 @@ genTest({
       it: "should test structured_to",
       path: "/~hbsig@1.0/structured_to",
       cases: cases_to,
-      mod: v => structured_to(normalize(v)),
+      // Round-trip: encode then decode - test framework decodes actual output,
+      // so expected should also be decoded for proper comparison
+      mod: v => structured_from(structured_to(normalize(v))),
     },
   ],
 })

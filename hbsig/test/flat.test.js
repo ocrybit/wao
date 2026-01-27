@@ -15,7 +15,8 @@ genTest({
       it: "should test flat_to",
       cases: cases_to,
       path: "/~hbsig@1.0/flat_to",
-      mod: v => flat_to(normalize(v)),
+      // Round-trip: encode then decode - test framework decodes actual output
+      mod: v => flat_from(flat_to(normalize(v))),
     },
   ],
 })

@@ -12,14 +12,16 @@ genTest({
       cases: cases_from,
       path: "/~hbsig@1.0/httpsig_to",
       pmod: v => structured_from(normalize(v)),
-      mod: v => httpsig_to(normalize(v)),
+      // Round-trip: encode then decode - test framework decodes actual output
+      mod: v => httpsig_from(httpsig_to(normalize(v))),
     },
     {
       it: "should test httpsig_to",
       cases: ok,
       path: "/~hbsig@1.0/httpsig_to",
       pmod: v => structured_from(normalize(v)),
-      mod: v => httpsig_to(normalize(v)),
+      // Round-trip: encode then decode - test framework decodes actual output
+      mod: v => httpsig_from(httpsig_to(normalize(v))),
     },
   ],
 })
