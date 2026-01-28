@@ -118,14 +118,14 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
   let success = []
   let i = 0
   for (const v of cases) {
-    // Small delay between test cases to help with HyperBEAM stability
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // Delay between test cases to help with HyperBEAM stability
+    await new Promise(resolve => setTimeout(resolve, 100))
     console.log(`[${++i}]...........................................`, v)
     let expected, output_b
 
     // Retry logic for flaky responses
     let lastError = null
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 8; attempt++) {
       try {
         const _pmod = pmod(v)
         const json = erl_json_to(_pmod)
@@ -144,8 +144,8 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
         break
       } catch (e) {
         lastError = e
-        if (attempt < 3 && e.message === 'Response body is null/undefined') {
-          console.log(`Attempt ${attempt} failed with null response, retrying...`)
+        if (attempt < 8 && e.message === 'Response body is null/undefined') {
+          console.log(`Attempt ${attempt} failed (${e.message?.substring(0, 50) || e.code}), retrying...`)
           await new Promise(resolve => setTimeout(resolve, 500))
           continue
         }

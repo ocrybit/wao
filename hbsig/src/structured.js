@@ -259,19 +259,81 @@ function parseStructuredList(value) {
 }
 
 /**
+ * Convert a list to a numbered map (1-based indexing)
+ * Mirrors Erlang's hb_util:list_to_numbered_message
+ */
+function listToNumberedMessage(list) {
+  const result = {}
+  list.forEach((item, idx) => {
+    result[(idx + 1).toString()] = item
+  })
+  return result
+}
+
+/**
  * Convert rich message to TABM (mirrors Erlang's from/1)
- * @param {object} msg - Rich message
+ * Handles lists, maps, and primitive values
+ * @param {*} msg - Rich message (map, list, or primitive)
  * @returns {object} - TABM
  */
 function from(msg) {
-  // Handle non-map values
-  if (
-    msg instanceof Buffer ||
-    typeof msg !== "object" ||
-    msg === null ||
-    Array.isArray(msg)
-  ) {
+  // Handle binary input - return as-is
+  if (msg instanceof Buffer || msg instanceof Uint8Array) {
     return msg
+  }
+
+  // Handle string input - return as-is
+  if (typeof msg === "string") {
+    return msg
+  }
+
+  // Handle null
+  if (msg === null) {
+    return msg
+  }
+
+  // Handle arrays (lists) - convert to numbered map and add .="list" marker
+  if (Array.isArray(msg)) {
+    const numberedMap = listToNumberedMessage(msg)
+    const decodedAsMap = fromMap(numberedMap)
+    // Add .="list" to ao-types
+    const existingAoTypes = decodedAsMap["ao-types"] || ""
+    const newTypes = existingAoTypes
+      ? `.="list", ${existingAoTypes}`
+      : `.="list"`
+    return { ...decodedAsMap, "ao-types": newTypes }
+  }
+
+  // Handle objects (maps)
+  if (typeof msg === "object") {
+    return fromMap(msg)
+  }
+
+  // Handle primitives - return as-is
+  return msg
+}
+
+/**
+ * Check if an object is a serialized Buffer ({type: "Buffer", data: [...]})
+ */
+function isSerializedBuffer(obj) {
+  return (
+    obj !== null &&
+    typeof obj === "object" &&
+    obj.type === "Buffer" &&
+    Array.isArray(obj.data)
+  )
+}
+
+/**
+ * Convert a map to TABM format
+ * @param {object} msg - Map object
+ * @returns {object} - TABM
+ */
+function fromMap(msg) {
+  // Check if this is a serialized Buffer - treat as binary
+  if (isSerializedBuffer(msg)) {
+    return Buffer.from(msg.data)
   }
 
   // Normalize keys first
@@ -281,8 +343,10 @@ function from(msg) {
     normalizedMap[normKey] = value
   }
 
-  // Get sorted keys (normalized)
-  const sortedKeys = Object.keys(normalizedMap).sort()
+  // Get sorted keys (normalized), excluding ao-types
+  const sortedKeys = Object.keys(normalizedMap)
+    .filter(k => k !== "ao-types")
+    .sort()
 
   const types = []
   const values = []
@@ -291,17 +355,33 @@ function from(msg) {
   for (const normKey of sortedKeys) {
     const value = normalizedMap[normKey]
 
-    // Handle empty values
-    if (value === "" || (value instanceof Buffer && value.length === 0)) {
-      types.push([normKey, "empty-binary"])
+    // Handle serialized Buffers first - convert to actual Buffer
+    if (isSerializedBuffer(value)) {
+      const buf = Buffer.from(value.data)
+      values.push([normKey, buf])
       continue
     }
 
+    // Handle binary/string values - keep as-is (no type annotation for binaries)
+    if (value instanceof Buffer || value instanceof Uint8Array) {
+      values.push([normKey, value])
+      continue
+    }
+
+    // Handle empty string - treat as empty binary, no type annotation
+    if (value === "") {
+      values.push([normKey, value])
+      continue
+    }
+
+    // Handle empty arrays - produce { "ao-types": ".=\"list\"" }
+    // NOTE: Don't add parent type annotation - the child has .="list" marker
     if (Array.isArray(value) && value.length === 0) {
-      types.push([normKey, "empty-list"])
+      values.push([normKey, { "ao-types": `.="list"` }])
       continue
     }
 
+    // Handle empty objects - keep as-is, no type annotation (matches HyperBEAM)
     if (
       typeof value === "object" &&
       value !== null &&
@@ -309,7 +389,7 @@ function from(msg) {
       !(value instanceof Buffer) &&
       Object.keys(value).length === 0
     ) {
-      types.push([normKey, "empty-message"])
+      values.push([normKey, value])
       continue
     }
 
@@ -324,28 +404,16 @@ function from(msg) {
       continue
     }
 
-    // Handle nested maps
+    // Handle nested maps (not arrays)
     if (typeof value === "object" && !Array.isArray(value) && value !== null) {
       values.push([normKey, from(value)])
       continue
     }
 
-    // Handle arrays
+    // Handle non-empty arrays - convert to numbered map
+    // NOTE: Don't add parent type annotation - the child has .="list" marker
     if (Array.isArray(value) && value.length > 0) {
-      if (shouldConvertToNumberedMap(value)) {
-        // Convert to numbered map (1-based indexing)
-        const numberedMap = {}
-        value.forEach((item, idx) => {
-          numberedMap[(idx + 1).toString()] = item
-        })
-        types.push([normKey, "list"])
-        values.push([normKey, from(numberedMap)])
-      } else {
-        // Encode as list string
-        const [type, encoded] = encodeValue(value)
-        types.push([normKey, type])
-        values.push([normKey, encoded])
-      }
+      values.push([normKey, from(value)]) // from() handles arrays with .="list" marker
       continue
     }
 
@@ -353,7 +421,6 @@ function from(msg) {
     if (
       typeof value === "symbol" ||
       typeof value === "number" ||
-      Array.isArray(value) ||
       typeof value === "boolean" ||
       value === null
     ) {
@@ -367,12 +434,21 @@ function from(msg) {
   // Build result
   const result = {}
 
-  // Add ao-types if present
-  if (types.length > 0) {
-    result["ao-types"] = types.map(([k, t]) => `${k}="${t}"`).join(", ")
+  // Preserve existing ao-types from input and merge with new types
+  const existingAoTypes = normalizedMap["ao-types"]
+  if (types.length > 0 || existingAoTypes) {
+    const newTypeStr = types.map(([k, t]) => `${k}="${t}"`).join(", ")
+    if (existingAoTypes && newTypeStr) {
+      // Merge: new types first, then existing
+      result["ao-types"] = newTypeStr
+    } else if (existingAoTypes) {
+      result["ao-types"] = existingAoTypes
+    } else {
+      result["ao-types"] = newTypeStr
+    }
   }
 
-  // Add values (but NOT empty values)
+  // Add values
   for (const [k, v] of values) {
     result[k] = v
   }
@@ -423,11 +499,12 @@ function shouldConvertToNumberedMap(arr) {
 
 /**
  * Encode a value with its type
+ * Mirrors Erlang's encode_value/1 from dev_codec_structured.erl
  */
 function encodeValue(value) {
-  // Null (as atom)
+  // Null (as atom) - use token format without quotes
   if (value === null) {
-    return ["atom", '"null"']
+    return ["atom", "null"]
   }
 
   // Integer
@@ -446,15 +523,15 @@ function encodeValue(value) {
     return ["float", str]
   }
 
-  // Boolean (as atom)
+  // Boolean (as atom) - use token format without quotes
   if (typeof value === "boolean") {
-    return ["atom", `"${value}"`]
+    return ["atom", value.toString()]
   }
 
-  // Symbol (as atom)
+  // Symbol (as atom) - use token format without quotes
   if (typeof value === "symbol") {
     const name = Symbol.keyFor(value) || value.description || ""
-    return ["atom", `"${name}"`]
+    return ["atom", name]
   }
 
   // List
