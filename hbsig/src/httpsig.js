@@ -122,7 +122,7 @@ function boundaryFromParts(parts) {
 
 // Helper to determine inline key
 function inlineKey(msg) {
-  const inlineBodyKey = msg["inline-body-key"]
+  const inlineBodyKey = msg["inline-body-key"] || msg["ao-body-key"]
   if (inlineBodyKey) {
     return [{}, inlineBodyKey]
   }
@@ -130,7 +130,7 @@ function inlineKey(msg) {
     return [{}, "body"]
   }
   if ("data" in msg) {
-    return [{ "inline-body-key": "data" }, "data"]
+    return [{ "ao-body-key": "data" }, "data"]
   }
   return [{}, "body"]
 }
@@ -210,8 +210,14 @@ function groupMaps(map, parent = "", top = {}) {
       !Array.isArray(value) &&
       !Buffer.isBuffer(value)
     ) {
-      // Recursively process nested objects
-      newTop = groupMaps(value, flatK, newTop)
+      // Check if this is an empty object
+      if (Object.keys(value).length === 0) {
+        // Preserve empty objects at the top level with their flat key
+        newTop[flatK] = value
+      } else {
+        // Recursively process non-empty nested objects
+        newTop = groupMaps(value, flatK, newTop)
+      }
     } else if (typeof value === "string" && value.length > MAX_HEADER_LENGTH) {
       // Value too large for header, lift to top level
       newTop[flatK] = value
@@ -235,6 +241,18 @@ function groupMaps(map, parent = "", top = {}) {
   }
 }
 
+// Compute content-digest for a value
+function computeContentDigest(value) {
+  let bodyBytes
+  if (Buffer.isBuffer(value)) {
+    bodyBytes = new Uint8Array(value)
+  } else {
+    bodyBytes = stringToBytes(String(value), "binary")
+  }
+  const hashBytes = hash(bodyBytes)
+  return `sha-256=:${bytesToBase64(hashBytes)}:`
+}
+
 // Encode multipart body part
 function encodeBodyPart(partName, bodyPart, inlineKey) {
   const disposition =
@@ -247,61 +265,52 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
     !Array.isArray(bodyPart) &&
     !Buffer.isBuffer(bodyPart)
   ) {
+    // Check if this is an empty object (empty-message)
+    const keys = Object.keys(bodyPart).filter(k => k !== "ao-types")
+    if (keys.length === 0 && !("ao-types" in bodyPart)) {
+      // Empty object - encode with ao-types: empty-message
+      const lines = [`ao-types: empty-message`, `content-disposition: ${disposition}`]
+      return lines.join(CRLF)
+    }
+
+    // Check if this nested part has a "data" field that should become its body
+    // This applies to non-inline parts that have a "data" field
+    const hasDataField = "data" in bodyPart && !isInline
+    let dataBody = null
+    let dataDigest = null
+
+    if (hasDataField) {
+      const dataValue = bodyPart.data
+      // The data value becomes the body of this part
+      dataBody = String(dataValue)
+      dataDigest = computeContentDigest(dataValue)
+    }
+
     // Check if this part has ao-types
     const hasAoTypes = "ao-types" in bodyPart
 
-    if (hasAoTypes) {
-      // For parts WITH ao-types: sort all entries alphabetically
-      const allEntries = []
+    // Collect all entries as header fields
+    const allEntries = []
 
-      // Collect all entries except body
-      for (const [key, value] of Object.entries(bodyPart)) {
-        if (key === "body") continue
+    // If this part has data as body, add ao-body-key and content-digest
+    if (hasDataField) {
+      allEntries.push({ key: "ao-body-key", line: `ao-body-key: data` })
+      allEntries.push({ key: "content-digest", line: `content-digest: ${dataDigest}` })
+    }
 
-        if (key === "ao-types") {
-          // Keep ao-types as-is (Buffer or string)
-          let valueStr = value
-          if (Buffer.isBuffer(value)) {
-            valueStr = value.toString("binary")
-          }
-          allEntries.push({ key: "ao-types", line: `ao-types: ${valueStr}` })
-        } else {
-          // Handle Buffer values properly
-          let valueStr = value
-          if (Buffer.isBuffer(value)) {
-            // Use binary/latin1 encoding to preserve all byte values 0-255
-            valueStr = value.toString("binary")
-          }
-          allEntries.push({ key: key, line: `${key}: ${valueStr}` })
+    // Collect all entries except body and data (if data becomes body)
+    for (const [key, value] of Object.entries(bodyPart)) {
+      if (key === "body") continue
+      if (key === "data" && hasDataField) continue  // Skip data - it becomes the body
+
+      if (key === "ao-types") {
+        // Keep ao-types as-is (Buffer or string)
+        let valueStr = value
+        if (Buffer.isBuffer(value)) {
+          valueStr = value.toString("binary")
         }
-      }
-
-      // Add content-disposition
-      allEntries.push({
-        key: "content-disposition",
-        line: `content-disposition: ${disposition}`,
-      })
-
-      // Sort alphabetically by key
-      allEntries.sort((a, b) => a.key.localeCompare(b.key))
-
-      // Build the lines
-      const lines = allEntries.map(entry => entry.line)
-
-      // Body handling
-      const body = bodyPart.body || ""
-      if (body) {
-        lines.push("") // Always add empty line before body
-        lines.push(body)
-      }
-
-      return lines.join(CRLF)
-    } else {
-      // For parts WITHOUT ao-types
-      const allEntries = []
-
-      for (const [key, value] of Object.entries(bodyPart)) {
-        if (key === "body") continue
+        allEntries.push({ key: "ao-types", line: `ao-types: ${valueStr}` })
+      } else {
         // Handle Buffer values properly
         let valueStr = value
         if (Buffer.isBuffer(value)) {
@@ -310,36 +319,28 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
         }
         allEntries.push({ key: key, line: `${key}: ${valueStr}` })
       }
-
-      const lines = []
-
-      if (isInline) {
-        // Inline parts without ao-types: sort ALL fields alphabetically including content-disposition
-        allEntries.push({
-          key: "content-disposition",
-          line: `content-disposition: ${disposition}`,
-        })
-
-        // Sort by key
-        allEntries.sort((a, b) => a.key.localeCompare(b.key))
-
-        // Extract the lines
-        lines.push(...allEntries.map(entry => entry.line))
-      } else {
-        // Regular parts: content-disposition first, then fields
-        lines.push(`content-disposition: ${disposition}`)
-        lines.push(...allEntries.map(entry => entry.line))
-      }
-
-      // Body handling
-      const body = bodyPart.body || ""
-      if (body) {
-        lines.push("") // Always add empty line before body
-        lines.push(body)
-      }
-
-      return lines.join(CRLF)
     }
+
+    // Add content-disposition
+    allEntries.push({
+      key: "content-disposition",
+      line: `content-disposition: ${disposition}`,
+    })
+
+    // Sort alphabetically by key
+    allEntries.sort((a, b) => a.key.localeCompare(b.key))
+
+    // Build the lines
+    const lines = allEntries.map(entry => entry.line)
+
+    // Body handling - either explicit body field or data field
+    const body = hasDataField ? dataBody : (bodyPart.body || "")
+    if (body) {
+      lines.push("") // Always add empty line before body
+      lines.push(body)
+    }
+
+    return lines.join(CRLF)
   } else if (typeof bodyPart === "string" || Buffer.isBuffer(bodyPart)) {
     return `content-disposition: ${disposition}${DOUBLE_CRLF}${bodyPart}`
   }
@@ -591,6 +592,10 @@ function parseMultipart(contentType, body) {
 function addContentDigest(msg) {
   if (!msg.body) return msg
 
+  // Skip content-digest for empty bodies (empty buffer or empty string)
+  if (Buffer.isBuffer(msg.body) && msg.body.length === 0) return msg
+  if (typeof msg.body === "string" && msg.body.length === 0) return msg
+
   let bodyBytes
   // Handle both string and Buffer bodies
   if (Buffer.isBuffer(msg.body)) {
@@ -837,7 +842,6 @@ export function httpsig_to(tabm) {
 
     const result = {
       ...headers,
-      "body-keys": bodyKeysList.map(k => `"${k}"`).join(", "),
       "content-type": `multipart/form-data; boundary="${boundary}"`,
       body: finalBody,
     }
