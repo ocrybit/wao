@@ -31,7 +31,9 @@ git submodule update --init --recursive
 cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz _build
 ```
 
-### Step 4: Configure rebar for offline compilation
+### Step 4: Configure rebar for offline compilation (Claude Code only)
+
+> **Note:** This step is only required for offline environments like Claude Code where hexpm package fetching is unavailable. Skip this step if you have internet access to hexpm.
 
 ```bash
 cd /home/user/wao/HyperBEAM
@@ -133,7 +135,7 @@ Load asdf before running tests:
 ```
 
 ### "Package not found in any repo: luerl"
-Apply the offline rebar config:
+This occurs in offline environments (like Claude Code). Apply the offline rebar config:
 ```bash
 cp /home/user/wao/installation/hyperbeam_rebar.config /home/user/wao/HyperBEAM/rebar.config
 rm -f /home/user/wao/HyperBEAM/rebar.lock
@@ -178,7 +180,7 @@ cd /home/user/wao && git submodule update --init --recursive
 # Step 3: Dependencies
 cd /home/user/wao/HyperBEAM && tar -xJf /home/user/wao/installation/hyperbeam-prebuilt.tar.xz _build
 
-# Step 4: Rebar config
+# Step 4: Rebar config (Claude Code only - skip if online)
 rm -f rebar.lock
 cp /home/user/wao/installation/hyperbeam_rebar.config rebar.config
 
