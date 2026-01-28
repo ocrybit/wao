@@ -119,19 +119,33 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
   let i = 0
   for (const v of cases) {
     console.log(`[${++i}]...........................................`, v)
+    let expected, output_b
     try {
       const _pmod = pmod(v)
       const json = erl_json_to(_pmod)
       const signed = await sign({ path, body: JSON.stringify(json) })
       const { out } = await send(signed)
+      if (out === null || out === undefined) {
+        throw new Error('Response body is null/undefined')
+      }
       const input = normalize(_pmod)
       const output = erl_str_from(out)
-      const expected = normalize(mod(_pmod), true)
-      const output_b = erl_str_from(out, true)
+      expected = normalize(mod(_pmod), true)
+      output_b = erl_str_from(out, true)
       assert.deepEqual(expected, output_b)
       success.push(v)
     } catch (e) {
-      console.log(e)
+      console.log("EXPECTED:", JSON.stringify(expected, (k, v) => {
+        if (Buffer.isBuffer(v)) return `<Buffer ${v.toString('hex')}>`
+        if (typeof v === 'symbol') return `<Symbol ${Symbol.keyFor(v) || v.description}>`
+        return v
+      }, 2))
+      console.log("ACTUAL:", JSON.stringify(output_b, (k, v) => {
+        if (Buffer.isBuffer(v)) return `<Buffer ${v.toString('hex')}>`
+        if (typeof v === 'symbol') return `<Symbol ${Symbol.keyFor(v) || v.description}>`
+        return v
+      }, 2))
+      console.log("ERROR:", e.message)
       err.push(v)
     }
   }

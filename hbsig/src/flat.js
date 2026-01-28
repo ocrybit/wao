@@ -17,6 +17,11 @@ export function flat_from(input) {
     return input
   }
 
+  // Array passthrough - matches Erlang: from(List, ...) - lists pass through
+  if (Array.isArray(input)) {
+    return input.map(item => flat_from(item))
+  }
+
   if (typeof input !== "object" || input === null) {
     // Non-object, non-binary values pass through
     return input
@@ -44,6 +49,11 @@ export function flat_to(input) {
   // Binary passthrough - matches Erlang: to(Bin, _, _Opts) when is_binary(Bin) -> {ok, Bin}
   if (typeof input === "string" || Buffer.isBuffer(input)) {
     return input
+  }
+
+  // Array passthrough - matches Erlang: to(Other, _, _Opts) -> {ok, Other}
+  if (Array.isArray(input)) {
+    return input.map(item => flat_to(item))
   }
 
   if (typeof input !== "object" || input === null) {
