@@ -118,23 +118,42 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
   let success = []
   let i = 0
   for (const v of cases) {
+    // Small delay between test cases to help with HyperBEAM stability
+    await new Promise(resolve => setTimeout(resolve, 200))
     console.log(`[${++i}]...........................................`, v)
     let expected, output_b
-    try {
-      const _pmod = pmod(v)
-      const json = erl_json_to(_pmod)
-      const signed = await sign({ path, body: JSON.stringify(json) })
-      const { out } = await send(signed)
-      if (out === null || out === undefined) {
-        throw new Error('Response body is null/undefined')
+
+    // Retry logic for flaky responses
+    let lastError = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const _pmod = pmod(v)
+        const json = erl_json_to(_pmod)
+        const signed = await sign({ path, body: JSON.stringify(json) })
+        const { out } = await send(signed)
+        if (out === null || out === undefined) {
+          throw new Error('Response body is null/undefined')
+        }
+        const input = normalize(_pmod)
+        const output = erl_str_from(out)
+        expected = normalize(mod(_pmod), true)
+        output_b = erl_str_from(out, true)
+        assert.deepEqual(expected, output_b)
+        success.push(v)
+        lastError = null
+        break
+      } catch (e) {
+        lastError = e
+        if (attempt < 3 && e.message === 'Response body is null/undefined') {
+          console.log(`Attempt ${attempt} failed with null response, retrying...`)
+          await new Promise(resolve => setTimeout(resolve, 500))
+          continue
+        }
+        break
       }
-      const input = normalize(_pmod)
-      const output = erl_str_from(out)
-      expected = normalize(mod(_pmod), true)
-      output_b = erl_str_from(out, true)
-      assert.deepEqual(expected, output_b)
-      success.push(v)
-    } catch (e) {
+    }
+
+    if (lastError) {
       console.log("EXPECTED:", JSON.stringify(expected, (k, v) => {
         if (Buffer.isBuffer(v)) return `<Buffer ${v.toString('hex')}>`
         if (typeof v === 'symbol') return `<Symbol ${Symbol.keyFor(v) || v.description}>`
@@ -145,7 +164,7 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
         if (typeof v === 'symbol') return `<Symbol ${Symbol.keyFor(v) || v.description}>`
         return v
       }, 2))
-      console.log("ERROR:", e.message)
+      console.log("ERROR:", lastError.message)
       err.push(v)
     }
   }
