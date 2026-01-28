@@ -136,8 +136,9 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
     }
   }
   console.log(`${err.length} / ${cases.length} failed!`)
-  if (err) {
+  if (err.length > 0) {
     for (let v of err) console.log(v)
+    throw new Error(`${err.length} / ${cases.length} test cases failed`)
   }
 }
 
