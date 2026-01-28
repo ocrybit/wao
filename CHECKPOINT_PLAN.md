@@ -2,6 +2,26 @@
 
 This document outlines the checkpoint plan for merging 537 upstream commits from `permaweb/HyperBEAM` (v0.9-milestone-3-beta-1) into `wao-m1`.
 
+## Current Status
+
+| Checkpoint | Status | Notes |
+|------------|--------|-------|
+| 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
+| 1 | **BLOCKED** | Missing prometheus deps in prebuilt tarball |
+| 2-7 | PENDING | Waiting on checkpoint 1 |
+
+### Blocking Issue for Checkpoint 1
+
+Checkpoint 1 requires `prometheus` and `prometheus_cowboy` packages which are not included in the prebuilt `hyperbeam-prebuilt.tar.xz`. In offline environments (Claude Code), these cannot be fetched from hexpm.
+
+**To unblock:** Update the prebuilt tarball to include:
+- `prometheus` (v4.11.0)
+- `prometheus_cowboy` (v0.1.8)
+- `prometheus_httpd` (v2.1.11)
+- `accept` (v0.3.5)
+
+---
+
 ## Overview
 
 - **Base commit (wao-m1)**: b2743e4a (Merge PR #268)
