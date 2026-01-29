@@ -110,11 +110,11 @@ Verify correct branches/commits:
 
 ```bash
 # Check wao repo branch and commit
-git branch -v
-git log -1 --oneline
+git --no-pager branch -v
+git --no-pager log -1 --oneline
 
 # Check HyperBEAM submodule commit (should match Merged HB in checkpoint table)
-cd HyperBEAM && git log -1 --oneline && cd ..
+cd HyperBEAM && git --no-pager log -1 --oneline && cd ..
 ```
 
 ### Switching to a specific checkpoint
