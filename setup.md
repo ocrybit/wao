@@ -385,14 +385,16 @@ This section outlines the checkpoint plan for merging 537 upstream commits from 
 | Checkpoint | Status | Notes |
 |------------|--------|-------|
 | 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
-| 1 | **SKIPPED** | API mismatch bug: `from/2` vs `from/3` |
-| 2 | **SKIPPED** | Same API mismatch bug |
-| 3 | **BLOCKED** | Needs `prometheus_cowboy` not in prebuilt tarball |
-| 4-7 | PENDING | Waiting on checkpoint 3 |
+| 1 (wao-m1-cp1) | **PASSING** | All tests pass - use `wao-m1-cp1` branch |
+| 2 | **SKIPPED** | Superseded by wao-m1-cp1 branch |
+| 3-7 | PENDING | Continue from wao-m1-cp1 |
 
-**Checkpoint 3 Blocker**: Checkpoint 3 introduces a dependency on `prometheus_cowboy` which is not included in the offline prebuilt tarball. The HyperBEAM server starts but `prometheus_cowboy2_instrumenter:observe/1 undef` errors disrupt test execution. Options:
-1. Add prometheus dependencies to the prebuilt tarball (requires network access)
-2. Find a workaround to disable prometheus metrics in HyperBEAM
+**Checkpoint 1 Solution**: The `wao-m1-cp1` branch in HyperBEAM contains all necessary fixes:
+- API fix in `hb_http.erl` (from/2 -> from/3)
+- Updated `dev_hbsig.erl` for 3-arity codec functions
+- Content-digest calculation fix
+- HMAC signature verification fix
+- Works with offline rebar.config (no prometheus dependency)
 
 ### Overview
 
