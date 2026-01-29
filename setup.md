@@ -2,6 +2,57 @@
 
 This guide explains how to install HyperBEAM from the submodule and run tests.
 
+---
+
+## CRITICAL RULES FOR CLAUDE CODE AGENTS
+
+**READ THIS SECTION COMPLETELY BEFORE DOING ANYTHING**
+
+### Rule 1: NEVER MODIFY ERLANG FILES
+- **ABSOLUTELY FORBIDDEN** to modify any `.erl` file in HyperBEAM
+- The **ONLY** exception is `src/dev_hbsig.erl` (wao-specific device)
+- This includes: `dev_codec_*.erl`, `hb_*.erl`, and ALL other `.erl` files
+- If tests fail, fix the **JavaScript** code, NOT the Erlang code
+- If there's a bug in HyperBEAM, report it to upstream - do NOT patch locally
+
+### Rule 2: KILL PROCESSES BEFORE RUNNING TESTS
+- **ALWAYS** kill existing processes before running ANY test
+- Use this command EVERY TIME before running tests:
+```bash
+lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
+```
+- Port 10001 conflicts cause "address already in use" errors
+- This is the #1 cause of test failures
+
+### Rule 3: RUN TESTS ONE AT A TIME
+- **NEVER** run `node --test hbsig/test/*.test.js` (all tests together)
+- Run each test file individually:
+```bash
+node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+# KILL PROCESSES
+node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
+# KILL PROCESSES
+# ... etc
+```
+
+### Rule 4: VERIFY 100% TEST SUCCESS BEFORE COMMITTING
+- Run ALL test files one by one
+- Verify 100% pass rate for EACH file
+- Only then commit changes
+- **NEVER** commit after reverting or without testing
+
+### Rule 5: FIX JAVASCRIPT, NOT ERLANG
+- When tests fail, the fix must be in `hbsig/src/*.js` files
+- The JavaScript library adapts to HyperBEAM's behavior
+- HyperBEAM is the source of truth - JavaScript adapts to it
+
+### Rule 6: DO NOT REVERT ENDLESSLY
+- Think before reverting
+- Understand WHY tests fail before changing code
+- One careful fix is better than 100 reverts
+
+---
+
 ## Prerequisites
 
 The installation uses pre-built tarballs (all included in this repo under `installation/`):
@@ -246,9 +297,61 @@ pkill -9 -f beam.smp; pkill -9 -f epmd
 
 ### Modifying Erlang Files
 
-- **Only modify `src/dev_hbsig.erl`** for hbsig-related changes
-- Do NOT modify other `.erl` files in HyperBEAM unless absolutely necessary
-- If you need to modify core HyperBEAM files, coordinate with the upstream maintainers
+**⚠️ CRITICAL: NEVER MODIFY ANY ERLANG FILES IN HYPERBEAM ⚠️**
+
+The ONLY exception is `src/dev_hbsig.erl` which is a wao-specific device.
+
+**Absolute Rules:**
+1. **NEVER** modify any `.erl` files in HyperBEAM except `dev_hbsig.erl`
+2. **NEVER** patch bugs in core HyperBEAM files locally - report them to upstream instead
+3. **NEVER** add "fixes" to files like `dev_codec_httpsig.erl`, `dev_codec_ans104.erl`, etc.
+
+**What wao-m1 branch should contain:**
+- Checkpoint base (upstream HyperBEAM commit)
+- wao-specific devices: `dev_hbsig.erl`, `dev_wao.erl`, `dev_mydev.erl`, `dev_add.erl`, `dev_double.erl`, `dev_inc.erl`, `dev_square.erl`
+- `hb_opts.erl` modifications for wao configuration
+- **Nothing else**
+
+**If you find a bug in HyperBEAM:**
+1. Do NOT fix it locally
+2. Report the issue to upstream HyperBEAM maintainers
+3. Wait for the fix to be merged upstream
+4. Then merge the upstream fix into wao-m1
+
+**Why this matters:**
+- Local patches create merge conflicts with upstream
+- Local patches diverge from upstream and become unmaintainable
+- Local patches may introduce new bugs
+- Users testing locally will have different code than what was tested
+
+### Fixing Test Failures
+
+**When tests fail, ALWAYS modify JavaScript source files, NOT Erlang files.**
+
+The hbsig JavaScript library must adapt to HyperBEAM's behavior, not the other way around.
+
+**Correct approach:**
+1. Run the failing test and analyze the error
+2. Debug using the JavaScript source in `hbsig/src/`
+3. Understand what HyperBEAM expects/returns
+4. Modify the JavaScript code to work with HyperBEAM's behavior
+5. Re-run the test until it passes
+6. Never delete or skip test cases
+
+**Files you CAN modify:**
+- `hbsig/src/*.js` - JavaScript library source
+- `hbsig/src/*.ts` - TypeScript source (if any)
+- `hbsig/test/*.test.js` - Test files (but NEVER delete or skip tests)
+
+**Files you CANNOT modify:**
+- ANY `.erl` file in HyperBEAM (except `dev_hbsig.erl`)
+- `src/dev_codec_*.erl` - ABSOLUTELY FORBIDDEN
+- `src/hb_*.erl` - ABSOLUTELY FORBIDDEN
+
+**Before committing:**
+1. Run ALL tests individually (not together)
+2. Verify 100% pass rate
+3. Only then commit and push
 
 ### Submodule Updates
 
@@ -270,3 +373,148 @@ When updating the HyperBEAM submodule:
 | `flat.test.js` | Flat codec tests |
 | `erl_json.test.js` | Erlang JSON conversion tests |
 | `httpsig.test.js` | HTTPSig codec tests |
+
+---
+
+## HyperBEAM Upstream Merge Checkpoint Plan
+
+This section outlines the checkpoint plan for merging 537 upstream commits from `permaweb/HyperBEAM` (v0.9-milestone-3-beta-1) into `wao-m1`.
+
+### Current Status
+
+| Checkpoint | Status | Notes |
+|------------|--------|-------|
+| 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
+| 1 | **IN PROGRESS** | 1/2 tests pass; Test 1 fixed, Test 2 times out |
+| 2-7 | PENDING | Waiting on checkpoint 1 |
+
+### Overview
+
+- **Base commit (wao-m1)**: b2743e4a (Merge PR #268)
+- **Target**: v0.9-milestone-3-beta-1 (2c8c6286)
+- **Total commits to merge**: 537
+- **Custom commits to preserve**: 10 (ab61b3a2..30e00c77)
+
+### Critical Files
+
+The hbsig JavaScript library depends on these Erlang devices:
+
+| File | Status in Upstream | Risk |
+|------|-------------------|------|
+| `dev_hbsig.erl` | **Custom wao file** - not in upstream | Must preserve |
+| `dev_codec_flat.erl` | 64 changes | HIGH |
+| `dev_codec_structured.erl` | 64 changes | HIGH |
+| `dev_codec_httpsig.erl` | 64 changes | HIGH |
+| `hb_message.erl` | Major refactor | MEDIUM |
+
+### Merge Strategy
+
+For each checkpoint:
+1. Cherry-pick or merge commits up to checkpoint
+2. Re-apply custom wao commits (rebase)
+3. Compile HyperBEAM
+4. Run all hbsig tests
+5. Fix any failures before proceeding
+
+### Checkpoints
+
+#### Checkpoint 0: Current State (BASELINE)
+- **Commit**: 30e00c77
+- **Status**: All hbsig tests passing
+
+#### Checkpoint 1: Hyperstate Links & Lazy Loading (~50 commits)
+- **Target commit**: 60104eb8
+- **Risk Level**: LOW
+- Changes: `hb_maps` abstraction, lazy loading infrastructure, link resolution
+
+#### Checkpoint 2: TABM Encoding & Commitment Simplification (~100 commits)
+- **Target commit**: ef382658
+- **Risk Level**: HIGH
+- Changes: Major httpsig simplification, TABM encoding, commitment restructuring
+
+#### Checkpoint 3: Structured Encoding Scheme (~150 commits)
+- **Target commit**: 3c80b76d
+- **Risk Level**: HIGH
+- Changes: New structured encoding scheme, message infrastructure reorganization
+
+#### Checkpoint 4: HTTPSig Fixes & Stabilization (~200 commits)
+- **Target commit**: 4024287b
+- **Risk Level**: MEDIUM
+- Changes: HTTPSig tag fixes, test improvements
+
+#### Checkpoint 5: HTTPSig Reorg PR #301 (~313 commits)
+- **Target commit**: 7eb51633
+- **Risk Level**: HIGH
+- Changes: Major httpsig reorganization, payment/ledger features
+
+#### Checkpoint 6: LMDB Integration (~395 commits)
+- **Target commit**: 5242203e
+- **Risk Level**: MEDIUM
+- Changes: LMDB as default store, router updates
+
+#### Checkpoint 7: Final v0.9-milestone-3-beta-1 (~537 commits)
+- **Target commit**: 2c8c6286
+- **Risk Level**: LOW
+- Changes: Commitment read speed, dashboard improvements, final polish
+
+### Recovery Strategy
+
+If hbsig tests fail at a checkpoint:
+
+1. **Identify which test fails**
+   ```bash
+   node --experimental-wasm-memory64 --test hbsig/test/SPECIFIC.test.js
+   ```
+
+2. **Check codec changes**
+   ```bash
+   git diff PREV_CHECKPOINT..CURRENT -- src/dev_codec_*.erl
+   ```
+
+3. **Update dev_hbsig.erl if needed** (this is the ONLY file you may modify)
+
+4. **Update JavaScript library** - match encoding/decoding changes
+
+5. **Do NOT proceed to next checkpoint until all tests pass**
+
+### Checkpoint 1 Progress Notes
+
+#### Prometheus Dependencies (RESOLVED)
+Manually compiled and added to `_build/default/lib/`:
+- `prometheus` (v4.11.0) - 29 beam files
+- `prometheus_cowboy` (v0.1.8) - 4 beam files
+- `prometheus_httpd` (v2.1.11) - 3 beam files
+- `accept` (v0.3.5) - 4 beam files
+
+#### Codec API Changes (RESOLVED)
+Updated `dev_hbsig.erl` to use new 3-arity codec function signatures:
+- `dev_codec_json:from(JSON, #{}, #{})`
+- `dev_codec_structured:from(Data, Msg2, Opts)`
+- `dev_codec_httpsig:from(Data, Msg2, Opts)`
+- `dev_codec_flat:from(Data, Msg2, Opts)`
+
+#### Content-Digest Fix (NEEDS UPSTREAM FIX)
+**Problem:** `field_not_found_error` for `content-digest` during HMAC signature verification
+
+**Root Cause:** The `to()` function applies `hb_link:linkify` which converts nested maps to links before `add_content_digest()` is called. After linkify, the body key becomes `<<"body+link">>` instead of `<<"body">>`.
+
+**Note:** This requires an upstream fix - do NOT patch locally. Report to upstream maintainers.
+
+### Command Reference
+
+```bash
+# Run specific test
+node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+
+# Run all tests with timeout (one at a time!)
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
+
+# Kill stuck HyperBEAM processes
+pkill -9 -f beam.smp; pkill -9 -f epmd
+
+# Check codec differences
+git diff b2743e4a..TARGET -- src/dev_codec_flat.erl
+git diff b2743e4a..TARGET -- src/dev_codec_structured.erl
+git diff b2743e4a..TARGET -- src/dev_codec_httpsig.erl
+```
