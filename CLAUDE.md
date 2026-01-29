@@ -23,26 +23,26 @@ Kill processes before each test:
 lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
 ```
 
-Test files in order:
+Test files in order (by dependency):
 | # | Test File | Status |
 |---|-----------|--------|
 | 1 | `id.test.js` | ⬜ |
 | 2 | `commit.test.js` | ⬜ |
-| 3 | `signer.test.js` | ⬜ |
-| 4 | `structured.test.js` | ⬜ |
-| 5 | `flat.test.js` | ⬜ |
-| 6 | `erl_json.test.js` | ⬜ |
-| 7 | `httpsig.test.js` | ⬜ |
+| 3 | `erl_json.test.js` | ⬜ |
+| 4 | `flat.test.js` | ⬜ |
+| 5 | `structured.test.js` | ⬜ |
+| 6 | `httpsig.test.js` | ⬜ |
+| 7 | `signer.test.js` | ⬜ |
 
 Commands:
 ```bash
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/structured.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/flat.test.js
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/erl_json.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/flat.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/structured.test.js
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/httpsig.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
 ```
 
 ### Task 4: Mark Done
