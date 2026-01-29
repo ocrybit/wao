@@ -1,6 +1,7 @@
 # Checkpoints
 
-Note: CP1-7 are from feature branch `dev/milestone-3-beta-1`. Author dates may precede CP0 because they were developed in parallel.
+CP0 is the base where `dev/milestone-3-beta-1` branched from main.
+CP1-7 are milestones on `dev/milestone-3-beta-1` (includes merges from feature branches with earlier author dates).
 
 | CP | Upstream Commit | Merged HB | Date | Message | Status |
 |----|-----------------|-----------|------|---------|--------|
