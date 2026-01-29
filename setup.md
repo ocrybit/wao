@@ -384,17 +384,24 @@ This section outlines the checkpoint plan for merging 537 upstream commits from 
 
 | Checkpoint | Status | Notes |
 |------------|--------|-------|
-| 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
-| 1 (wao-m1-cp1) | **PASSING** | All tests pass - use `wao-m1-cp1` branch |
-| 2 | **SKIPPED** | Superseded by wao-m1-cp1 branch |
-| 3-7 | PENDING | Continue from wao-m1-cp1 |
+| 0 (wao-m1) | **PASSING** | All hbsig tests pass at commit 30e00c77 |
+| 1-7 | **ABANDONED** | Requires modifying forbidden Erlang files |
 
-**Checkpoint 1 Solution**: The `wao-m1-cp1` branch in HyperBEAM contains all necessary fixes:
-- API fix in `hb_http.erl` (from/2 -> from/3)
-- Updated `dev_hbsig.erl` for 3-arity codec functions
-- Content-digest calculation fix
-- HMAC signature verification fix
-- Works with offline rebar.config (no prometheus dependency)
+**Current State (2026-01-29)**:
+- `wao-m1` branch is at commit `30e00c77` (clean state)
+- All 7 test files pass (id, commit, signer, structured, flat, erl_json, httpsig)
+- The checkpoint merge plan was ABANDONED because intermediate commits have API mismatches that can only be fixed by modifying core HyperBEAM files (which is forbidden)
+
+**Why Checkpoint Merge Failed**:
+- Checkpoint 1 target (60104eb8) has an API mismatch: `hb_http.erl` calls `from/1` but `dev_codec_httpsig_conv.erl` exports `from/3`
+- Previous attempts to fix this by modifying `hb_http.erl`, `dev_codec_httpsig.erl`, and `hb_link.erl` violated the rules
+- Those unauthorized changes were reverted
+- The `wao-m1-cp1` branch is deprecated and should NOT be used
+
+**Recommended Approach**:
+- Stay on `wao-m1` at commit `30e00c77` (base + wao-specific changes only)
+- Do NOT attempt to merge upstream checkpoints
+- If upstream features are needed, wait for them to be stable and properly integrated
 
 ### Overview
 
