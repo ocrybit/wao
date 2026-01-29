@@ -202,18 +202,20 @@ export default class HyperBEAM {
 
   genEval({ gateway, wallet = ".wallet.json" }) {
     let _devices = ""
-    if (this.devices) {
-      let _devs = []
-      for (const v of this.devices) {
-        if (typeof v === "object") {
-          _devs.push(
-            `#{<<"name">> => <<"${v.name}">>, <<"module">> => ${v.module}}`
-          )
-        } else if (devs[v])
-          _devs.push(
-            `#{<<"name">> => <<"${devs[v].name}">>, <<"module">> => ${devs[v].module}}`
-          )
-      }
+    // Always include hbsig and wao devices for testing, plus any custom devices
+    const deviceList = this.devices || ["hbsig", "wao"]
+    let _devs = []
+    for (const v of deviceList) {
+      if (typeof v === "object") {
+        _devs.push(
+          `#{<<"name">> => <<"${v.name}">>, <<"module">> => ${v.module}}`
+        )
+      } else if (devs[v])
+        _devs.push(
+          `#{<<"name">> => <<"${devs[v].name}">>, <<"module">> => ${devs[v].module}}`
+        )
+    }
+    if (_devs.length > 0) {
       _devices = `, preloaded_devices => [${_devs.join(", ")}]`
     }
     const _wallet = `, priv_key_location => <<"${wallet}">>`

@@ -39,6 +39,9 @@ describe("Hyperbeam Signer", function () {
       }
     }
     console.log(`${err.length} / ${_cases.length} failed!`)
-    if (err) for (let v of err) console.log(v)
+    if (err.length > 0) {
+      for (let v of err) console.log(v)
+      throw new Error(`${err.length} test case(s) failed`)
+    }
   })
 })
