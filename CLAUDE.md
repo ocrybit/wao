@@ -4,20 +4,20 @@
 
 Each checkpoint follows a task loop. The todo list tracks progress within the current checkpoint iteration.
 
+## Session Setup (each fresh session)
+
+Read `setup.md` and install HyperBEAM from submodule before starting checkpoint work.
+
 ## Checkpoint Task Loop
 
 For each checkpoint with status other than ✅ DONE:
 
-### Task 1: Setup HyperBEAM
-- Read `setup.md` and follow the installation steps
-- Install HyperBEAM from submodule
-
-### Task 2: Rebase and Merge Upstream
+### Task 1: Rebase and Merge Upstream
 - Rebase upstream commits onto submodule branch (`wao-m1`)
 - Update submodule to point to the merged commit
 - Record the merged HB commit in the checkpoint table
 
-### Task 3: Run Tests (one by one)
+### Task 2: Run Tests (one by one)
 Kill processes before each test:
 ```bash
 lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
@@ -45,7 +45,7 @@ Commands:
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
 ```
 
-### Task 4: Mark Done
+### Task 3: Mark Done
 - Once all 7 tests pass, update checkpoint status to ✅ DONE
 - Move to next checkpoint and repeat the loop
 
@@ -68,9 +68,8 @@ Using official upstream release tags as checkpoints.
 **Working branch:** [`claude/install-hyperbeam-submodule-NlDj8`](https://github.com/ocrybit/wao/tree/claude/install-hyperbeam-submodule-NlDj8)
 
 ### Tasks
-- [ ] Task 1: Setup HyperBEAM
-- [ ] Task 2: Rebase and Merge Upstream
-- [ ] Task 3: Run Tests
+- [ ] Task 1: Rebase and Merge Upstream
+- [ ] Task 2: Run Tests
   - [ ] id.test.js
   - [ ] commit.test.js
   - [ ] erl_json.test.js
@@ -78,4 +77,4 @@ Using official upstream release tags as checkpoints.
   - [ ] structured.test.js
   - [ ] httpsig.test.js
   - [ ] signer.test.js
-- [ ] Task 4: Mark Done
+- [ ] Task 3: Mark Done
