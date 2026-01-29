@@ -106,6 +106,17 @@ git submodule update --init --recursive
 cd hbsig && yarn build && cd .. && npm install
 ```
 
+Verify correct branches/commits:
+
+```bash
+# Check wao repo branch and commit
+git branch -v
+git log -1 --oneline
+
+# Check HyperBEAM submodule commit (should match Merged HB in checkpoint table)
+cd HyperBEAM && git log -1 --oneline && cd ..
+```
+
 ### Switching to a specific checkpoint
 
 Use the "Done Commit (wao)" from the checkpoint table to reconstruct a working state:
