@@ -18,7 +18,8 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 1. Read `setup.md` and install HyperBEAM from submodule
 2. Verify HyperBEAM submodule points to the commit recorded in the Checkpoints table (Merged HB column)
 3. Verify current branch commit history matches progress, update Working branch in Current Progress section if on new branch
-4. After each commit, verify you are committing to the correct branch
+4. **Report current working progress to user** (which CP, which task, which test)
+5. After each commit, verify you are committing to the correct branch
 
 ## Checkpoint Task Loop
 
