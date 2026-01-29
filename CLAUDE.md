@@ -138,8 +138,13 @@ Use the "Done Commit (wao)" from the checkpoint table to reconstruct a working s
 # Checkout the Done Commit from the checkpoint table
 git checkout <DONE_COMMIT>  # e.g., fe0ce72 for CP1
 
-# Update submodule to match
+# Update submodule to match the recorded commit hash
 git submodule update --init --recursive
+
+# Verify submodule points to correct Merged HB commit (NOT branch name)
+cd HyperBEAM
+git log -1 --oneline  # Should show <MERGED_HB> e.g., 741c1540 for CP1
+cd ..
 
 # Rebuild
 cd HyperBEAM && rebar3 compile && cd ..
@@ -150,4 +155,19 @@ npm install
 
 # Verify tests pass
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+```
+
+### Manually setting submodule to specific commit
+
+If the submodule is not at the correct commit:
+
+```bash
+cd HyperBEAM
+git fetch origin
+git checkout <MERGED_HB>  # Use commit hash, e.g., 741c1540 (NOT branch name)
+cd ..
+
+# Update parent repo to record this submodule commit
+git add HyperBEAM
+git commit -m "Update HyperBEAM submodule to <MERGED_HB>"
 ```
