@@ -12,6 +12,7 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
    - `hbsig/src/*.js`
    - `hbsig/test/*.test.js`
 3. **NEVER remove or skip test cases**
+4. **COMMIT AND PUSH after completing each task** - Do NOT proceed to the next task until changes are committed and pushed to remote
 
 ## Session Setup (each fresh session)
 
