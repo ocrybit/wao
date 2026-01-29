@@ -7,18 +7,64 @@ This document outlines the checkpoint plan for merging 537 upstream commits from
 | Checkpoint | Status | Notes |
 |------------|--------|-------|
 | 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
-| 1 | **BLOCKED** | Missing prometheus deps in prebuilt tarball |
+| 1 | **IN PROGRESS** | 1/2 tests pass; signature verification issue |
 | 2-7 | PENDING | Waiting on checkpoint 1 |
 
-### Blocking Issue for Checkpoint 1
+### Checkpoint 1 Progress
 
-Checkpoint 1 requires `prometheus` and `prometheus_cowboy` packages which are not included in the prebuilt `hyperbeam-prebuilt.tar.xz`. In offline environments (Claude Code), these cannot be fetched from hexpm.
+#### Prometheus Dependencies (RESOLVED)
+Manually compiled and added to `_build/default/lib/`:
+- `prometheus` (v4.11.0) - 29 beam files
+- `prometheus_cowboy` (v0.1.8) - 4 beam files
+- `prometheus_httpd` (v2.1.11) - 3 beam files
+- `accept` (v0.3.5) - 4 beam files
 
-**To unblock:** Update the prebuilt tarball to include:
-- `prometheus` (v4.11.0)
-- `prometheus_cowboy` (v0.1.8)
-- `prometheus_httpd` (v2.1.11)
-- `accept` (v0.3.5)
+Note: `prometheus_cowboy2_instrumenter:observe` throws error at metrics collection, but doesn't affect request processing.
+
+#### Codec API Changes (RESOLVED)
+Updated `dev_hbsig.erl` to use new 3-arity codec function signatures:
+- `dev_codec_json:from(JSON, #{}, #{})`
+- `dev_codec_structured:from(Data, Msg2, Opts)`
+- `dev_codec_httpsig:from(Data, Msg2, Opts)`
+- `dev_codec_flat:from(Data, Msg2, Opts)`
+
+#### HTTP Parsing Fix (RESOLVED)
+Fixed `hb_http:httpsig_to_tabm_singleton` to pass 3 arguments to `dev_codec_httpsig_conv:from`:
+```erlang
+{ok, Msg} = dev_codec_httpsig_conv:from(
+    RawHeaders#{ <<"body">> => Body },
+    #{},
+    Opts
+),
+```
+
+### Current Blocking Issue: Signature Verification
+
+**Error:** `field_not_found_error` for `content-digest` during HMAC signature verification
+
+**Root Cause:** When processing POST requests with multipart/form-data:
+1. Client's signature-input references `content-digest`
+2. Server's `reset_hmac` tries to verify/recalculate HMAC
+3. `signature_base` calls `identifier_to_component` for each component
+4. `content-digest` is expected but not present in the message headers
+
+**Stack Trace:**
+```
+dev_codec_httpsig:signature_components_line → identifier_to_component → field_not_found_error
+↑ dev_codec_httpsig:signature_base
+↑ dev_codec_httpsig:hmac
+↑ dev_codec_httpsig:reset_hmac
+↑ dev_codec_httpsig_conv:commitments_from_signature
+↑ dev_codec_httpsig_conv:from
+↑ hb_http:httpsig_to_tabm_singleton
+```
+
+**Hypothesis:** The `add_content_digest` function expects a `<<"body">>` key in the message, but after `to()` encoding for multipart data, the body may be in a different structure.
+
+**Next Steps:**
+1. Compare baseline wao-m1 `to()` function output vs checkpoint 1
+2. Check if multipart body encoding differs between versions
+3. Consider making signature verification more lenient for missing optional headers
 
 ---
 
