@@ -61,6 +61,7 @@ Commands:
 
 ### Task 3: Mark Done
 - Once all 7 tests pass, update checkpoint status to ✅ DONE
+- **WAIT for user to confirm/review on their local machine before marking as DONE**
 - Move to next checkpoint and repeat the loop
 
 ---
@@ -69,11 +70,11 @@ Commands:
 
 Using official upstream release tags as checkpoints.
 
-| CP | Upstream Commit | Merged HB | Date | Message | Status |
-|----|-----------------|-----------|------|---------|--------|
-| 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
-| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`741c1540`](https://github.com/ocrybit/HyperBEAM/commit/741c1540) | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| CP | Upstream Commit | Merged HB | Done Commit (wao) | Date | Message | Status |
+|----|-----------------|-----------|-------------------|------|---------|--------|
+| 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
+| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`741c1540`](https://github.com/ocrybit/HyperBEAM/commit/741c1540) | [`fe0ce72`](https://github.com/ocrybit/wao/commit/fe0ce72) | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -131,17 +132,22 @@ cd ..
 
 ### Switching to a specific checkpoint
 
-```bash
-# Update submodule to specific commit
-cd HyperBEAM
-git fetch origin wao-m1
-git checkout <MERGED_HB_COMMIT>  # e.g., 741c1540 for CP1
-cd ..
+Use the "Done Commit (wao)" from the checkpoint table to reconstruct a working state:
 
-# Update parent repo reference
-git add HyperBEAM
-git commit -m "Update HyperBEAM submodule to <commit>"
+```bash
+# Checkout the Done Commit from the checkpoint table
+git checkout <DONE_COMMIT>  # e.g., fe0ce72 for CP1
+
+# Update submodule to match
+git submodule update --init --recursive
 
 # Rebuild
 cd HyperBEAM && rebar3 compile && cd ..
+
+# Install dependencies
+cd hbsig && npm install && cd ..
+npm install
+
+# Verify tests pass
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
 ```
