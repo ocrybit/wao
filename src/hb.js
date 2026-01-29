@@ -213,9 +213,8 @@ class HB {
     } else {
       let _tags = mergeLeft(tags, { Type: "Message", target: pid })
       if (data) _tags.data = data
-      let body = await this.commit(_tags, { path: false })
-      let signed = await this.sign({ path: `/${pid}/schedule`, body })
-      res = await this.send(signed)
+      // Send directly without commit() wrapper - matching scheduleFlat behavior
+      res = await this.post({ path: `/${pid}/schedule`, body: _tags })
     }
     return { slot: res.out.slot, res, pid }
   }
@@ -285,18 +284,17 @@ class HB {
         }),
       })
     } else {
+      // Send directly without commit() wrapper - let HyperBEAM handle signing
       res = await this.post({
         path: "/~process@1.0/schedule",
-        body: await this.commit(
-          mergeLeft(tags, {
-            "random-seed": seed(16),
-            Type: "Process",
-            "execution-device": "test-device@1.0",
-            device: "process@1.0",
-            Scheduler: this.operator,
-          }),
-          { path: false }
-        ),
+        body: mergeLeft(tags, {
+          "random-seed": seed(16),
+          Type: "Process",
+          "execution-device": "test-device@1.0",
+          "scheduler-device": "scheduler@1.0",
+          device: "process@1.0",
+          Scheduler: this.operator,
+        }),
         Scheduler: this.operator,
       })
     }
