@@ -4,6 +4,15 @@
 
 Each checkpoint follows a task loop. The todo list tracks progress within the current checkpoint iteration.
 
+## Rules (STRICT)
+
+1. **HyperBEAM commits go to `wao-m1` branch only**
+2. **Only modify these files:**
+   - `HyperBEAM/src/dev_hbsig.erl`
+   - `hbsig/src/*.js`
+   - `hbsig/test/*.test.js`
+3. **NEVER remove or skip test cases**
+
 ## Session Setup (each fresh session)
 
 Read `setup.md` and install HyperBEAM from submodule before starting checkpoint work.
