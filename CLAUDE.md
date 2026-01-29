@@ -101,33 +101,10 @@ Using official upstream release tags as checkpoints.
 To reconstruct the working environment on a fresh machine:
 
 ```bash
-# 1. Clone wao repository
 git clone https://github.com/ocrybit/wao.git
 cd wao
-
-# 2. Initialize and update HyperBEAM submodule
 git submodule update --init --recursive
-
-# 3. Verify submodule points to correct commit (should match Merged HB in checkpoint table)
-cd HyperBEAM
-git log -1 --oneline  # Should show the commit from Merged HB column
-cd ..
-
-# 4. Install hbsig dependencies
-cd hbsig
-npm install
-cd ..
-
-# 5. Install wao dependencies
-npm install
-
-# 6. Build HyperBEAM (requires Erlang/OTP via asdf)
-cd HyperBEAM
-rebar3 compile
-cd ..
-
-# 7. Run tests to verify setup
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+cd hbsig && yarn build && cd .. && npm install
 ```
 
 ### Switching to a specific checkpoint
@@ -135,26 +112,10 @@ cd ..
 Use the "Done Commit (wao)" from the checkpoint table to reconstruct a working state:
 
 ```bash
-# Checkout the Done Commit from the checkpoint table
 git checkout <DONE_COMMIT>  # e.g., fe0ce72 for CP1
-
-# Update submodule to match the recorded commit hash
 git submodule update --init --recursive
-
-# Verify submodule points to correct Merged HB commit (NOT branch name)
-cd HyperBEAM
-git log -1 --oneline  # Should show <MERGED_HB> e.g., 741c1540 for CP1
-cd ..
-
-# Rebuild
 cd HyperBEAM && rebar3 compile && cd ..
-
-# Install dependencies
-cd hbsig && npm install && cd ..
-npm install
-
-# Verify tests pass
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+cd hbsig && yarn build && cd .. && npm install
 ```
 
 ### Manually setting submodule to specific commit
