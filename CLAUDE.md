@@ -1,5 +1,7 @@
 # Checkpoints
 
+Note: CP1-7 are from feature branch `dev/milestone-3-beta-1`. Author dates may precede CP0 because they were developed in parallel.
+
 | CP | Upstream Commit | Merged HB | Date | Message | Status |
 |----|-----------------|-----------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
