@@ -212,3 +212,61 @@ cd /home/user/wao && npm install
 
 echo "Setup complete!"
 ```
+
+## Development Guidelines
+
+### HyperBEAM Branch Policy
+
+- **Always use the `wao-m1` branch** for HyperBEAM development and merging changes
+- The submodule in `wao` should point to the `wao-m1` branch
+- When pushing HyperBEAM changes, use: `git push origin wao-m1`
+- Never hard-code authentication tokens in code or documentation
+
+### Running Tests
+
+**IMPORTANT: Run tests ONE AT A TIME, not together.**
+
+Running all tests together causes port conflicts and test failures. Always run each test file individually:
+
+```bash
+# CORRECT - run tests one at a time
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
+# ... etc
+
+# WRONG - do NOT run all tests together
+# node --test hbsig/test/*.test.js  # This will cause failures!
+```
+
+Kill any lingering processes between test runs if needed:
+```bash
+pkill -9 -f beam.smp; pkill -9 -f epmd
+```
+
+### Modifying Erlang Files
+
+- **Only modify `src/dev_hbsig.erl`** for hbsig-related changes
+- Do NOT modify other `.erl` files in HyperBEAM unless absolutely necessary
+- If you need to modify core HyperBEAM files, coordinate with the upstream maintainers
+
+### Submodule Updates
+
+When updating the HyperBEAM submodule:
+
+1. Make changes in `HyperBEAM/` directory on `wao-m1` branch
+2. Commit and push HyperBEAM changes: `git push origin wao-m1`
+3. Return to wao repo and stage the submodule: `git add HyperBEAM`
+4. Commit the submodule pointer update in wao
+
+### Test Files
+
+| Test File | Description |
+|-----------|-------------|
+| `id.test.js` | ID generation tests (no HyperBEAM needed) |
+| `commit.test.js` | Message commit and schedule tests |
+| `signer.test.js` | Signer conversion tests (137 cases) |
+| `structured.test.js` | Structured codec tests |
+| `flat.test.js` | Flat codec tests |
+| `erl_json.test.js` | Erlang JSON conversion tests |
+| `httpsig.test.js` | HTTPSig codec tests |
