@@ -385,8 +385,14 @@ This section outlines the checkpoint plan for merging 537 upstream commits from 
 | Checkpoint | Status | Notes |
 |------------|--------|-------|
 | 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
-| 1 | **IN PROGRESS** | 1/2 tests pass; Test 1 fixed, Test 2 times out |
-| 2-7 | PENDING | Waiting on checkpoint 1 |
+| 1 | **SKIPPED** | API mismatch bug: `from/2` vs `from/3` |
+| 2 | **SKIPPED** | Same API mismatch bug |
+| 3 | **BLOCKED** | Needs `prometheus_cowboy` not in prebuilt tarball |
+| 4-7 | PENDING | Waiting on checkpoint 3 |
+
+**Checkpoint 3 Blocker**: Checkpoint 3 introduces a dependency on `prometheus_cowboy` which is not included in the offline prebuilt tarball. The HyperBEAM server starts but `prometheus_cowboy2_instrumenter:observe/1 undef` errors disrupt test execution. Options:
+1. Add prometheus dependencies to the prebuilt tarball (requires network access)
+2. Find a workaround to disable prometheus metrics in HyperBEAM
 
 ### Overview
 
@@ -476,6 +482,43 @@ If hbsig tests fail at a checkpoint:
 4. **Update JavaScript library** - match encoding/decoding changes
 
 5. **Do NOT proceed to next checkpoint until all tests pass**
+
+### Checkpoint Reorganization Strategy
+
+**When an upstream bug causes checkpoint failures, reorganize checkpoints to skip broken ones.**
+
+This happens when:
+- A checkpoint contains an API mismatch bug (e.g., function arity mismatch)
+- The bug is fixed in a later checkpoint
+- Fixing the bug locally would require modifying Erlang files (which is FORBIDDEN)
+
+**Example: Checkpoint 1 and 2 were SKIPPED**
+
+During the checkpoint 1 merge attempt, we discovered:
+- `hb_http.erl:673` calls `dev_codec_httpsig_conv:from/2`
+- But `dev_codec_httpsig_conv.erl` only exports `from/3`
+- This API mismatch causes all HTTP requests to fail with `undef` errors
+
+**Investigation process:**
+```bash
+# Find when the bug was introduced
+git log --oneline --all -- src/hb_http.erl | head -20
+
+# Find when the bug was fixed
+git log --oneline --all --grep="from/2" -- src/hb_http.erl
+git log --oneline --all --grep="lazy" -- src/hb_http.erl
+
+# Found: commit c9f6d1ae "fix: transition HTTP API to lazy loading" fixes it
+# This commit is between checkpoint 2 and checkpoint 3
+```
+
+**Resolution:**
+- Checkpoint 0 (30e00c77): WORKING (baseline)
+- Checkpoint 1 (60104eb8): BROKEN (API mismatch) → SKIP
+- Checkpoint 2 (ef382658): BROKEN (same API mismatch) → SKIP
+- Checkpoint 3 (3c80b76d): FIXED (contains the fix commit) → USE THIS
+
+**Key principle:** When a checkpoint range is broken due to upstream bugs, skip to the first checkpoint where the bug is fixed. Never attempt to fix upstream bugs locally.
 
 ### Checkpoint 1 Progress Notes
 
