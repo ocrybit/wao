@@ -15,7 +15,8 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 
 ## Session Setup (each fresh session)
 
-Read `setup.md` and install HyperBEAM from submodule before starting checkpoint work.
+1. Read `setup.md` and install HyperBEAM from submodule
+2. Verify HyperBEAM submodule points to the commit recorded in the Checkpoints table (Merged HB column)
 
 ## Checkpoint Task Loop
 
