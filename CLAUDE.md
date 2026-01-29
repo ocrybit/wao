@@ -2,7 +2,7 @@
 
 | CP | Upstream Commit | Merged HB | Date | Message | Status |
 |----|-----------------|-----------|------|---------|--------|
-| 0 | [`30e00c77`](https://github.com/permaweb/HyperBEAM/commit/30e00c77) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | 2025-07-27 | [hbsig@1.0] add structured_to and httpsig_from | ✅ DONE |
+| 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`60104eb8`](https://github.com/permaweb/HyperBEAM/commit/60104eb8) | | 2025-04-24 | wip: linkified ID gen | 🔄 CURRENT |
 | 2 | [`ef382658`](https://github.com/permaweb/HyperBEAM/commit/ef382658) | | 2025-04-29 | chore: add nested message test vectors | |
 | 3 | [`3c80b76d`](https://github.com/permaweb/HyperBEAM/commit/3c80b76d) | | 2025-05-05 | chore: update test to work with new structured encoding scheme | |
