@@ -98,11 +98,10 @@ Using official upstream release tags as checkpoints.
 
 ## Local Reconstruction
 
-To reconstruct the working environment on a fresh machine:
+To update local machine and verify:
 
 ```bash
-git clone https://github.com/ocrybit/wao.git
-cd wao
+git pull
 git submodule update --init --recursive
 cd hbsig && yarn build && cd .. && npm install
 ```
