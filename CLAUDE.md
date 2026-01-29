@@ -71,23 +71,28 @@ Using official upstream release tags as checkpoints.
 | CP | Upstream Commit | Merged HB | Date | Message | Status |
 |----|-----------------|-----------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
-| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | 🔄 CURRENT |
+| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`4dab5c00`](https://github.com/ocrybit/HyperBEAM/commit/4dab5c00) | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | 🔄 CURRENT |
 | 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | |
 
 ---
 
 ## Current Progress: CP1
 
-**Working branch:** [`claude/install-hyperbeam-submodule-NlDj8`](https://github.com/ocrybit/wao/tree/claude/install-hyperbeam-submodule-NlDj8)
+**Working branch:** [`claude/read-claude-md-3abIM`](https://github.com/ocrybit/wao/tree/claude/read-claude-md-3abIM)
 
 ### Tasks
-- [ ] Task 1: Rebase and Merge Upstream
+- [x] Task 1: Rebase and Merge Upstream (merged 4dab5c00)
 - [ ] Task 2: Make Tests 100% Pass
-  - [ ] id.test.js
-  - [ ] commit.test.js
-  - [ ] erl_json.test.js
-  - [ ] flat.test.js
-  - [ ] structured.test.js
-  - [ ] httpsig.test.js
-  - [ ] signer.test.js
+  - [x] id.test.js ✅
+  - [ ] commit.test.js (1/2 pass - schedule test fails with API mismatch)
+  - [x] erl_json.test.js ✅
+  - [x] flat.test.js ✅
+  - [x] structured.test.js ✅
+  - [x] httpsig.test.js ✅
+  - [x] signer.test.js ✅
 - [ ] Task 3: Mark Done
+
+### Notes
+- commit.test.js "should schedule a nested message" fails with 500 error: "Route to '/~commit@1.0~' returned error"
+- Issue appears to be API mismatch in schedule operation (spawn works, schedule fails)
+- Need GitHub token to push HyperBEAM changes to wao-m1 branch
