@@ -6,7 +6,7 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 
 ## Rules (STRICT)
 
-1. **HyperBEAM commits go to `wao-m1` branch only**
+1. **HyperBEAM commits go to `wao-m1` branch only** (ask for GitHub token if needed to push)
 2. **Only modify these files:**
    - `HyperBEAM/src/dev_hbsig.erl`
    - `hbsig/src/*.js`
