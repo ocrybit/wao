@@ -7,7 +7,7 @@ This document outlines the checkpoint plan for merging 537 upstream commits from
 | Checkpoint | Status | Notes |
 |------------|--------|-------|
 | 0 (wao-m1) | **PASSING** | All hbsig tests pass (baseline) |
-| 1 | **IN PROGRESS** | 1/2 tests pass; signature verification issue |
+| 1 | **IN PROGRESS** | 1/2 tests pass; Test 1 fixed, Test 2 times out |
 | 2-7 | PENDING | Waiting on checkpoint 1 |
 
 ### Checkpoint 1 Progress
@@ -38,33 +38,37 @@ Fixed `hb_http:httpsig_to_tabm_singleton` to pass 3 arguments to `dev_codec_http
 ),
 ```
 
-### Current Blocking Issue: Signature Verification
+#### Content-Digest Fix (RESOLVED)
+**Problem:** `field_not_found_error` for `content-digest` during HMAC signature verification
 
-**Error:** `field_not_found_error` for `content-digest` during HMAC signature verification
+**Root Cause:** The `to()` function in checkpoint 1 applies `hb_link:linkify` which converts nested maps (like body) to links before `add_content_digest()` is called. After linkify, the body key becomes `<<"body+link">>` instead of `<<"body">>`, so `add_content_digest()` can't find it.
 
-**Root Cause:** When processing POST requests with multipart/form-data:
-1. Client's signature-input references `content-digest`
-2. Server's `reset_hmac` tries to verify/recalculate HMAC
-3. `signature_base` calls `identifier_to_component` for each component
-4. `content-digest` is expected but not present in the message headers
+**Fix:** Added `none` mode to `hb_link:linkify` that returns messages unchanged, and modified `hmac()` to pass `#{ <<"linkify">> => none }` to `to()`:
+```erlang
+% In hb_link.erl - new clauses for 'none' mode
+linkify(Msg, none, _Opts) when is_map(Msg) -> Msg;
+linkify(Msg, none, _Opts) when is_list(Msg) -> Msg;
 
-**Stack Trace:**
-```
-dev_codec_httpsig:signature_components_line → identifier_to_component → field_not_found_error
-↑ dev_codec_httpsig:signature_base
-↑ dev_codec_httpsig:hmac
-↑ dev_codec_httpsig:reset_hmac
-↑ dev_codec_httpsig_conv:commitments_from_signature
-↑ dev_codec_httpsig_conv:from
-↑ hb_http:httpsig_to_tabm_singleton
+% In dev_codec_httpsig.erl - modified hmac()
+{ok, ToResult} = to(MsgForTo, #{ <<"linkify">> => none }, Opts),
 ```
 
-**Hypothesis:** The `add_content_digest` function expects a `<<"body">>` key in the message, but after `to()` encoding for multipart data, the body may be in a different structure.
+### Current Blocking Issue: Test 2 Timeout
+
+Test 1 (commit test) now passes with the content-digest fix.
+Test 2 (spawn/schedule nested message) times out instead of returning an error.
+
+**Behavior:**
+- On wao-m1 (baseline): Both tests pass
+- On wao-m1-cp1 without fix: Test 2 fails with 500 error quickly
+- On wao-m1-cp1 with fix: Test 2 hangs/times out
+
+**Hypothesis:** The fix allows the request to proceed past the content-digest issue, but there's another issue in the process creation/scheduling flow that causes a hang. This may be related to other changes between wao-m1 and wao-m1-cp1.
 
 **Next Steps:**
-1. Compare baseline wao-m1 `to()` function output vs checkpoint 1
-2. Check if multipart body encoding differs between versions
-3. Consider making signature verification more lenient for missing optional headers
+1. Compare process@1.0/schedule handling between wao-m1 and wao-m1-cp1
+2. Add debug logging to trace where spawn request hangs
+3. Check for differences in dev_process or dev_scheduler between versions
 
 ---
 
