@@ -65,6 +65,8 @@ Using official upstream release tags as checkpoints.
 
 ## Current Progress: CP1
 
+**Working branch:** `claude/install-hyperbeam-submodule-NlDj8`
+
 ### Tasks
 - [ ] Task 1: Setup HyperBEAM
 - [ ] Task 2: Rebase and Merge Upstream
