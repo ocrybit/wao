@@ -17,7 +17,7 @@ For each checkpoint with status other than ✅ DONE:
 - Update submodule to point to the merged commit
 - Record the merged HB commit in the checkpoint table
 
-### Task 2: Run Tests (one by one)
+### Task 2: Make Tests 100% Pass (one by one)
 Kill processes before each test:
 ```bash
 lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
@@ -69,7 +69,7 @@ Using official upstream release tags as checkpoints.
 
 ### Tasks
 - [ ] Task 1: Rebase and Merge Upstream
-- [ ] Task 2: Run Tests
+- [ ] Task 2: Make Tests 100% Pass
   - [ ] id.test.js
   - [ ] commit.test.js
   - [ ] erl_json.test.js
