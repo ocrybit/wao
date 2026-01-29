@@ -65,7 +65,7 @@ Using official upstream release tags as checkpoints.
 
 ## Current Progress: CP1
 
-**Working branch:** `claude/install-hyperbeam-submodule-NlDj8`
+**Working branch:** [`claude/install-hyperbeam-submodule-NlDj8`](https://github.com/ocrybit/wao/tree/claude/install-hyperbeam-submodule-NlDj8)
 
 ### Tasks
 - [ ] Task 1: Setup HyperBEAM
