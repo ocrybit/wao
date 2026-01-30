@@ -425,9 +425,9 @@ function shouldConvertToNumberedMap(arr) {
  * Encode a value with its type
  */
 function encodeValue(value) {
-  // Null (as atom)
+  // Null (as atom) - use token format (unquoted)
   if (value === null) {
-    return ["atom", '"null"']
+    return ["atom", "null"]
   }
 
   // Integer
@@ -446,15 +446,15 @@ function encodeValue(value) {
     return ["float", str]
   }
 
-  // Boolean (as atom)
+  // Boolean (as atom) - use token format (unquoted)
   if (typeof value === "boolean") {
-    return ["atom", `"${value}"`]
+    return ["atom", value.toString()]
   }
 
-  // Symbol (as atom)
+  // Symbol (as atom) - use token format (unquoted)
   if (typeof value === "symbol") {
     const name = Symbol.keyFor(value) || value.description || ""
-    return ["atom", `"${name}"`]
+    return ["atom", name]
   }
 
   // List
