@@ -182,6 +182,42 @@ const genTest = ({ desc = "HyperBEAM", its = [] }) => {
 
 const modOut = out => {
   let output = erl_str_from(out)
+
+  // Handle inline-body-key: rename 'body' to the key specified by inline-body-key
+  // But only if the key is different from 'body' (otherwise we'd delete it)
+  const inlineBodyKey = output["inline-body-key"]
+  if (inlineBodyKey && inlineBodyKey !== "body" && output.body !== undefined) {
+    output[inlineBodyKey] = output.body
+    delete output.body
+  }
+
+  // Handle ao-body-key similarly
+  const aoBodyKey = output["ao-body-key"]
+  if (aoBodyKey && output.body !== undefined && !inlineBodyKey) {
+    output[aoBodyKey] = output.body
+    delete output.body
+  }
+
+  // Handle ao-types: reconstruct empty values from type annotations
+  const aoTypes = output["ao-types"]
+  if (aoTypes && typeof aoTypes === "string") {
+    const typeMatches = aoTypes.matchAll(/([^=,\s]+)="([^"]+)"/g)
+    for (const match of typeMatches) {
+      const key = match[1].toLowerCase()
+      const type = match[2]
+      // Only add the key if it doesn't already exist in output
+      if (!(key in output)) {
+        if (type === "empty-binary") {
+          output[key] = Buffer.from([])
+        } else if (type === "empty-list") {
+          output[key] = []
+        } else if (type === "empty-message") {
+          output[key] = {}
+        }
+      }
+    }
+  }
+
   // Delete TABM metadata fields
   delete output.commitments
   delete output.path
@@ -203,10 +239,8 @@ const modOut = out => {
   delete output["content-digest"]
   delete output.signature
   delete output["signature-input"]
-  // Delete body field if it's an empty buffer (Erlang inline body behavior)
-  if (output.body && Buffer.isBuffer(output.body) && output.body.length === 0) {
-    delete output.body
-  }
+  // Note: We no longer delete empty body buffers because they may be intentional
+  // (e.g., test case { body: Buffer.from([]) })
   return output
 }
 const modIn = inp => {
@@ -237,13 +271,8 @@ const modIn = inp => {
         result[key.toLowerCase()] = lowercaseKeys(value, false)
       }
 
-      // At top level, handle inline body key behavior:
-      // If there's a 'data' field with Buffer but no 'body' field, rename 'data' to 'body'
-      // This matches Erlang's behavior where 'data' becomes the inline body key
-      if (isTopLevel && 'data' in result && !('body' in result) && Buffer.isBuffer(result.data)) {
-        result.body = result.data
-        delete result.data
-      }
+      // Note: The old data→body transformation is removed because with inline-body-key
+      // support, the signer now preserves original key names correctly.
 
       return result
     }

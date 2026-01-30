@@ -54,7 +54,8 @@ export const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  return `http-sig-${hexString}`
+  // Use 'sig-' prefix to match HyperBEAM's expected pattern in siginfo_to_commitments
+  return `sig-${hexString}`
 }
 
 const toView = value => {

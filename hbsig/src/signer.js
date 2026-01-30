@@ -154,11 +154,17 @@ const smartSign = async (obj, path) => {
       // Check if this is the "body" field
       if (key === "body" || key === "data") {
         hasBodyField = true
-        // Only use multipart if body/data is actually binary
-        if (isBytes(value)) {
+        // Only use multipart if body/data is non-empty binary
+        if (isBytes(value) && value.length > 0) {
           canUseSimpleEncoding = false
           break
         }
+      }
+
+      // Non-empty buffers in any key need multipart (they can't be HTTP headers)
+      if (isBytes(value) && value.length > 0) {
+        canUseSimpleEncoding = false
+        break
       }
 
       // Complex nested objects need multipart
@@ -191,16 +197,22 @@ const smartSign = async (obj, path) => {
       for (const [key, value] of Object.entries(filtered)) {
         if (key === "path") continue
 
-        if (value === "") {
-          types.push(`${key}="empty-binary"`)
+        if (value === "" || (Buffer.isBuffer(value) && value.length === 0)) {
+          // Empty string/buffer - just include key with empty value, no type annotation needed
+          message[key] = ""
         } else if (Array.isArray(value) && value.length === 0) {
-          types.push(`${key}="empty-list"`)
+          // Empty array - use "list" type annotation
+          types.push(`${key}="list"`)
+          message[key] = ""
         } else if (
           value &&
           typeof value === "object" &&
+          !Buffer.isBuffer(value) &&
           Object.keys(value).length === 0
         ) {
-          types.push(`${key}="empty-message"`)
+          // Empty object - use "map" type annotation
+          types.push(`${key}="map"`)
+          message[key] = ""
         } else if (isSimpleArray(value)) {
           types.push(`${key}="list"`)
           message[key] = encodeAsStructuredFieldList(value)

@@ -437,10 +437,8 @@ function encodeValue(value) {
   // Float
   if (typeof value === "number") {
     // Format like Erlang's float_to_binary - scientific notation with full precision
-    // Erlang's float_to_binary/1 uses ~17 decimal digits
+    // Erlang's float_to_binary/1 uses ~20 decimal digits and keeps trailing zeros
     let str = value.toExponential(20)
-    // Remove trailing zeros but keep at least one decimal digit
-    str = str.replace(/(\.\d*?)0+e/, "$1e").replace(/\.e/, ".0e")
     // Ensure 2-digit exponent with sign
     str = str.replace(/e([+-])(\d)$/, "e$10$2")
     return ["float", str]
