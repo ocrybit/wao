@@ -70,9 +70,19 @@ function to(tabm) {
   const aoTypesStr = tabm["ao-types"] || ""
   const types = parseAoTypes(aoTypesStr)
 
-  // Build result - empty values will be populated when we process actual keys
-  // Don't create empty values for keys that only exist in ao-types but not in the TABM
+  // Build result with empty values first
   const result = {}
+
+  // Add empty values based on their types (these may be overwritten if data exists)
+  for (const [key, type] of Object.entries(types)) {
+    if (type === "empty-binary") {
+      result[key] = ""
+    } else if (type === "empty-list") {
+      result[key] = []
+    } else if (type === "empty-message") {
+      result[key] = {}
+    }
+  }
 
   // Process all other key-value pairs
   for (const [rawKey, value] of Object.entries(tabm)) {

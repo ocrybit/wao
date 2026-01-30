@@ -181,12 +181,30 @@ const genTest = ({ desc = "HyperBEAM", its = [] }) => {
 
 const modOut = out => {
   let output = erl_str_from(out)
+  // Delete TABM metadata fields
   delete output.commitments
   delete output.path
   delete output.method
   delete output["content-length"]
   delete output["content-type"]
   delete output["inline-body-key"]
+  delete output["ao-body-key"]
+  // Delete HTTP request headers that Erlang includes in the response
+  delete output.accept
+  delete output["accept-bundle"]
+  delete output["accept-encoding"]
+  delete output["accept-language"]
+  delete output["sec-fetch-mode"]
+  delete output["user-agent"]
+  delete output.connection
+  delete output.host
+  delete output["content-digest"]
+  delete output.signature
+  delete output["signature-input"]
+  // Delete body field if it's an empty buffer (Erlang inline body behavior)
+  if (output.body && Buffer.isBuffer(output.body) && output.body.length === 0) {
+    delete output.body
+  }
   return output
 }
 const modIn = inp => {
