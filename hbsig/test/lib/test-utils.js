@@ -164,7 +164,8 @@ const genTest = ({ desc = "HyperBEAM", its = [] }) => {
     })
     after(async () => hbeam.kill())
     for (const v of its) {
-      it(
+      const testFn = v.skip ? it.skip : it
+      testFn(
         v.it ?? "should run",
         async () =>
           await test(
