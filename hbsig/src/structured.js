@@ -111,11 +111,16 @@ function to(tabm) {
       value !== null &&
       !Array.isArray(value)
     ) {
+      // Check if the child object itself indicates it's a list via .="list" in its ao-types
+      const childAoTypes = value["ao-types"] || ""
+      const childTypes = parseAoTypes(childAoTypes)
+      const isChildList = childTypes["."] === "list"
+
       // Recursively decode child TABM
       const childDecoded = to(value)
-      const type = types[normalizedKey]
+      const parentType = types[normalizedKey]
 
-      if (type === "list") {
+      if (parentType === "list" || isChildList) {
         // Convert numbered map back to ordered list
         result[rawKey] = messageToOrderedList(childDecoded)
       } else {
@@ -208,7 +213,13 @@ function decodeValue(type, value) {
 
     case "atom":
       const atomItem = parseStructuredItem(value)
-      return atomItem.replace(/^"|"$/g, "") // Remove quotes
+      const atomName = atomItem.replace(/^"|"$/g, "") // Remove quotes
+      // Convert to Symbol to preserve atom type through round-trip
+      // Special cases for common atoms that JS has native types for
+      if (atomName === "true") return true
+      if (atomName === "false") return false
+      if (atomName === "null") return null
+      return Symbol.for(atomName)
 
     case "list":
       return parseStructuredList(value).map(item => {
@@ -410,11 +421,12 @@ function encodeValue(value) {
 
   // Float
   if (typeof value === "number") {
-    // Format like Erlang with scientific notation
+    // Format like Erlang's float_to_binary - scientific notation with full precision
+    // Erlang's float_to_binary/1 uses ~17 decimal digits
     let str = value.toExponential(20)
-    // Remove trailing zeros but keep at least one
+    // Remove trailing zeros but keep at least one decimal digit
     str = str.replace(/(\.\d*?)0+e/, "$1e").replace(/\.e/, ".0e")
-    // Ensure 2-digit exponent
+    // Ensure 2-digit exponent with sign
     str = str.replace(/e([+-])(\d)$/, "e$10$2")
     return ["float", str]
   }

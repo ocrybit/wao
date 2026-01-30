@@ -2,6 +2,7 @@
 
 import { hash } from "fast-sha256"
 import { flat_from, flat_to } from "./flat.js"
+import { structured_from as structuredFrom, structured_to as structuredTo } from "./structured.js"
 
 const CRLF = "\r\n"
 const DOUBLE_CRLF = CRLF + CRLF
@@ -696,12 +697,20 @@ export function httpsig_from(http) {
 
 /**
  * Convert TABM to HTTP message
+ * Implements bundle mode like Erlang's dev_codec_httpsig_conv:to/3 with bundle=true
  */
 export function httpsig_to(tabm) {
   if (typeof tabm === "string") return tabm
 
+  // Bundle logic: TABM → structured → TABM
+  // This matches Erlang's behavior when bundle=true:
+  // 1. Convert TABM to structured@1.0 (interprets ao-types, decodes to native types)
+  // 2. Convert back to TABM (re-encodes with ao-types)
+  const structured = structuredTo(tabm)
+  const bundledTabm = structuredFrom(structured)
+
   // Group IDs
-  const withGroupedIds = groupIds(tabm)
+  const withGroupedIds = groupIds(bundledTabm)
 
   // Remove private and signature-related keys
   const stripped = { ...withGroupedIds }
@@ -713,31 +722,42 @@ export function httpsig_to(tabm) {
   const [inlineFieldHdrs, inlineKeyVal] = inlineKey(tabm)
 
   // Check if this is a flat structure that should stay as headers
-  // A flat structure has no nested objects (maps)
-  const hasNestedMaps = Object.values(stripped).some(
-    value =>
-      typeof value === "object" &&
-      value !== null &&
-      !Array.isArray(value) &&
-      !Buffer.isBuffer(value)
-  )
+  // A flat structure has no nested objects (maps), excluding:
+  // - Arrays (JS arrays, not numbered maps)
+  // - Buffers
+  // Note: List-encoded maps (numbered maps with .="list") ARE nested maps
+  // and should trigger multipart encoding, matching Erlang's behavior
+  const hasNestedMaps = Object.values(stripped).some(value => {
+    // Not an object
+    if (typeof value !== "object" || value === null) return false
+    // Arrays and Buffers are not nested maps
+    if (Array.isArray(value) || Buffer.isBuffer(value)) return false
+    // Any other object (including list-encoded maps) is a nested map
+    return true
+  })
 
   // If it's just a flat map with strings/primitives, keep as headers
   // This matches Erlang's behavior where flat maps don't become multipart
   if (!hasNestedMaps) {
     // For flat structures, just return with normalized keys
-    // This matches Erlang which returns the map unchanged
-    const result = { ...inlineFieldHdrs }
-
-    for (const [key, value] of Object.entries(stripped)) {
-      // Keep Buffers as Buffers - don't convert to strings
-      result[key] = value
-    }
+    const result = { ...inlineFieldHdrs, ...stripped }
 
     // Handle inline body key - move data from inline key to body
     if (inlineKeyVal && inlineKeyVal !== "body" && result[inlineKeyVal]) {
       result.body = result[inlineKeyVal]
       delete result[inlineKeyVal]
+    }
+
+    // If the only field is ao-types (no actual data), return empty object
+    // This matches Erlang's behavior where ao-types-only messages become empty
+    const dataKeys = Object.keys(result).filter(k =>
+      k !== "ao-types" &&
+      k !== "ao-ids" &&
+      k !== "inline-body-key" &&
+      k !== "ao-body-key"
+    )
+    if (dataKeys.length === 0) {
+      return {}
     }
 
     // If there's a body, add content-digest
@@ -837,7 +857,7 @@ export function httpsig_to(tabm) {
 
     const result = {
       ...headers,
-      "body-keys": bodyKeysList.map(k => `"${k}"`).join(", "),
+      // Note: body-keys is NOT included in httpsig output - it's only used for parsing
       "content-type": `multipart/form-data; boundary="${boundary}"`,
       body: finalBody,
     }
