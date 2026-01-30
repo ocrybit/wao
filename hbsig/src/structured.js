@@ -214,6 +214,14 @@ function decodeValue(type, value) {
     case "float":
       return parseFloat(value)
 
+    case "boolean":
+      // SF boolean format: ?1 = true, ?0 = false
+      // Convert to native boolean, will be encoded as "atom" type
+      if (value === "?1") return true
+      if (value === "?0") return false
+      // Fallback for other formats
+      return value === "true" || value === "1"
+
     case "atom":
       const atomItem = parseStructuredItem(value)
       const atomName = atomItem.replace(/^"|"$/g, "") // Remove quotes
