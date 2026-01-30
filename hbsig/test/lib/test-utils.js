@@ -189,6 +189,7 @@ const modOut = out => {
   delete output["content-type"]
   delete output["inline-body-key"]
   delete output["ao-body-key"]
+  delete output["body-keys"]
   // Delete HTTP request headers that Erlang includes in the response
   delete output.accept
   delete output["accept-bundle"]
@@ -211,7 +212,7 @@ const modIn = inp => {
   let inp2 = normalize(inp)
 
   // Recursive function to lowercase all object keys and convert empty strings to Buffer
-  const lowercaseKeys = obj => {
+  const lowercaseKeys = (obj, isTopLevel = true) => {
     // Handle null/undefined
     if (obj === null || obj === undefined) {
       return obj
@@ -224,7 +225,7 @@ const modIn = inp => {
 
     // Handle arrays - recurse on each element
     if (Array.isArray(obj)) {
-      return obj.map(item => lowercaseKeys(item))
+      return obj.map(item => lowercaseKeys(item, false))
     }
 
     // Handle objects - lowercase keys and recurse on values
@@ -232,8 +233,17 @@ const modIn = inp => {
       const result = {}
       for (const [key, value] of Object.entries(obj)) {
         // Lowercase the key and recurse on the value
-        result[key.toLowerCase()] = lowercaseKeys(value)
+        result[key.toLowerCase()] = lowercaseKeys(value, false)
       }
+
+      // At top level, handle inline body key behavior:
+      // If there's a 'data' field with Buffer but no 'body' field, rename 'data' to 'body'
+      // This matches Erlang's behavior where 'data' becomes the inline body key
+      if (isTopLevel && 'data' in result && !('body' in result) && Buffer.isBuffer(result.data)) {
+        result.body = result.data
+        delete result.data
+      }
+
       return result
     }
 
@@ -241,6 +251,6 @@ const modIn = inp => {
     return obj
   }
 
-  return lowercaseKeys(inp2)
+  return lowercaseKeys(inp2, true)
 }
 export { mod, mod2, test, genTest, modOut, modIn }
