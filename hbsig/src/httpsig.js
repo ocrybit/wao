@@ -121,17 +121,18 @@ function boundaryFromParts(parts) {
   return bytesToBase64url(hashBytes)
 }
 
-// Helper to determine inline key
+// Helper to determine inline key - matches Erlang's inline_key/2
 function inlineKey(msg) {
-  const inlineBodyKey = msg["inline-body-key"]
-  if (inlineBodyKey) {
-    return [{}, inlineBodyKey]
+  // Check for ao-body-key (Erlang uses ao-body-key, not inline-body-key)
+  const aoBodyKey = msg["ao-body-key"]
+  if (aoBodyKey) {
+    return [{}, aoBodyKey]
   }
   if ("body" in msg) {
     return [{}, "body"]
   }
   if ("data" in msg) {
-    return [{ "inline-body-key": "data" }, "data"]
+    return [{ "ao-body-key": "data" }, "data"]
   }
   return [{}, "body"]
 }
@@ -183,6 +184,13 @@ function ungroupIds(msg) {
   return result
 }
 
+// Get the size of a map (matches Erlang's maps:size behavior)
+// This counts ALL keys including ao-types - empty means literally {}
+function mapSize(obj) {
+  if (typeof obj !== "object" || obj === null) return 0
+  return Object.keys(obj).length
+}
+
 // Group maps for body encoding - following Erlang logic exactly
 function groupMaps(map, parent = "", top = {}) {
   if (
@@ -211,8 +219,18 @@ function groupMaps(map, parent = "", top = {}) {
       !Array.isArray(value) &&
       !Buffer.isBuffer(value)
     ) {
-      // Recursively process nested objects
-      newTop = groupMaps(value, flatK, newTop)
+      // Check size of the nested object (including metadata keys like ao-types)
+      // Empty means literally {} - a map with only ao-types is NOT empty
+      const size = mapSize(value)
+
+      if (size === 0) {
+        // Empty map (no data keys) - add empty-message marker
+        // This matches Erlang's group_maps behavior for empty maps
+        newTop[flatK] = { "ao-types": "empty-message" }
+      } else {
+        // Recursively process nested objects
+        newTop = groupMaps(value, flatK, newTop)
+      }
     } else if (typeof value === "string" && value.length > MAX_HEADER_LENGTH) {
       // Value too large for header, lift to top level
       newTop[flatK] = value
@@ -236,6 +254,20 @@ function groupMaps(map, parent = "", top = {}) {
   }
 }
 
+// Helper to compute content-digest for a body value
+function computePartDigest(bodyValue) {
+  let bodyBytes
+  if (Buffer.isBuffer(bodyValue)) {
+    bodyBytes = new Uint8Array(bodyValue)
+  } else if (typeof bodyValue === "string") {
+    bodyBytes = stringToBytes(bodyValue, "binary")
+  } else {
+    bodyBytes = stringToBytes(String(bodyValue), "binary")
+  }
+  const hashBytes = hash(bodyBytes)
+  return `sha-256=:${bytesToBase64(hashBytes)}:`
+}
+
 // Encode multipart body part
 function encodeBodyPart(partName, bodyPart, inlineKey) {
   const disposition =
@@ -251,13 +283,26 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
     // Check if this part has ao-types
     const hasAoTypes = "ao-types" in bodyPart
 
+    // Check if this part has a "data" field that should be used as inline body key
+    // (similar to how "body" is treated, but for "data" field)
+    const hasDataAsBody = "data" in bodyPart && !("body" in bodyPart)
+    const dataValue = hasDataAsBody ? bodyPart.data : null
+    const dataDigest = hasDataAsBody ? computePartDigest(dataValue) : null
+
     if (hasAoTypes) {
       // For parts WITH ao-types: sort all entries alphabetically
       const allEntries = []
 
-      // Collect all entries except body
+      // If we have data as body, add ao-body-key and content-digest
+      if (hasDataAsBody) {
+        allEntries.push({ key: "ao-body-key", line: `ao-body-key: data` })
+        allEntries.push({ key: "content-digest", line: `content-digest: ${dataDigest}` })
+      }
+
+      // Collect all entries except body and data (if data is being used as body)
       for (const [key, value] of Object.entries(bodyPart)) {
         if (key === "body") continue
+        if (hasDataAsBody && key === "data") continue
 
         if (key === "ao-types") {
           // Keep ao-types as-is (Buffer or string)
@@ -289,11 +334,11 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
       // Build the lines
       const lines = allEntries.map(entry => entry.line)
 
-      // Body handling
-      const body = bodyPart.body || ""
-      if (body) {
+      // Body handling - use data value if it's the body key, otherwise use body field
+      const body = hasDataAsBody ? dataValue : (bodyPart.body || "")
+      if (body !== "" && body !== undefined && body !== null) {
         lines.push("") // Always add empty line before body
-        lines.push(body)
+        lines.push(Buffer.isBuffer(body) ? body.toString("binary") : String(body))
       }
 
       return lines.join(CRLF)
@@ -301,8 +346,20 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
       // For parts WITHOUT ao-types
       const allEntries = []
 
+      // Check if this part has a "data" field that should be used as inline body key
+      const hasDataAsBodyNoTypes = "data" in bodyPart && !("body" in bodyPart)
+      const dataValueNoTypes = hasDataAsBodyNoTypes ? bodyPart.data : null
+      const dataDigestNoTypes = hasDataAsBodyNoTypes ? computePartDigest(dataValueNoTypes) : null
+
+      // If we have data as body, add ao-body-key and content-digest
+      if (hasDataAsBodyNoTypes) {
+        allEntries.push({ key: "ao-body-key", line: `ao-body-key: data` })
+        allEntries.push({ key: "content-digest", line: `content-digest: ${dataDigestNoTypes}` })
+      }
+
       for (const [key, value] of Object.entries(bodyPart)) {
         if (key === "body") continue
+        if (hasDataAsBodyNoTypes && key === "data") continue
         // Handle Buffer values properly
         let valueStr = value
         if (Buffer.isBuffer(value)) {
@@ -314,35 +371,31 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
 
       const lines = []
 
-      if (isInline) {
-        // Inline parts without ao-types: sort ALL fields alphabetically including content-disposition
-        allEntries.push({
-          key: "content-disposition",
-          line: `content-disposition: ${disposition}`,
-        })
+      // Add content-disposition to entries
+      allEntries.push({
+        key: "content-disposition",
+        line: `content-disposition: ${disposition}`,
+      })
 
-        // Sort by key
-        allEntries.sort((a, b) => a.key.localeCompare(b.key))
+      // Sort all entries by key (including content-disposition) - matches Erlang behavior
+      allEntries.sort((a, b) => a.key.localeCompare(b.key))
 
-        // Extract the lines
-        lines.push(...allEntries.map(entry => entry.line))
-      } else {
-        // Regular parts: content-disposition first, then fields
-        lines.push(`content-disposition: ${disposition}`)
-        lines.push(...allEntries.map(entry => entry.line))
-      }
+      // Extract the lines
+      lines.push(...allEntries.map(entry => entry.line))
 
-      // Body handling
-      const body = bodyPart.body || ""
-      if (body) {
+      // Body handling - use data value if it's the body key, otherwise use body field
+      const body = hasDataAsBodyNoTypes ? dataValueNoTypes : (bodyPart.body || "")
+      if (body !== "" && body !== undefined && body !== null) {
         lines.push("") // Always add empty line before body
-        lines.push(body)
+        lines.push(Buffer.isBuffer(body) ? body.toString("binary") : String(body))
       }
 
       return lines.join(CRLF)
     }
   } else if (typeof bodyPart === "string" || Buffer.isBuffer(bodyPart)) {
-    return `content-disposition: ${disposition}${DOUBLE_CRLF}${bodyPart}`
+    // Use binary/latin1 encoding to preserve byte values 0-255
+    const bodyStr = Buffer.isBuffer(bodyPart) ? bodyPart.toString("binary") : bodyPart
+    return `content-disposition: ${disposition}${DOUBLE_CRLF}${bodyStr}`
   }
   return ""
 }
@@ -760,9 +813,16 @@ export function httpsig_to(tabm) {
       return {}
     }
 
-    // If there's a body, add content-digest
+    // If there's a non-empty body, add content-digest
+    // Erlang doesn't add content-digest for empty bodies (<<>>)
     if (result.body) {
-      return addContentDigest(result)
+      const bodyIsEmpty = Buffer.isBuffer(result.body)
+        ? result.body.length === 0
+        : (typeof result.body === "string" && result.body.length === 0)
+
+      if (!bodyIsEmpty) {
+        return addContentDigest(result)
+      }
     }
 
     return result

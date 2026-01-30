@@ -70,19 +70,9 @@ function to(tabm) {
   const aoTypesStr = tabm["ao-types"] || ""
   const types = parseAoTypes(aoTypesStr)
 
-  // Build result with empty values first
+  // Build result - empty values will be populated when we process actual keys
+  // Don't create empty values for keys that only exist in ao-types but not in the TABM
   const result = {}
-
-  // Add empty values based on their types
-  for (const [key, type] of Object.entries(types)) {
-    if (type === "empty-binary") {
-      result[key] = ""
-    } else if (type === "empty-list") {
-      result[key] = []
-    } else if (type === "empty-message") {
-      result[key] = {}
-    }
-  }
 
   // Process all other key-value pairs
   for (const [rawKey, value] of Object.entries(tabm)) {
@@ -118,9 +108,12 @@ function to(tabm) {
 
       // Recursively decode child TABM
       const childDecoded = to(value)
-      const parentType = types[normalizedKey]
 
-      if (parentType === "list" || isChildList) {
+      // Only convert numbered map to array if the child object itself
+      // declares it's a list via .="list" in its ao-types.
+      // This preserves original keys when the parent declares the type
+      // but the child doesn't have the list marker.
+      if (isChildList) {
         // Convert numbered map back to ordered list
         result[rawKey] = messageToOrderedList(childDecoded)
       } else {
@@ -263,7 +256,11 @@ function parseStructuredList(value) {
   // This is a simplified parser - you'd want to use a proper structured fields parser
   return value.split(", ").map(item => {
     if (item.startsWith('"') && item.endsWith('"')) {
-      return item.slice(1, -1) // Remove quotes
+      // Remove quotes and unescape SF string escapes
+      // In SF strings: \" = " and \\ = \
+      return item.slice(1, -1)
+        .replace(/\\"/g, '"')     // \" -> "
+        .replace(/\\\\/g, '\\')   // \\ -> \
     }
     return item
   })

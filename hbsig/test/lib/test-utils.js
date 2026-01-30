@@ -132,8 +132,14 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       try {
         assert.deepEqual(expected, output_b)
       } catch (assertErr) {
-        console.log("DEBUG expected:", JSON.stringify(expected))
-        console.log("DEBUG actual:", JSON.stringify(output_b))
+        const stringify = (o) => JSON.stringify(o, (k,v) => {
+          if (Buffer.isBuffer(v)) return v.toString('utf-8')
+          if (v?.type === 'Buffer' && Array.isArray(v?.data)) return Buffer.from(v.data).toString('utf-8')
+          if (typeof v === 'symbol') return `Symbol(${v.description})`
+          return v
+        }, 2)
+        console.log("DEBUG expected:", stringify(expected))
+        console.log("DEBUG actual:", stringify(output_b))
         throw assertErr
       }
       success.push(v)
