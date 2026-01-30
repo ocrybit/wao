@@ -128,7 +128,14 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       const output = erl_str_from(out)
       const expected = normalize(mod(_pmod), true)
       const output_b = erl_str_from(out, true)
-      assert.deepEqual(expected, output_b)
+      // DEBUG: Print comparison on failure
+      try {
+        assert.deepEqual(expected, output_b)
+      } catch (assertErr) {
+        console.log("DEBUG expected:", JSON.stringify(expected))
+        console.log("DEBUG actual:", JSON.stringify(output_b))
+        throw assertErr
+      }
       success.push(v)
     } catch (e) {
       console.log(e)

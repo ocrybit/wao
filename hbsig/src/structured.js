@@ -264,14 +264,37 @@ function parseStructuredList(value) {
  * @returns {object} - TABM
  */
 function from(msg) {
-  // Handle non-map values
-  if (
-    msg instanceof Buffer ||
-    typeof msg !== "object" ||
-    msg === null ||
-    Array.isArray(msg)
-  ) {
+  // Handle binary input - passthrough
+  if (msg instanceof Buffer || msg instanceof Uint8Array) {
     return msg
+  }
+
+  // Handle non-object values - passthrough
+  if (typeof msg !== "object" || msg === null) {
+    return msg
+  }
+
+  // Handle arrays - convert to numbered map with .="list" in ao-types
+  // Mirrors Erlang: from(List, Req, Opts) when is_list(List)
+  if (Array.isArray(msg)) {
+    // Convert to numbered map (1-based indexing like Erlang)
+    const numberedMap = {}
+    msg.forEach((item, idx) => {
+      numberedMap[(idx + 1).toString()] = item
+    })
+
+    // Recursively process the numbered map
+    const result = from(numberedMap)
+
+    // Add .="list" to ao-types to indicate this message is a list
+    const existingAoTypes = result["ao-types"] || ""
+    if (existingAoTypes) {
+      result["ao-types"] = '.="list", ' + existingAoTypes
+    } else {
+      result["ao-types"] = '.="list"'
+    }
+
+    return result
   }
 
   // Normalize keys first
@@ -291,17 +314,22 @@ function from(msg) {
   for (const normKey of sortedKeys) {
     const value = normalizedMap[normKey]
 
-    // Handle empty values
+    // Handle empty binaries/strings - just include as-is, no type annotation
+    // (Erlang doesn't add empty-binary type, it just keeps the empty binary)
     if (value === "" || (value instanceof Buffer && value.length === 0)) {
-      types.push([normKey, "empty-binary"])
+      values.push([normKey, value])
       continue
     }
 
+    // Empty arrays - convert to numbered map with .="list" in ao-types
+    // (Erlang doesn't add empty-list type, just the list marker)
     if (Array.isArray(value) && value.length === 0) {
-      types.push([normKey, "empty-list"])
+      values.push([normKey, from(value)])
       continue
     }
 
+    // Empty objects - just include as-is, no type annotation
+    // (Erlang doesn't add empty-message type, it just keeps the empty map)
     if (
       typeof value === "object" &&
       value !== null &&
@@ -309,7 +337,7 @@ function from(msg) {
       !(value instanceof Buffer) &&
       Object.keys(value).length === 0
     ) {
-      types.push([normKey, "empty-message"])
+      values.push([normKey, value])
       continue
     }
 
@@ -330,22 +358,9 @@ function from(msg) {
       continue
     }
 
-    // Handle arrays
+    // Handle arrays - from() converts to numbered map with .="list" in ao-types
     if (Array.isArray(value) && value.length > 0) {
-      if (shouldConvertToNumberedMap(value)) {
-        // Convert to numbered map (1-based indexing)
-        const numberedMap = {}
-        value.forEach((item, idx) => {
-          numberedMap[(idx + 1).toString()] = item
-        })
-        types.push([normKey, "list"])
-        values.push([normKey, from(numberedMap)])
-      } else {
-        // Encode as list string
-        const [type, encoded] = encodeValue(value)
-        types.push([normKey, type])
-        values.push([normKey, encoded])
-      }
+      values.push([normKey, from(value)])
       continue
     }
 
@@ -353,7 +368,6 @@ function from(msg) {
     if (
       typeof value === "symbol" ||
       typeof value === "number" ||
-      Array.isArray(value) ||
       typeof value === "boolean" ||
       value === null
     ) {
@@ -378,47 +392,6 @@ function from(msg) {
   }
 
   return result
-}
-
-/**
- * Check if an array should be converted to numbered map
- * Rules based on Erlang behavior:
- * 1. Contains any objects/maps → convert
- * 2. Contains empty arrays (but NOT empty buffers) → convert
- * 3. All items are arrays (array of arrays) → convert
- * 4. Otherwise → encode as string
- */
-function shouldConvertToNumberedMap(arr) {
-  let allArrays = true
-  let hasObjects = false
-  let hasEmptyArrays = false
-
-  for (const item of arr) {
-    // Check for objects (not arrays or buffers)
-    if (
-      typeof item === "object" &&
-      item !== null &&
-      !Array.isArray(item) &&
-      !Buffer.isBuffer(item)
-    ) {
-      hasObjects = true
-    }
-    // Check for empty arrays only (NOT empty buffers)
-    else if (Array.isArray(item) && item.length === 0) {
-      hasEmptyArrays = true
-    }
-    // Track if all items are arrays
-    else if (!Array.isArray(item)) {
-      allArrays = false
-    }
-  }
-
-  // Convert if: has objects, has empty arrays, or all items are non-empty arrays
-  return (
-    hasObjects ||
-    hasEmptyArrays ||
-    (allArrays && arr.length > 0 && arr.every(item => Array.isArray(item)))
-  )
 }
 
 /**
