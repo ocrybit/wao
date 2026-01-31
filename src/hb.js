@@ -435,17 +435,16 @@ class HB {
       Variant: "ao.N.1",
       Authority: this.operator,
       image,
-      device: "Stack@1.0",
+      "execution-device": "stack@1.0",
       "device-stack": [
-        "WASI@1.0",
-        "JSON-Iface@1.0",
-        "WASM-64@1.0",
-        "Multipass@1.0",
+        "wasi@1.0",
+        "json-iface@1.0",
+        "wasm-64@1.0",
+        "multipass@1.0",
       ],
-      "input-prefix": "process",
       "output-prefix": "wasm",
       passes: 2,
-      "stack-keys": ["init", "compute"],
+      "stack-keys": ["init", "compute", "snapshot", "normalize"],
     }
     return await this.spawn(tags)
   }

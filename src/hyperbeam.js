@@ -164,30 +164,31 @@ export default class HyperBEAM {
         r => r.text()
       )
       if (address) {
+        if (this.logs) console.log("HyperBEAM ok(): initializing HB...")
         this.hb = await new HB({ url: this.url }).init(this.jwk)
+        this._info = { address }
+        if (this.logs) console.log("HyperBEAM ok(): SUCCESS!")
         return true
       } else return false
     } catch (e) {
+      if (this.logs) console.error("HyperBEAM ok() error:", e.message)
       return false
     }
   }
-  async ready(timeout = 30000) {
+  async ready(timeout = 60000) {
     const start = Date.now()
-    return new Promise(res => {
-      const to = setInterval(async () => {
-        try {
-          if (Date.now() - start > 30000) {
-            clearInterval(to)
-            res(false)
-          } else {
-            if (await this.ok()) {
-              clearInterval(to)
-              res(this)
-            }
-          }
-        } catch (e) {}
-      }, 1000)
-    })
+    while (Date.now() - start < timeout) {
+      try {
+        if (await this.ok()) {
+          return this
+        }
+      } catch (e) {
+        // Ignore errors, will retry
+      }
+      // Wait 1 second before next attempt
+      await new Promise(r => setTimeout(r, 1000))
+    }
+    return false
   }
   genEnv() {
     let _env = {}
@@ -272,7 +273,10 @@ export default class HyperBEAM {
         : !isNil(this.faff)
           ? `, on => #{ <<"request">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> }, <<"response">> => #{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"faff@1.0">>, <<"ledger-device">> => <<"faff@1.0">> } }`
           : ""
-    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_devices}${_node_processes}, prometheus => false}).`
+    // Add cache_writers to allow the wallet to write to cache (needed for WASM module uploads)
+    // Use the wallet address (this.addr) which is always available from the wallet file
+    const _cache_writers = `, cache_writers => [<<"${this.addr}">>]`
+    const start = `hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_devices}${_node_processes}${_cache_writers}, prometheus => false}).`
     return start
   }
 
