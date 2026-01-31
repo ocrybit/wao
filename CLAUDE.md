@@ -98,14 +98,14 @@ Using official upstream release tags as checkpoints.
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP1)
-- [ ] Task 2: Make hbsig Tests 100% Pass
-  - [ ] id.test.js
-  - [ ] commit.test.js
-  - [ ] erl_json.test.js
-  - [ ] flat.test.js
-  - [ ] structured.test.js
-  - [ ] httpsig.test.js
-  - [ ] signer.test.js
+- [x] Task 2: Make hbsig Tests 100% Pass
+  - [x] id.test.js
+  - [x] commit.test.js
+  - [x] erl_json.test.js
+  - [x] flat.test.js
+  - [x] structured.test.js
+  - [x] httpsig.test.js
+  - [x] signer.test.js
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
 - [ ] Task 4: Mark Done
 
