@@ -14,8 +14,6 @@ import {
 } from "hbsig"
 import hyper_aos from "./hyper-aos.js"
 import aos_wamr from "./aos_wamr.js"
-import { readFileSync, existsSync } from "fs"
-import { resolve as pathResolve } from "path"
 import { ArweaveSigner } from "@ar.io/sdk"
 import { createData } from "@dha-team/arbundles"
 
@@ -89,15 +87,7 @@ class HB {
   }
 
   async getImage() {
-    // Try to use HyperBEAM's test WASM file if available (preferred for CP1+)
-    const hbWasmPath = pathResolve(process.cwd(), "HyperBEAM/test/aos-2-pure-xs.wasm")
-    let wasm
-    if (existsSync(hbWasmPath)) {
-      wasm = readFileSync(hbWasmPath)
-    } else {
-      // Fallback to embedded module
-      wasm = Buffer.from(aos_wamr, "base64")
-    }
+    const wasm = Buffer.from(aos_wamr, "base64")
     const id = await this.cacheBinary(wasm, "application/wasm")
     this.image ??= id
     return id
@@ -105,7 +95,7 @@ class HB {
 
   async getLua() {
     const lua = Buffer.from(hyper_aos, "base64")
-    const id = await this.cacheScript(lua, "application/lua")
+    const id = await this.cacheBinary(lua, "application/lua")
     this.lua ??= id
     return id
   }
@@ -221,9 +211,9 @@ class HB {
         data: data ?? "1984",
       })
     } else {
-      let _tags = mergeLeft(tags, { Type: "Message", target: pid })
+      // Add Owner for CU validation (required for genesis-wasm)
+      let _tags = mergeLeft(tags, { Type: "Message", target: pid, Owner: this.addr })
       if (data) _tags.data = data
-      // Send directly without commit() wrapper - matching scheduleFlat behavior
       res = await this.post({ path: `/${pid}/schedule`, body: _tags })
     }
     return { slot: res.out.slot, res, pid }
@@ -240,6 +230,7 @@ class HB {
       "Data-Protocol": "ao",
       Variant: "ao.N.1",
       Authority: this.operator,
+      Owner: this.addr,  // Required for CU validation
       module: this.lua ?? (await this.getLua()),
       "execution-device": "lua@5.3a",
       "push-device": "push@1.0",
@@ -313,28 +304,17 @@ class HB {
 
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
-    let t = {}
-    if (this.format === "ans104") {
-      t = mergeLeft(tags, {
-        "Data-Protocol": "ao",
-        Variant: "ao.TN.1",
-        Authority: this.operator,
-        Scheduler: this.operator,
-        Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
-        device: "process@1.0",
-        "execution-device": "genesis-wasm@1.0",
-      })
-    } else {
-      t = mergeLeft(tags, {
-        "Data-Protocol": "ao",
-        Variant: "ao.TN.1",
-        Authority: this.operator,
-        Scheduler: this.operator,
-        Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
-        device: "process@1.0",
-        "execution-device": "genesis-wasm@1.0",
-      })
-    }
+    // Use HTTP signatures with Owner field for CU validation
+    let t = mergeLeft(tags, {
+      "Data-Protocol": "ao",
+      Variant: "ao.TN.1",
+      Authority: this.operator,
+      Scheduler: this.operator,
+      Owner: this.addr,  // Required for CU validation
+      Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
+      device: "process@1.0",
+      "execution-device": "genesis-wasm@1.0",
+    })
     if (data) t.data = data
     return await this.spawn(t)
   }
@@ -430,12 +410,15 @@ class HB {
   async spawnAOS(image) {
     await this.setInfo()
     image ??= this.image ?? (await this.getImage())
+    // Use HTTP signatures with device stack configuration
     const tags = {
       "Data-Protocol": "ao",
       Variant: "ao.N.1",
       Authority: this.operator,
+      Owner: this.addr,  // Required for CU validation
       image,
       "execution-device": "stack@1.0",
+      "push-device": "push@1.0",
       "device-stack": [
         "wasi@1.0",
         "json-iface@1.0",
@@ -443,6 +426,7 @@ class HB {
         "multipass@1.0",
       ],
       "output-prefix": "wasm",
+      "patch-from": "/results/outbox",
       passes: 2,
       "stack-keys": ["init", "compute", "snapshot", "normalize"],
     }

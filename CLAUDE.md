@@ -111,31 +111,33 @@ Using official upstream release tags as checkpoints.
   - [x] httpsig.test.js
   - [x] signer.test.js
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
-  - **Current Status: 4/15 tests pass**
+  - **Current Status: 4/15 tests pass** (beta1 limitation)
   - Passing tests (4):
     - test-device (simple device test)
     - add@1.0 (simple device test)
     - mul@1.0 (simple device test)
     - upload module #2 (wao@1.0 device test)
   - SDK updates made:
-    - **src/hb.js**: Updated spawnAOS with correct device stack format
+    - **src/hb.js**: Added Owner field to spawn/schedule tags for CU compatibility
     - **src/hyperbeam.js**: Added genesis_wasm support with CU server auto-start
       - New options: `genesis_wasm`, `cu_port`, `arweave_gateway`
       - New method: `startCU()` - starts genesis-wasm-server from `HyperBEAM/_build/genesis-wasm-server`
       - CU server routes configured to port 6363 for `/result/.*` requests
+  - **Root Cause Analysis (genesis-wasm failures)**:
+    - The CU expects `owner` field in messages
+    - In beta1, `dev_json_iface:message_to_json_struct` derives Owner from `hb_message:signers()`
+    - `signers()` extracts owner from message commitments (cryptographic signatures)
+    - HTTP signatures in headers are validated but commitments may not persist through storage/retrieval
+    - Result: Owner field is empty in retrieved messages → CU validation fails
+    - **Beta3 solution**: JSON POST with commitment signatures embeds commitments in body, preserved through storage
+    - **Beta1 limitation**: HTTP signatures don't preserve commitments consistently
   - Failing tests analysis (11):
-    - **genesis-wasm@1.0 tests (spawnLegacy, etc.)**: CU validation fails
-      - Error: `ZodError: owner field missing` - Protocol mismatch
-      - The `dev_delegated_compute` sends requests to CU via `relay@1.0`
-      - CU expects `owner` field which isn't being provided
-    - **lua@5.3a tests (spawnLua)**: Compute returns HTTP 500
-      - Lua modules load successfully (loaded json, handlers, ao, etc.)
-      - But compute/results endpoint returns error page instead of JSON
-    - **AOS/WAMR tests (spawnAOS)**: WASM loading failures
-      - Error: `wasm_module_new_ex failed` - WAMR can't load the module
+    - **genesis-wasm@1.0 tests**: Empty Owner field due to commitment preservation issue
+    - **lua@5.3a tests**: Same underlying issue (compute relies on message formatting)
+    - **AOS/WAMR tests**: WASM module loading issues
     - **oracle@1.0 tests**: Depend on genesis-wasm
-  - **Devices that work**: test-device@1.0, add@1.0, mul@1.0, wao@1.0
-  - **Root causes**: Various infrastructure issues, not SDK bugs
+  - **Devices that work**: test-device@1.0, add@1.0, mul@1.0, wao@1.0 (no CU interaction)
+  - **Path forward**: Move to CP2 (beta3) which has proper commitment preservation
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
