@@ -287,7 +287,7 @@ end)
     console.log(await p.m("Get"))
   })
 
-  it.only("should test oracle", async () => {
+  it("should test oracle", async () => {
     const src_data = `
 local count = 0
 json = require("json")

@@ -111,6 +111,13 @@ Using official upstream release tags as checkpoints.
   - [x] httpsig.test.js
   - [x] signer.test.js
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
+  - **Current Status: 4/15 tests pass**
+  - Passing tests: test-device, add@1.0, mul@1.0, wao@1.0 (simple device tests)
+  - Failing tests require infrastructure fixes:
+    - genesis-wasm@1.0 (legacy Lua execution) - requires delegated-compute setup
+    - AOS/WAMR (WASM execution) - `wasm_module_new_ex failed`
+    - oracle@1.0 (HTTP fetch) - returns 500 errors
+  - Note: These failures are due to core infrastructure issues, not hbsig code
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
