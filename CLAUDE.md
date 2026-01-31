@@ -71,9 +71,13 @@ Run HyperBEAM integration tests:
 . ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/hyperbeam.test.js
 ```
 
-### Task 4: Mark Done
-- Once all tests pass (hbsig + wao/test/hyperbeam), update checkpoint status to ✅ DONE
-- **WAIT for user to confirm/review on their local machine before marking as DONE**
+### Task 4: Receive Confirmation from Human
+- **STOP and wait for user to confirm tests pass on their local machine**
+- User will run tests locally and verify results
+- Do NOT proceed to Task 5 until user confirms
+
+### Task 5: Mark Done
+- Once user confirms all tests pass locally, update checkpoint status to ✅ DONE
 - Move to next checkpoint and repeat the loop
 
 ---
@@ -107,7 +111,8 @@ Using official upstream release tags as checkpoints.
   - [x] httpsig.test.js
   - [x] signer.test.js
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
-- [ ] Task 4: Mark Done
+- [ ] Task 4: Receive Confirmation from Human
+- [ ] Task 5: Mark Done
 
 ---
 
