@@ -124,16 +124,18 @@ Using official upstream release tags as checkpoints.
       - New method: `startCU()` - starts genesis-wasm-server from `HyperBEAM/_build/genesis-wasm-server`
       - CU server routes configured to port 6363 for `/result/.*` requests
   - Failing tests analysis (11):
-    - **genesis-wasm@1.0 tests (6)**: CU server now starts, but request validation fails
-      - Error: `ZodError: owner field missing` - Protocol mismatch between HyperBEAM and CU
-      - The `dev_delegated_compute` sends requests to CU via `relay@1.0` device
+    - **genesis-wasm@1.0 tests (spawnLegacy, etc.)**: CU validation fails
+      - Error: `ZodError: owner field missing` - Protocol mismatch
+      - The `dev_delegated_compute` sends requests to CU via `relay@1.0`
       - CU expects `owner` field which isn't being provided
-    - **AOS/WAMR tests (3)**: WASM loading failures
-      - Error: `wasm_module_new_ex failed` - WAMR can't load the WASM module
-      - WASM caching issue with `/~wao@1.0/cache_module` endpoint
-    - **oracle@1.0 tests (2)**: Depend on genesis-wasm
-  - **Root cause**: Protocol differences between HyperBEAM and CU, plus WASM loading issues
-  - **Next steps**: Investigate CU request format requirements or use lua@5.3a device instead
+    - **lua@5.3a tests (spawnLua)**: Compute returns HTTP 500
+      - Lua modules load successfully (loaded json, handlers, ao, etc.)
+      - But compute/results endpoint returns error page instead of JSON
+    - **AOS/WAMR tests (spawnAOS)**: WASM loading failures
+      - Error: `wasm_module_new_ex failed` - WAMR can't load the module
+    - **oracle@1.0 tests**: Depend on genesis-wasm
+  - **Devices that work**: test-device@1.0, add@1.0, mul@1.0, wao@1.0
+  - **Root causes**: Various infrastructure issues, not SDK bugs
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
