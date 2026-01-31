@@ -122,13 +122,14 @@ Using official upstream release tags as checkpoints.
     - Added getImage() to load HyperBEAM's test WASM (aos-2-pure-xs.wasm) when available
     - Fixed stack-keys to include snapshot and normalize
   - Failing tests analysis (11):
-    - **genesis-wasm@1.0 tests (6)**: Require remote module fetching via `delegated-compute`. The test uses Module ID `ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s` which needs to be loaded from mainnet.
+    - **genesis-wasm@1.0 tests (6)**: Require external CU (Compute Unit) on port 6363. Error: `{failed_connect, [{to_address,{"localhost",6363}}, {inet,[inet],econnrefused}]}`. The `dev_delegated_compute` module needs an external CU service.
     - **AOS/WAMR tests (3)**: WASM caching issue. The `/~wao@1.0/cache_module` endpoint is used but returns errors. Alternative approaches tried:
       - Direct cache write returns path format (48 bytes) but dev_wasm expects message ID (43 bytes)
       - Scheduling large (7MB) binary messages fails with 500 errors
       - Erlang uses `hb_cache:write(#{ body => Bin })` which returns proper message ID
     - **oracle@1.0 tests (2)**: Depend on genesis-wasm for Lua execution + HTTP fetching
   - **Root cause**: These failures are infrastructure issues, not hbsig/SDK code bugs. The SDK correctly handles device spawning, message scheduling, and compute operations.
+  - **To enable more tests**: Start a CU on port 6363 (e.g., `ao-cu` or similar service)
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 

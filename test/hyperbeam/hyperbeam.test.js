@@ -65,7 +65,7 @@ describe("Hyperbeam Legacynet", function () {
 
   it("should get messages and recover them", async () => {
     const address = (await hb.get({ path: "/~meta@1.0/info/address" })).body
-    assert.equal(address, hb._info.address)
+    assert.equal(address, hbeam._info.address)
     const { pid } = await hb.spawnLegacy()
     const { slot } = await hb.scheduleLegacy({ pid, data })
     const r = await hb.computeLegacy({ pid, slot })
@@ -150,7 +150,7 @@ describe("Hyperbeam Legacynet", function () {
 
   it("should deploy a process", async () => {
     const address = (await hb.get({ path: "/~meta@1.0/info/address" })).body
-    assert.equal(address, hb._info.address)
+    assert.equal(address, hbeam._info.address)
     const { pid } = await hb.spawnLegacy()
     const { slot } = await hb.scheduleLegacy({ pid, data })
     const r = await hb.computeLegacy({ pid, slot })
