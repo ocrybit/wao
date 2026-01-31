@@ -13,6 +13,12 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
    - `hbsig/test/*.test.js`
 3. **NEVER remove or skip test cases**
 4. **COMMIT AND PUSH after completing each task** - Do NOT proceed to the next task until changes are committed and pushed to remote
+5. **Keep Merged HB updated** - Every time you commit to wao-m1:
+   - Push the commit to wao-m1
+   - Update submodule reference in wao repo
+   - Update "Merged HB" column in checkpoint table to the NEW commit hash
+   - Commit and push CLAUDE.md
+   - The Merged HB must always point to the LATEST working commit, not the initial rebase commit
 
 ## Session Setup (each fresh session)
 
