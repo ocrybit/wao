@@ -59,8 +59,14 @@ Commands:
 . ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
 ```
 
-### Task 3: Mark Done
-- Once all 7 tests pass, update checkpoint status to ✅ DONE
+### Task 3: Make wao/test/hyperbeam Tests 100% Pass
+Run HyperBEAM integration tests:
+```bash
+. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test wao/test/hyperbeam.test.js
+```
+
+### Task 4: Mark Done
+- Once all tests pass (hbsig + wao/test/hyperbeam), update checkpoint status to ✅ DONE
 - **WAIT for user to confirm/review on their local machine before marking as DONE**
 - Move to next checkpoint and repeat the loop
 
@@ -73,20 +79,20 @@ Using official upstream release tags as checkpoints.
 | CP | Upstream Commit | Merged HB | Done Commit (wao) | Date | Message | Status |
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
-| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`680158e9`](https://github.com/ocrybit/HyperBEAM/commit/680158e9) | [`b7213f1`](https://github.com/ocrybit/wao/commit/b7213f1) | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`680158e9`](https://github.com/ocrybit/HyperBEAM/commit/680158e9) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`1ebe8537`](https://github.com/ocrybit/HyperBEAM/commit/1ebe8537) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | ⬜ PENDING |
 
 ---
 
-## Current Progress: CP2
+## Current Progress: CP1
 
 **Working branch:** [`claude/read-claude-md-3abIM`](https://github.com/ocrybit/wao/tree/claude/read-claude-md-3abIM)
 
-**Note:** CP1 tests pass with current code (hb.js spawn/schedule modified to not use commit() wrapper).
+**Note:** CP2 rebase already completed (merged HB: 1ebe8537). Need to verify CP1 tests pass first before marking CP1 done.
 
 ### Tasks
-- [ ] Task 1: Rebase and Merge Upstream (d58f16b8 into wao-m1)
-- [ ] Task 2: Make Tests 100% Pass
+- [x] Task 1: Rebase and Merge Upstream (already done for CP1)
+- [ ] Task 2: Make hbsig Tests 100% Pass
   - [ ] id.test.js
   - [ ] commit.test.js
   - [ ] erl_json.test.js
@@ -94,7 +100,8 @@ Using official upstream release tags as checkpoints.
   - [ ] structured.test.js
   - [ ] httpsig.test.js
   - [ ] signer.test.js
-- [ ] Task 3: Mark Done
+- [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
+- [ ] Task 4: Mark Done
 
 ---
 
