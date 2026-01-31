@@ -113,6 +113,10 @@ Using official upstream release tags as checkpoints.
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
   - **Current Status: 4/15 tests pass**
   - Passing tests: test-device, add@1.0, mul@1.0, wao@1.0 (simple device tests)
+  - SDK updates made (src/hb.js):
+    - Updated spawnAOS device stack to match HyperBEAM's expected format
+    - Changed device names to proper case (Stack@1.0, WASI@1.0, etc.)
+    - Added getImage() to use HyperBEAM's aos-2-pure-xs.wasm when available
   - Failing tests require infrastructure fixes:
     - genesis-wasm@1.0 (legacy Lua execution) - requires delegated-compute setup
     - AOS/WAMR (WASM execution) - `wasm_module_new_ex failed`

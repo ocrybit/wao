@@ -14,6 +14,8 @@ import {
 } from "hbsig"
 import hyper_aos from "./hyper-aos.js"
 import aos_wamr from "./aos_wamr.js"
+import { readFileSync, existsSync } from "fs"
+import { resolve as pathResolve } from "path"
 import { ArweaveSigner } from "@ar.io/sdk"
 import { createData } from "@dha-team/arbundles"
 
@@ -87,7 +89,15 @@ class HB {
   }
 
   async getImage() {
-    const wasm = Buffer.from(aos_wamr, "base64")
+    // Try to use HyperBEAM's test WASM file if available (preferred for CP1+)
+    const hbWasmPath = pathResolve(process.cwd(), "HyperBEAM/test/aos-2-pure-xs.wasm")
+    let wasm
+    if (existsSync(hbWasmPath)) {
+      wasm = readFileSync(hbWasmPath)
+    } else {
+      // Fallback to embedded module
+      wasm = Buffer.from(aos_wamr, "base64")
+    }
     const id = await this.cacheBinary(wasm, "application/wasm")
     this.image ??= id
     return id
@@ -425,19 +435,17 @@ class HB {
       Variant: "ao.N.1",
       Authority: this.operator,
       image,
-      "execution-device": "stack@1.0",
-      "push-device": "push@1.0",
+      device: "Stack@1.0",
       "device-stack": [
-        "wasi@1.0",
-        "json-iface@1.0",
-        "wasm-64@1.0",
-        "patch@1.0",
-        "multipass@1.0",
+        "WASI@1.0",
+        "JSON-Iface@1.0",
+        "WASM-64@1.0",
+        "Multipass@1.0",
       ],
+      "input-prefix": "process",
       "output-prefix": "wasm",
-      "patch-from": "/results/outbox",
-      "patch-mode": "patches",
       passes: 2,
+      "stack-keys": ["init", "compute"],
     }
     return await this.spawn(tags)
   }
