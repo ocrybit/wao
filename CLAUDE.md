@@ -68,7 +68,7 @@ Commands:
 ### Task 3: Make wao/test/hyperbeam Tests 100% Pass
 Run HyperBEAM integration tests:
 ```bash
-. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test wao/test/hyperbeam.test.js
+. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/hyperbeam.test.js
 ```
 
 ### Task 4: Mark Done
