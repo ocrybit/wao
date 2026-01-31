@@ -117,19 +117,23 @@ Using official upstream release tags as checkpoints.
     - add@1.0 (simple device test)
     - mul@1.0 (simple device test)
     - upload module #2 (wao@1.0 device test)
-  - SDK updates made (src/hb.js):
-    - Updated spawnAOS: execution-device=stack@1.0, device-stack=[wasi@1.0, json-iface@1.0, wasm-64@1.0, multipass@1.0]
-    - Added getImage() to load HyperBEAM's test WASM (aos-2-pure-xs.wasm) when available
-    - Fixed stack-keys to include snapshot and normalize
+  - SDK updates made:
+    - **src/hb.js**: Updated spawnAOS with correct device stack format
+    - **src/hyperbeam.js**: Added genesis_wasm support with CU server auto-start
+      - New options: `genesis_wasm`, `cu_port`, `arweave_gateway`
+      - New method: `startCU()` - starts genesis-wasm-server from `HyperBEAM/_build/genesis-wasm-server`
+      - CU server routes configured to port 6363 for `/result/.*` requests
   - Failing tests analysis (11):
-    - **genesis-wasm@1.0 tests (6)**: Require external CU (Compute Unit) on port 6363. Error: `{failed_connect, [{to_address,{"localhost",6363}}, {inet,[inet],econnrefused}]}`. The `dev_delegated_compute` module needs an external CU service.
-    - **AOS/WAMR tests (3)**: WASM caching issue. The `/~wao@1.0/cache_module` endpoint is used but returns errors. Alternative approaches tried:
-      - Direct cache write returns path format (48 bytes) but dev_wasm expects message ID (43 bytes)
-      - Scheduling large (7MB) binary messages fails with 500 errors
-      - Erlang uses `hb_cache:write(#{ body => Bin })` which returns proper message ID
-    - **oracle@1.0 tests (2)**: Depend on genesis-wasm for Lua execution + HTTP fetching
-  - **Root cause**: These failures are infrastructure issues, not hbsig/SDK code bugs. The SDK correctly handles device spawning, message scheduling, and compute operations.
-  - **To enable more tests**: Start a CU on port 6363 (e.g., `ao-cu` or similar service)
+    - **genesis-wasm@1.0 tests (6)**: CU server now starts, but request validation fails
+      - Error: `ZodError: owner field missing` - Protocol mismatch between HyperBEAM and CU
+      - The `dev_delegated_compute` sends requests to CU via `relay@1.0` device
+      - CU expects `owner` field which isn't being provided
+    - **AOS/WAMR tests (3)**: WASM loading failures
+      - Error: `wasm_module_new_ex failed` - WAMR can't load the WASM module
+      - WASM caching issue with `/~wao@1.0/cache_module` endpoint
+    - **oracle@1.0 tests (2)**: Depend on genesis-wasm
+  - **Root cause**: Protocol differences between HyperBEAM and CU, plus WASM loading issues
+  - **Next steps**: Investigate CU request format requirements or use lua@5.3a device instead
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
