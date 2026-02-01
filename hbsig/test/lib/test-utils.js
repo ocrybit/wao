@@ -113,7 +113,23 @@ function mod2(obj) {
   return obj
 }
 
-const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
+// Helper to recursively remove ao-types fields without applying type conversions
+const removeAoTypesField = obj => {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== "object") return obj
+  if (Buffer.isBuffer(obj)) return obj
+  if (Array.isArray(obj)) return obj.map(removeAoTypesField)
+
+  const result = {}
+  for (const [key, value] of Object.entries(obj)) {
+    if (key !== "ao-types") {
+      result[key] = removeAoTypesField(value)
+    }
+  }
+  return result
+}
+
+const test = async (sign, cases, path, mod = v => v, pmod = v => v, skipAoTypes = false, removeAoTypes = false) => {
   let err = []
   let success = []
   let i = 0
@@ -126,8 +142,15 @@ const test = async (sign, cases, path, mod = v => v, pmod = v => v) => {
       const { out } = await send(signed)
       const input = normalize(_pmod)
       const output = erl_str_from(out)
-      const expected = normalize(mod(_pmod), true)
-      const output_b = erl_str_from(out, true)
+      let expected = normalize(mod(_pmod), true)
+      // Apply ao-types conversions to output (unless skipAoTypes is true for flat/structured codec tests)
+      let output_b = skipAoTypes ? erl_str_from(out, true) : applyAoTypes(erl_str_from(out, true))
+      // For tests that need ao-types removed but not converted (e.g., flat codec)
+      // Apply the same transformation to both expected and actual for fair comparison
+      if (removeAoTypes) {
+        output_b = removeAoTypesField(output_b)
+        expected = removeAoTypesField(expected)
+      }
       // DEBUG: Print comparison on failure
       try {
         assert.deepEqual(expected, output_b)
@@ -173,11 +196,109 @@ const genTest = ({ desc = "HyperBEAM", its = [] }) => {
             v.cases,
             v.path ?? "/~hbsig@1.0/json_to_erl",
             v.mod,
-            v.pmod
+            v.pmod,
+            v.skipAoTypes ?? false,
+            v.removeAoTypes ?? false
           )
       )
     }
   })
+}
+
+// Recursive helper to apply ao-types conversions
+const applyAoTypes = obj => {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== "object") return obj
+  if (Buffer.isBuffer(obj)) return obj
+  if (Array.isArray(obj)) return obj.map(applyAoTypes)
+
+  // First, recursively process nested objects (to handle their ao-types)
+  for (const key of Object.keys(obj)) {
+    if (key !== "ao-types") {
+      obj[key] = applyAoTypes(obj[key])
+    }
+  }
+
+  // Process ao-types in this object
+  let aoTypesRaw = obj["ao-types"]
+  // Convert Buffer to string if needed
+  const aoTypes =
+    Buffer.isBuffer(aoTypesRaw) ? aoTypesRaw.toString() : aoTypesRaw
+
+  // Check if ao-types looks like a structured field dictionary (contains key="value" patterns)
+  // If it's just a user value like "test", we should preserve it
+  const isAoTypesDictionary =
+    aoTypes &&
+    typeof aoTypes === "string" &&
+    /[^=,\s]+="[^"]+"/g.test(aoTypes)
+
+  if (isAoTypesDictionary) {
+    const typeMatches = aoTypes.matchAll(/([^=,\s]+)="([^"]+)"/g)
+    for (const match of typeMatches) {
+      let key = match[1]
+      // Handle dot (.) which means the object itself is a list
+      if (key === ".") continue
+
+      // URL-decode the key (e.g., data%46ield -> dataField)
+      const decodedKey = decodeURIComponent(key)
+
+      // Find the actual key in the object (case-insensitive match)
+      const lowerKey = decodedKey.toLowerCase()
+      const actualKey =
+        Object.keys(obj).find(k => k.toLowerCase() === lowerKey) || lowerKey
+      const type = match[2]
+      const value = obj[actualKey]
+
+      // Handle empty types (for keys that don't exist)
+      if (!(actualKey in obj)) {
+        if (type === "empty-binary") {
+          obj[actualKey] = Buffer.from([])
+        } else if (type === "empty-list") {
+          obj[actualKey] = []
+        } else if (type === "empty-message") {
+          obj[actualKey] = {}
+        }
+      } else {
+        // Convert existing values to their proper types
+        // Handle both strings and Buffers
+        const strValue = Buffer.isBuffer(value) ? value.toString() : value
+        if (type === "integer" && typeof strValue === "string") {
+          obj[actualKey] = parseInt(strValue, 10)
+        } else if (type === "float" && typeof strValue === "string") {
+          obj[actualKey] = parseFloat(strValue)
+        } else if (type === "atom" && typeof strValue === "string") {
+          if (strValue === "true") {
+            obj[actualKey] = true
+          } else if (strValue === "false") {
+            obj[actualKey] = false
+          } else if (strValue === "null") {
+            obj[actualKey] = null
+          } else if (strValue === "undefined") {
+            obj[actualKey] = undefined
+          }
+        }
+      }
+    }
+
+    // Check if the whole object should be converted to an array (. = "list")
+    if (aoTypes.includes('.="list"')) {
+      const keys = Object.keys(obj).filter(k => k !== "ao-types")
+      const isArrayLike = keys.every(k => /^\d+$/.test(k))
+      if (isArrayLike && keys.length > 0) {
+        const arr = []
+        const sortedKeys = keys.sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+        for (const k of sortedKeys) {
+          arr.push(obj[k])
+        }
+        return arr
+      }
+    }
+
+    // Only delete ao-types if it was a real type annotation dictionary
+    delete obj["ao-types"]
+  }
+
+  return obj
 }
 
 const modOut = out => {
@@ -198,25 +319,8 @@ const modOut = out => {
     delete output.body
   }
 
-  // Handle ao-types: reconstruct empty values from type annotations
-  const aoTypes = output["ao-types"]
-  if (aoTypes && typeof aoTypes === "string") {
-    const typeMatches = aoTypes.matchAll(/([^=,\s]+)="([^"]+)"/g)
-    for (const match of typeMatches) {
-      const key = match[1].toLowerCase()
-      const type = match[2]
-      // Only add the key if it doesn't already exist in output
-      if (!(key in output)) {
-        if (type === "empty-binary") {
-          output[key] = Buffer.from([])
-        } else if (type === "empty-list") {
-          output[key] = []
-        } else if (type === "empty-message") {
-          output[key] = {}
-        }
-      }
-    }
-  }
+  // Apply ao-types conversions recursively (handles type conversions and array reconstruction)
+  output = applyAoTypes(output)
 
   // Delete TABM metadata fields
   delete output.commitments

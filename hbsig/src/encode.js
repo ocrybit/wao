@@ -46,6 +46,13 @@ function handleSingleEmptyBinaryField(obj) {
       (fieldValue.length === 0 || fieldValue.byteLength === 0)
     ) {
       const headers = {}
+      // For 'body' field, HyperBEAM strips empty 'body' headers AND doesn't preserve
+      // empty HTTP bodies. So we use ao-types to indicate there's an empty binary field
+      // that should be reconstructed on the client side.
+      if (fieldName.toLowerCase() === "body") {
+        headers["ao-types"] = 'body="empty-binary"'
+        return { headers, body: undefined }
+      }
       // Include the key with empty value - empty string becomes empty binary in Erlang
       // Don't use ao-types="empty-binary" as it's not supported by dev_codec_structured
       headers[fieldName.toLowerCase()] = ""

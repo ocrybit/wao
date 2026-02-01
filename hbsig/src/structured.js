@@ -323,34 +323,34 @@ function from(msg) {
     return result
   }
 
-  // Normalize keys first
-  const normalizedMap = {}
+  // Process keys - preserve original case to match Erlang behavior
+  // HTTP headers are case-insensitive but JSON/map keys preserve case
+  const keysMap = {}
   for (const [key, value] of Object.entries(msg)) {
-    const normKey = key.toLowerCase()
-    normalizedMap[normKey] = value
+    keysMap[key] = value
   }
 
-  // Get sorted keys (normalized)
-  const sortedKeys = Object.keys(normalizedMap).sort()
+  // Get sorted keys (preserving case)
+  const sortedKeys = Object.keys(keysMap).sort()
 
   const types = []
   const values = []
 
   // Process each key in sorted order
-  for (const normKey of sortedKeys) {
-    const value = normalizedMap[normKey]
+  for (const key of sortedKeys) {
+    const value = keysMap[key]
 
     // Handle empty binaries/strings - just include as-is, no type annotation
     // (Erlang doesn't add empty-binary type, it just keeps the empty binary)
     if (value === "" || (value instanceof Buffer && value.length === 0)) {
-      values.push([normKey, value])
+      values.push([key, value])
       continue
     }
 
     // Empty arrays - convert to numbered map with .="list" in ao-types
     // (Erlang doesn't add empty-list type, just the list marker)
     if (Array.isArray(value) && value.length === 0) {
-      values.push([normKey, from(value)])
+      values.push([key, from(value)])
       continue
     }
 
@@ -363,30 +363,30 @@ function from(msg) {
       !(value instanceof Buffer) &&
       Object.keys(value).length === 0
     ) {
-      values.push([normKey, value])
+      values.push([key, value])
       continue
     }
 
     // Handle binary/string values
     if (value instanceof Buffer || value instanceof Uint8Array) {
-      values.push([normKey, value])
+      values.push([key, value])
       continue
     }
 
     if (typeof value === "string") {
-      values.push([normKey, value])
+      values.push([key, value])
       continue
     }
 
     // Handle nested maps
     if (typeof value === "object" && !Array.isArray(value) && value !== null) {
-      values.push([normKey, from(value)])
+      values.push([key, from(value)])
       continue
     }
 
     // Handle arrays - from() converts to numbered map with .="list" in ao-types
     if (Array.isArray(value) && value.length > 0) {
-      values.push([normKey, from(value)])
+      values.push([key, from(value)])
       continue
     }
 
@@ -398,8 +398,8 @@ function from(msg) {
       value === null
     ) {
       const [type, encoded] = encodeValue(value)
-      types.push([normKey, type])
-      values.push([normKey, encoded])
+      types.push([key, type])
+      values.push([key, encoded])
       continue
     }
   }

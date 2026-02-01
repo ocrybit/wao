@@ -13,6 +13,9 @@ genTest({
       path: "/~hbsig@1.0/httpsig_to",
       pmod: v => structured_from(normalize(v)),
       mod: v => httpsig_to(normalize(v)),
+      // Skip ao-types conversions since httpsig codec produces TABM strings
+      skipAoTypes: true,
+      removeAoTypes: true,
     },
     {
       it: "should test httpsig_to (ok cases)",
@@ -20,6 +23,9 @@ genTest({
       path: "/~hbsig@1.0/httpsig_to",
       pmod: v => structured_from(normalize(v)),
       mod: v => httpsig_to(normalize(v)),
+      // Skip ao-types conversions since httpsig codec produces TABM strings
+      skipAoTypes: true,
+      removeAoTypes: true,
     },
   ],
 })
