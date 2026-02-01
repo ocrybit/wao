@@ -46,11 +46,35 @@ export const commit = async (obj, opts) => {
   const hmacId = hmacid(msg.headers)
   const rsaId = rsaid(msg.headers)
   const pub = extractPubKey(msg.headers)
-  const committer = toAddr(pub.toString("base64"))
-  const meta = { alg: "rsa-pss-sha512", "commitment-device": "httpsig@1.0" }
-  const meta2 = { alg: "hmac-sha256", "commitment-device": "httpsig@1.0" }
+  const pubKeyBase64 = pub.toString("base64")
+  const committer = toAddr(pubKeyBase64)
+  const keyid = `publickey:${pubKeyBase64}`
+  // Build the list of committed fields (same as components, normalized to match what Erlang expects)
+  const committedFields = components.map(v => v === "@path" ? "path" : v)
+  // Extract just the base64 signature data from the header format "sig-xxx=:base64data:"
+  // HyperBEAM expects raw base64 without colons (uses b64fast:encode/decode)
+  const extractSignature = (sigHeader) => {
+    if (!sigHeader) return sigHeader
+    // Match the base64 data between colons after the label
+    const match = sigHeader.match(/=:([^:]+):/)
+    return match ? match[1] : sigHeader
+  }
+  const rawSignature = extractSignature(msg.headers.signature)
+  const meta = {
+    type: "rsa-pss-sha512",
+    alg: "rsa-pss-sha512",
+    "commitment-device": "httpsig@1.0",
+    keyid: keyid,
+    committed: committedFields
+  }
+  const meta2 = {
+    type: "hmac-sha256",
+    alg: "hmac-sha256",
+    "commitment-device": "httpsig@1.0",
+    committed: committedFields
+  }
   const sigs = {
-    signature: msg.headers.signature,
+    signature: rawSignature,
     "signature-input": msg.headers["signature-input"],
   }
   const committed = {
