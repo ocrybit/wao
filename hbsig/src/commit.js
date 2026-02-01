@@ -49,11 +49,36 @@ export const commit = async (obj, opts) => {
   // Check for inline-body-key
   const inlineBodyKey = msg.headers["inline-body-key"] || msg.headers["ao-body-key"]
 
+  // Parse ao-types to find base64-text fields that need decoding before JSON
+  const aoTypes = msg.headers["ao-types"]
+  const base64TextFields = new Set()
+  if (aoTypes) {
+    const typeEntries = aoTypes.split(",").map(s => s.trim())
+    for (const entry of typeEntries) {
+      const match = entry.match(/^([^=]+)="base64-text"$/)
+      if (match) {
+        base64TextFields.add(match[1])
+      }
+    }
+  }
+
   // Build body from components - copy from headers
+  // For base64-text fields, decode base64 byte sequence format :base64: to raw string
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     if (msg.headers[key] !== undefined) {
-      body[key] = msg.headers[key]
+      let value = msg.headers[key]
+
+      // Decode base64 byte sequence format for base64-text fields
+      if (base64TextFields.has(key) && typeof value === "string") {
+        const base64Match = value.match(/^:([A-Za-z0-9+/=]+):$/)
+        if (base64Match) {
+          // Decode to raw string for JSON body
+          value = Buffer.from(base64Match[1], "base64").toString("utf-8")
+        }
+      }
+
+      body[key] = value
     }
   }
 
@@ -87,13 +112,8 @@ export const commit = async (obj, opts) => {
     }
   }
 
-  // Always include ao-body-key if data field is used
-  if (body.data !== undefined && !body["ao-body-key"]) {
-    body["ao-body-key"] = "data"
-  }
-
-  // Remove inline-body-key from the final body as it's just metadata
-  delete body["inline-body-key"]
+  // Note: We don't add ao-body-key here - it's not supported by HyperBEAM's JSON codec
+  // Keep inline-body-key in the body if it was committed (signed) - HyperBEAM validates all committed fields
 
   const rsaId = rsaid(msg.headers)
   const pub = extractPubKey(msg.headers)

@@ -129,8 +129,30 @@ class HB {
   }
 
   async computeLegacy({ pid, slot }) {
-    const json = await this.compute({ pid, slot })
-    return JSON.parse(json.results.json.body)
+    // In beta3, try to get results directly via bundle format which avoids cache lazy link issues
+    try {
+      const json = await this.compute({ pid, slot, path: "/results/json" })
+      const result = JSON.parse(json.body)
+      console.log("[DEBUG] computeLegacy slot", slot, "Messages:", result.Messages?.length || 0, "Output:", result.Output?.slice?.(0, 50) || result.Output)
+      return result
+    } catch (e) {
+      console.log("[DEBUG] computeLegacy error for slot", slot, ":", e.message, "- trying fallback")
+      // Fallback: get results via bundle and extract Output
+      const res = await this.getJSON({
+        path: `/${pid}/compute/results`,
+        slot,
+        headers: { "accept-bundle": "true" }
+      })
+      console.log("[DEBUG] computeLegacy fallback result keys:", Object.keys(res), "Output keys:", res.Output ? Object.keys(res.Output) : "none")
+      // Convert bundle format to legacy format
+      const output = res.Output || {}
+      return {
+        Messages: output.Messages || [],
+        Spawns: output.Spawns || [],
+        Output: output.Output || "",
+        Error: output.Error,
+      }
+    }
   }
 
   async cacheScript(data, type = "application/lua") {
@@ -213,11 +235,15 @@ class HB {
       return { slot: res.out.slot, res, pid }
     } else {
       // Use JSON POST with commitment signatures (beta3-compatible approach)
-      // This avoids content-digest issues with HTTP signatures
+      // The signer/encode now handles body content properly with inline-body-key
       let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
 
+      console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
+
       const committed = await this.commit(_tags, { path: false })
+      console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
+
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -238,16 +264,16 @@ class HB {
   }
 
   async scheduleLua({ action = "Eval", tags = {}, ...rest }) {
-    if (action) tags.Action = action
+    if (action) tags.action = action
     return await this.schedule({ tags, ...rest })
   }
 
   async spawnLua(lua) {
     await this.setInfo()
+    // Note: 'authority' excluded - conflicts with HTTP Message Signatures '@authority'
     const tags = {
       "data-protocol": "ao",
       variant: "ao.N.1",
-      authority: this.operator,
       module: this.lua ?? (await this.getLua()),
       "execution-device": "lua@5.3a",
       "push-device": "push@1.0",
@@ -335,10 +361,12 @@ class HB {
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
     // Use genesis-wasm directly as execution-device for legacynet AOS
+    // Note: 'authority' is NOT included here because it conflicts with HTTP Message
+    // Signatures RFC-9421 derived component '@authority'. HyperBEAM will set authority
+    // automatically based on node configuration (see dev_process.erl).
     const legacyTags = {
       "data-protocol": "ao",
       variant: "ao.TN.1",
-      authority: this.operator,
       scheduler: this.addr,
       module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
@@ -370,7 +398,8 @@ class HB {
   }
 
   async scheduleLegacy({ action = "Eval", tags = {}, ...rest } = {}) {
-    if (action) tags.Action = action
+    // Use lowercase 'action' to match HTTP Message Signature field normalization
+    if (action) tags.action = action
     return await this.schedule({ tags, ...rest })
   }
 
@@ -394,7 +423,7 @@ class HB {
   }
 
   async dryrun({ tags = {}, pid, action, data } = {}) {
-    if (typeof action === "string") tags.Action = action
+    if (typeof action === "string") tags.action = action
     let json = { Tags: buildTags({ ...tags }), Owner: this.addr }
     if (data) json.Data = data
     const res = await this.post({
@@ -444,7 +473,10 @@ class HB {
         i++
       }
     }
-    const response = await fetch(`${this.url}${path}${_json}${_params}`)
+    // Add accept-bundle header to get inline data instead of links (beta3 compatibility)
+    const response = await fetch(`${this.url}${path}${_json}${_params}`, {
+      headers: { "accept-bundle": "true" }
+    })
     return await result(response)
   }
 
@@ -461,10 +493,10 @@ class HB {
     await this.setInfo()
     image ??= this.image ?? (await this.getImage())
     // Use JSON POST with commitment signatures (beta3-compatible approach)
+    // Note: 'authority' excluded - conflicts with HTTP Message Signatures '@authority'
     const tags = {
       "data-protocol": "ao",
       variant: "ao.N.1",
-      authority: this.operator,
       image,
       "execution-device": "stack@1.0",
       "push-device": "push@1.0",
@@ -505,7 +537,7 @@ class HB {
   }
 
   async scheduleAOS({ action = "Eval", tags = {}, ...rest }) {
-    if (action) tags.Action = action
+    if (action) tags.action = action
     return await this.schedule({ tags, ...rest })
   }
 }

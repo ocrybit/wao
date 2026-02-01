@@ -311,6 +311,14 @@ async function handleSingleBodyKeyOptimization(
   headers,
   headerTypes
 ) {
+  // Skip this optimization if there are other header fields - need full multipart encoding
+  // to be compatible with HyperBEAM scheduler endpoint
+  const otherFields = Object.keys(obj).filter(k => !bodyKeys.includes(k) && !bodyKeys.some(bk => bk.startsWith(`${k}/`)))
+  if (otherFields.length > 0 && bodyKeys.length === 1) {
+    // Have other header fields + single body key = need multipart, skip optimization
+    return null
+  }
+
   if (bodyKeys.length === 1) {
     const singleKey = bodyKeys[0]
     const value = getValueByPath(obj, singleKey)

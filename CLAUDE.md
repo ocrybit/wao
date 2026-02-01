@@ -104,12 +104,14 @@ Using official upstream release tags as checkpoints.
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
-- [ ] Task 2: Make hbsig Tests 100% Pass
-- [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass
+- [x] Task 2: Make hbsig Tests 100% Pass (717/717 passing)
+- [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass ⚠️ BLOCKED
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
 ### Test Results Report (Last Updated: 2026-02-01)
+
+#### hbsig Tests (Task 2) - ✅ COMPLETE
 
 | # | Test File | Subtests | Cases Passed | Cases Failed | Status |
 |---|-----------|----------|--------------|--------------|--------|
@@ -118,28 +120,82 @@ Using official upstream release tags as checkpoints.
 | 3 | `erl_json.test.js` | 3 | 257/257 | 0 | ✅ DONE |
 | 4 | `flat.test.js` | 2 | 40/40 | 0 | ✅ DONE |
 | 5 | `structured.test.js` | 3 | 150/150 | 0 | ✅ DONE |
-| 6 | `httpsig.test.js` | 2 | 127/130 | 3 | ⚠️ WIP |
-| 7 | `signer.test.js` | 1 | 135/137 | 2 | ⚠️ WIP |
+| 6 | `httpsig.test.js` | 2 | 130/130 | 0 | ✅ DONE |
+| 7 | `signer.test.js` | 1 | 137/137 | 0 | ✅ DONE |
 
-**Total:** 712/717 cases passing (99.3%)
+**hbsig Total:** 717/717 cases passing (100%)
 
-### Known Issues
+#### Hyperbeam Integration Tests (Task 3) - ⚠️ BLOCKED
 
-#### httpsig.test.js (3 failing)
-- **Multipart boundary mismatch**: JS and Erlang generate different random boundaries
-- Affected cases: `mixed_maps`, `indexed`, `messages`
-- Root cause: Comparison includes randomly generated boundary strings
+| # | Test Name | Status | Error |
+|---|-----------|--------|-------|
+| 1 | should interact with a hyperbeam node | ❌ FAIL | Messages array empty |
+| 2 | should get messages and recover them | ❌ FAIL | Messages array empty |
+| 3 | should test test device | ❌ FAIL | - |
+| 4 | should test add@1.0 | ❌ FAIL | - |
+| 5 | should test mul@1.0 | ✅ PASS | - |
+| 6 | should upload module #2 | ❌ FAIL | - |
+| 7 | should deploy a process | ❌ FAIL | Messages array empty |
+| 8 | should run hyper Lua | ❌ FAIL | - |
+| 9-15 | (remaining tests) | ❌ FAIL | Connection/other errors |
 
-#### signer.test.js (2 failing)
-- **Empty buffer body handling**: `{ body: Buffer.from([]) }` and `{ bin: Buffer.from([]), body: Buffer.from([]) }`
-- Root cause: HyperBEAM strips empty `body` headers and doesn't preserve empty HTTP bodies
-- Attempted fix with `ao-types: body="empty-binary"` header
+**Hyperbeam Total:** 1/15 passing (7%)
 
-### Changes Made This Session
-1. **structured.js**: Fixed key case preservation (was lowercasing all keys)
-2. **test-utils.js**: Apply `removeAoTypesField` to expected values for fair comparison
-3. **httpsig.test.js**: Added `skipAoTypes` and `removeAoTypes` for TABM string comparison
-4. **encode.js**: Added `ao-types: body="empty-binary"` for empty body buffers
+**Status:** BLOCKED - Requires upstream HyperBEAM fix for `ao-body-key` handling
+
+### Current Issue: Body Content Not Preserved in JSON POST
+
+**Problem:** `data` field containing Lua code is filtered out, resulting in empty `Messages: []` from compute
+
+**Root Cause Analysis:**
+
+The fundamental issue is a mismatch between HTTP Message Signatures and JSON POST:
+
+1. **HTTP Message Signatures** (RFC-9421) sign headers, not body content
+2. **Strings with newlines** (like Lua code) cannot be valid HTTP headers
+3. **JSON POST with commitment signatures** puts field values in JSON body
+4. **HyperBEAM's `with_only_committed`** filters messages to only fields in the committed list
+5. **Body content fields** (like `data`) are not in the signature-input, so they're filtered out
+
+**Blocking Upstream Issue:**
+
+In `HyperBEAM/src/hb_message.erl` lines 249-250, there's a comment:
+```erlang
+%% Add the ao-body-key to the committed list if it is not already present
+```
+
+However, this is **NOT actually implemented**. The `with_only_committed` function should:
+1. Check for `ao-body-key` header
+2. Add that key (e.g., `data`) to the committed list
+3. Preserve the body content field
+
+Since `hb_message.erl` is not in the allowed modification list, this requires upstream HyperBEAM changes.
+
+**Attempted Solutions:**
+
+| # | Approach | Result | Why It Failed |
+|---|----------|--------|---------------|
+| 1 | Add `data` to committed list | `invalid_commitment` | `data` not in signature-input |
+| 2 | Encode `data` as `:base64:` byte sequence | `invalid_commitment` | Signature over base64, body has original |
+| 3 | Use original values in JSON body | `unexpected_type,binary` | ao-types mismatch |
+| 4 | Filter binary type annotations | `invalid_commitment` | Still signature/body mismatch |
+| 5 | Use `enc()` for multipart encoding | `invalid_commitment` | JSON POST always used |
+| 6 | Base64-text custom type | Messages: 0 | Field still not in committed list |
+| 7 | Encode complex strings as base64 headers | Messages: 0 | Field not in signature-input at all |
+
+**Possible Workarounds:**
+1. Request upstream fix in `hb_message.erl` to implement `ao-body-key` handling
+2. Modify message protocol to not require body content in committed fields
+3. Use ANS-104 format instead of httpsig for messages with body content
+
+### Changes Made This Session (2026-02-01)
+1. **signer.js**: Added `encodeAsByteSequence()` helper for RFC 8941 byte sequences
+2. **signer.js**: Modified `encode()` to detect strings with non-printable characters
+3. **signer.js**: Single complex string encoded as base64 in headers with `ao-types: field="base64-text"`
+4. **signer.js**: Multiple complex strings fall back to multipart (enc)
+5. **commit.js**: Decode `base64-text` annotated fields from `:base64:` format before JSON
+6. **hb.js**: Schedule always uses JSON POST with commitment signatures
+7. **All changes unsuccessful** - data field still filtered out by `with_only_committed`
 
 ---
 

@@ -35,6 +35,13 @@ const hasNonPrintableChars = str => {
   return false
 }
 
+// Helper to encode a string as a structured field byte sequence
+// Format: :base64data: (RFC 8941)
+const encodeAsByteSequence = str => {
+  const buffer = Buffer.from(str, "utf-8")
+  return `:${buffer.toString("base64")}:`
+}
+
 const isValid = encoded => {
   if (!encoded || typeof encoded !== "object") return false
 
@@ -228,7 +235,15 @@ const smartSign = async (obj, path) => {
           types.push(`${key}="atom"`)
           message[key] = String(value)
         } else if (typeof value === "string") {
-          message[key] = value
+          // Check if string has non-printable characters (like newlines in Lua code)
+          // If so, encode as structured field byte sequence format: :base64:
+          // This allows the value to be a valid HTTP header and thus be signed
+          if (hasNonPrintableChars(value)) {
+            types.push(`${key}="binary"`)
+            message[key] = encodeAsByteSequence(value)
+          } else {
+            message[key] = value
+          }
         }
       }
 
@@ -282,29 +297,91 @@ const encode = async (obj, path) => {
   // Filter out undefined values before processing
   const filtered = filterUndefined(obj)
 
+  console.log("[ENCODE DEBUG] encode() called with keys:", Object.keys(filtered))
+  console.log("[ENCODE DEBUG] data exists:", !!filtered.data, "data length:", filtered.data?.length)
+
   // If object contains binary data, use enc() directly
   if (hasBinaryData(filtered)) {
     // For binary data, use enc() which handles multipart
+    console.log("[ENCODE DEBUG] Using enc() for binary data")
     return await enc(filtered)
   }
 
-  // Otherwise use the standard pipeline
+  // Check if any string values have non-printable characters (like newlines in Lua code)
+  // For such strings, we put them directly in the body (not multipart) with inline-body-key
+  // This is compatible with HyperBEAM's JSON codec which expects inline body content
+  const complexStringFields = Object.entries(filtered).filter(([key, value]) =>
+    typeof value === "string" && hasNonPrintableChars(value)
+  )
+
+  console.log("[ENCODE DEBUG] complexStringFields:", complexStringFields.map(([k]) => k))
+
+  if (complexStringFields.length === 1) {
+    // Single complex string - encode as base64 in header so it CAN be signed
+    // This ensures the data is included in the commitment and not filtered out by with_only_committed
+    const [fieldName, fieldValue] = complexStringFields[0]
+    console.log("[ENCODE DEBUG] Using base64 header encoding for complex field:", fieldName)
+
+    // Build headers from all fields, encoding the complex string as base64
+    const headers = {}
+    const types = []
+
+    for (const [key, value] of Object.entries(filtered)) {
+      if (key === fieldName) {
+        // Encode complex string as base64 in structured field byte sequence format :base64:
+        // Use "base64-text" marker so commit.js decodes it, but HyperBEAM treats result as string
+        const buffer = Buffer.from(value, "utf-8")
+        headers[key] = `:${buffer.toString("base64")}:`
+        types.push(`${key}="base64-text"`)
+      } else if (typeof value === "number") {
+        types.push(`${key}="${Number.isInteger(value) ? "integer" : "float"}"`)
+        headers[key] = String(value)
+      } else if (typeof value === "boolean") {
+        types.push(`${key}="atom"`)
+        headers[key] = String(value)
+      } else if (value === null || value === undefined) {
+        types.push(`${key}="atom"`)
+        headers[key] = String(value)
+      } else if (typeof value === "string") {
+        headers[key] = value
+      } else if (Array.isArray(value) && isSimpleArray(value)) {
+        types.push(`${key}="list"`)
+        headers[key] = encodeAsStructuredFieldList(value)
+      }
+    }
+
+    if (types.length > 0) {
+      headers["ao-types"] = types.join(", ")
+    }
+
+    // Return with no HTTP body - all data is in headers as base64
+    return { headers, body: undefined }
+  } else if (complexStringFields.length > 1) {
+    // Multiple complex strings - need multipart
+    console.log("[ENCODE DEBUG] Using enc() for multiple complex strings")
+    return await enc(filtered)
+  }
+
+  // Otherwise use the standard pipeline for simple flat messages
   let fields = { ...filtered }
   // Only add path if explicitly provided
   if (path) fields.path = path
 
-  // Try the standard encoding pipeline
+  // Try the standard encoding pipeline for messages without complex strings
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))
+  console.log(`[ENCODE DEBUG] After pipeline, data field: ${encoded.data?.substring?.(0, 50) || encoded.data}`)
 
   // Check if the encoded result is valid for HTTP headers
   if (!isValid(encoded)) {
     // If invalid, fall back to enc()
+    console.log("[ENCODE DEBUG] isValid failed, falling back to enc()")
     return await enc(filtered)
   }
 
   // For non-binary data, return in the same format as enc()
   // httpsig_to returns a flattened object, so we need to separate headers and body
   const { body, ...headers } = encoded
+  console.log(`[ENCODE DEBUG] Final headers.data: ${headers.data?.substring?.(0, 50) || headers.data}`)
   return { headers, body }
 }
 
@@ -383,7 +460,7 @@ async function _sign({
 
   // Exclude metadata fields that get consumed/stripped during JSON codec parsing:
   // - ao-types: used for type conversion, then removed by structured codec
-  // - content-digest: recomputed during verification, stripped by JSON codec
+  // - content-digest: HyperBEAM recomputes this during verification, so don't sign it
   // - accept-bundle: request metadata for inlining nested data
   // These fields are still included in the JSON body but not signed
   const metadataFields = ["body-keys", "path", "ao-types", "content-digest", "accept-bundle"]
