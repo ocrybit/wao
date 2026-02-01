@@ -210,13 +210,31 @@ class HB {
         tags: _tags,
         data: data ?? "1984",
       })
+      return { slot: res.out.slot, res, pid }
     } else {
-      // Add Owner for CU validation (required for genesis-wasm)
-      let _tags = mergeLeft(tags, { Type: "Message", target: pid, Owner: this.addr })
+      // Use JSON POST with commitment signatures (beta3-compatible approach)
+      // This avoids content-digest issues with HTTP signatures
+      let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
-      res = await this.post({ path: `/${pid}/schedule`, body: _tags })
+
+      const committed = await this.commit(_tags, { path: false })
+      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(committed),
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
+      }
+
+      return {
+        slot: parseInt(response.headers.get("slot")),
+        pid,
+        res: { status: response.status },
+      }
     }
-    return { slot: res.out.slot, res, pid }
   }
 
   async scheduleLua({ action = "Eval", tags = {}, ...rest }) {
@@ -227,10 +245,9 @@ class HB {
   async spawnLua(lua) {
     await this.setInfo()
     const tags = {
-      "Data-Protocol": "ao",
-      Variant: "ao.N.1",
-      Authority: this.operator,
-      Owner: this.addr,  // Required for CU validation
+      "data-protocol": "ao",
+      variant: "ao.N.1",
+      authority: this.operator,
       module: this.lua ?? (await this.getLua()),
       "execution-device": "lua@5.3a",
       "push-device": "push@1.0",
@@ -284,39 +301,72 @@ class HB {
           Scheduler: this.operator,
         }),
       })
+      return { res, pid: res.out.process }
     } else {
-      // Send directly without commit() wrapper - let HyperBEAM handle signing
-      res = await this.post({
-        path: "/~process@1.0/schedule",
-        body: mergeLeft(tags, {
-          "random-seed": seed(16),
-          Type: "Process",
-          "execution-device": "test-device@1.0",
-          "scheduler-device": "scheduler@1.0",
-          device: "process@1.0",
-          Scheduler: this.operator,
-        }),
-        Scheduler: this.operator,
+      // Use JSON POST with commitment signatures (beta3-compatible approach)
+      const spawnTags = mergeLeft(tags, {
+        "random-seed": seed(16),
+        type: "Process",
+        "execution-device": "test-device@1.0",
+        device: "process@1.0",
+        scheduler: this.addr,
       })
+
+      const committed = await this.commit(spawnTags, { path: false })
+      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(committed),
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
+      }
+
+      return {
+        pid: response.headers.get("process"),
+        slot: parseInt(response.headers.get("slot")),
+        res: { status: response.status },
+      }
     }
-    return { res, pid: res.out.process }
   }
 
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
-    // Use HTTP signatures with Owner field for CU validation
-    let t = mergeLeft(tags, {
-      "Data-Protocol": "ao",
-      Variant: "ao.TN.1",
-      Authority: this.operator,
-      Scheduler: this.operator,
-      Owner: this.addr,  // Required for CU validation
-      Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
+    // Use genesis-wasm directly as execution-device for legacynet AOS
+    const legacyTags = {
+      "data-protocol": "ao",
+      variant: "ao.TN.1",
+      authority: this.operator,
+      scheduler: this.addr,
+      module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
       "execution-device": "genesis-wasm@1.0",
-    })
+      "random-seed": seed(16),
+      type: "Process",
+    }
+    const t = mergeLeft(tags, legacyTags)
     if (data) t.data = data
-    return await this.spawn(t)
+
+    // Use JSON POST with commitment signatures (beta3-compatible approach)
+    const committed = await this.commit(t, { path: false })
+    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(committed),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`SpawnLegacy failed: ${response.status} - ${text.substring(0, 200)}`)
+    }
+
+    return {
+      pid: response.headers.get("process"),
+      slot: parseInt(response.headers.get("slot")),
+      res: { status: response.status },
+    }
   }
 
   async scheduleLegacy({ action = "Eval", tags = {}, ...rest } = {}) {
@@ -410,12 +460,11 @@ class HB {
   async spawnAOS(image) {
     await this.setInfo()
     image ??= this.image ?? (await this.getImage())
-    // Use HTTP signatures with device stack configuration
+    // Use JSON POST with commitment signatures (beta3-compatible approach)
     const tags = {
-      "Data-Protocol": "ao",
-      Variant: "ao.N.1",
-      Authority: this.operator,
-      Owner: this.addr,  // Required for CU validation
+      "data-protocol": "ao",
+      variant: "ao.N.1",
+      authority: this.operator,
       image,
       "execution-device": "stack@1.0",
       "push-device": "push@1.0",
@@ -423,14 +472,36 @@ class HB {
         "wasi@1.0",
         "json-iface@1.0",
         "wasm-64@1.0",
+        "patch@1.0",
         "multipass@1.0",
       ],
       "output-prefix": "wasm",
       "patch-from": "/results/outbox",
+      "patch-mode": "patches",
       passes: 2,
-      "stack-keys": ["init", "compute", "snapshot", "normalize"],
+      "random-seed": seed(16),
+      type: "Process",
+      device: "process@1.0",
+      scheduler: this.addr,
     }
-    return await this.spawn(tags)
+
+    const committed = await this.commit(tags, { path: false })
+    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(committed),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`SpawnAOS failed: ${response.status} - ${text.substring(0, 200)}`)
+    }
+
+    return {
+      pid: response.headers.get("process"),
+      slot: parseInt(response.headers.get("slot")),
+      res: { status: response.status },
+    }
   }
 
   async scheduleAOS({ action = "Eval", tags = {}, ...rest }) {
