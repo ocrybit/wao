@@ -311,6 +311,11 @@ const modOut = out => {
     output[inlineBodyKey] = output.body
     delete output.body
   }
+  // Special case: inline-body-key: body with undefined body means empty body
+  // This is how encode.js signals an empty body field
+  if (inlineBodyKey === "body" && output.body === undefined) {
+    output.body = Buffer.from([])
+  }
 
   // Handle ao-body-key similarly
   const aoBodyKey = output["ao-body-key"]

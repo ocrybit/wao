@@ -269,10 +269,12 @@ function computePartDigest(bodyValue) {
 }
 
 // Encode multipart body part
+// NOTE: This matches Erlang's encode_body_part/4 which does NOT apply inline_key
+// logic to nested parts. For nested maps, ALL fields become headers (except 'body'
+// which becomes the part body). The inline_key logic is only for top-level messages.
 function encodeBodyPart(partName, bodyPart, inlineKey) {
   const disposition =
     partName === inlineKey ? "inline" : `form-data;name="${partName}"`
-  const isInline = partName === inlineKey
 
   if (
     typeof bodyPart === "object" &&
@@ -280,118 +282,41 @@ function encodeBodyPart(partName, bodyPart, inlineKey) {
     !Array.isArray(bodyPart) &&
     !Buffer.isBuffer(bodyPart)
   ) {
-    // Check if this part has ao-types
-    const hasAoTypes = "ao-types" in bodyPart
+    // Collect all headers (everything except 'body' and 'priv')
+    const allEntries = []
 
-    // Check if this part has a "data" field that should be used as inline body key
-    // (similar to how "body" is treated, but for "data" field)
-    const hasDataAsBody = "data" in bodyPart && !("body" in bodyPart)
-    const dataValue = hasDataAsBody ? bodyPart.data : null
-    const dataDigest = hasDataAsBody ? computePartDigest(dataValue) : null
+    for (const [key, value] of Object.entries(bodyPart)) {
+      if (key === "body" || key === "priv") continue
 
-    if (hasAoTypes) {
-      // For parts WITH ao-types: sort all entries alphabetically
-      const allEntries = []
-
-      // If we have data as body, add ao-body-key and content-digest
-      if (hasDataAsBody) {
-        allEntries.push({ key: "ao-body-key", line: `ao-body-key: data` })
-        allEntries.push({ key: "content-digest", line: `content-digest: ${dataDigest}` })
+      // Handle Buffer values properly
+      let valueStr = value
+      if (Buffer.isBuffer(value)) {
+        // Use binary/latin1 encoding to preserve all byte values 0-255
+        valueStr = value.toString("binary")
       }
-
-      // Collect all entries except body and data (if data is being used as body)
-      for (const [key, value] of Object.entries(bodyPart)) {
-        if (key === "body") continue
-        if (hasDataAsBody && key === "data") continue
-
-        if (key === "ao-types") {
-          // Keep ao-types as-is (Buffer or string)
-          let valueStr = value
-          if (Buffer.isBuffer(value)) {
-            valueStr = value.toString("binary")
-          }
-          allEntries.push({ key: "ao-types", line: `ao-types: ${valueStr}` })
-        } else {
-          // Handle Buffer values properly
-          let valueStr = value
-          if (Buffer.isBuffer(value)) {
-            // Use binary/latin1 encoding to preserve all byte values 0-255
-            valueStr = value.toString("binary")
-          }
-          allEntries.push({ key: key, line: `${key}: ${valueStr}` })
-        }
-      }
-
-      // Add content-disposition
-      allEntries.push({
-        key: "content-disposition",
-        line: `content-disposition: ${disposition}`,
-      })
-
-      // Sort alphabetically by key
-      allEntries.sort((a, b) => a.key.localeCompare(b.key))
-
-      // Build the lines
-      const lines = allEntries.map(entry => entry.line)
-
-      // Body handling - use data value if it's the body key, otherwise use body field
-      const body = hasDataAsBody ? dataValue : (bodyPart.body || "")
-      if (body !== "" && body !== undefined && body !== null) {
-        lines.push("") // Always add empty line before body
-        lines.push(Buffer.isBuffer(body) ? body.toString("binary") : String(body))
-      }
-
-      return lines.join(CRLF)
-    } else {
-      // For parts WITHOUT ao-types
-      const allEntries = []
-
-      // Check if this part has a "data" field that should be used as inline body key
-      const hasDataAsBodyNoTypes = "data" in bodyPart && !("body" in bodyPart)
-      const dataValueNoTypes = hasDataAsBodyNoTypes ? bodyPart.data : null
-      const dataDigestNoTypes = hasDataAsBodyNoTypes ? computePartDigest(dataValueNoTypes) : null
-
-      // If we have data as body, add ao-body-key and content-digest
-      if (hasDataAsBodyNoTypes) {
-        allEntries.push({ key: "ao-body-key", line: `ao-body-key: data` })
-        allEntries.push({ key: "content-digest", line: `content-digest: ${dataDigestNoTypes}` })
-      }
-
-      for (const [key, value] of Object.entries(bodyPart)) {
-        if (key === "body") continue
-        if (hasDataAsBodyNoTypes && key === "data") continue
-        // Handle Buffer values properly
-        let valueStr = value
-        if (Buffer.isBuffer(value)) {
-          // Use binary/latin1 encoding to preserve all byte values 0-255
-          valueStr = value.toString("binary")
-        }
-        allEntries.push({ key: key, line: `${key}: ${valueStr}` })
-      }
-
-      const lines = []
-
-      // Add content-disposition to entries
-      allEntries.push({
-        key: "content-disposition",
-        line: `content-disposition: ${disposition}`,
-      })
-
-      // Sort all entries by key (including content-disposition) - matches Erlang behavior
-      allEntries.sort((a, b) => a.key.localeCompare(b.key))
-
-      // Extract the lines
-      lines.push(...allEntries.map(entry => entry.line))
-
-      // Body handling - use data value if it's the body key, otherwise use body field
-      const body = hasDataAsBodyNoTypes ? dataValueNoTypes : (bodyPart.body || "")
-      if (body !== "" && body !== undefined && body !== null) {
-        lines.push("") // Always add empty line before body
-        lines.push(Buffer.isBuffer(body) ? body.toString("binary") : String(body))
-      }
-
-      return lines.join(CRLF)
+      allEntries.push({ key: key, line: `${key}: ${valueStr}` })
     }
+
+    // Add content-disposition
+    allEntries.push({
+      key: "content-disposition",
+      line: `content-disposition: ${disposition}`,
+    })
+
+    // Sort all entries by key alphabetically - matches Erlang behavior
+    allEntries.sort((a, b) => a.key.localeCompare(b.key))
+
+    // Build the lines
+    const lines = allEntries.map(entry => entry.line)
+
+    // Only the 'body' field (if present) becomes the part body
+    const body = bodyPart.body
+    if (body !== "" && body !== undefined && body !== null) {
+      lines.push("") // Always add empty line before body
+      lines.push(Buffer.isBuffer(body) ? body.toString("binary") : String(body))
+    }
+
+    return lines.join(CRLF)
   } else if (typeof bodyPart === "string" || Buffer.isBuffer(bodyPart)) {
     // Use binary/latin1 encoding to preserve byte values 0-255
     const bodyStr = Buffer.isBuffer(bodyPart) ? bodyPart.toString("binary") : bodyPart

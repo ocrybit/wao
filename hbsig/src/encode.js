@@ -46,15 +46,15 @@ function handleSingleEmptyBinaryField(obj) {
       (fieldValue.length === 0 || fieldValue.byteLength === 0)
     ) {
       const headers = {}
-      // For 'body' field, HyperBEAM strips empty 'body' headers AND doesn't preserve
-      // empty HTTP bodies. So we use ao-types to indicate there's an empty binary field
-      // that should be reconstructed on the client side.
+      // For 'body' field, we can't send it as a header (reserved name, gets stripped).
+      // Use inline-body-key to signal that body was present but empty.
+      // The modOut function will reconstruct body: <<>> when it sees inline-body-key: body
+      // with no actual body content.
       if (fieldName.toLowerCase() === "body") {
-        headers["ao-types"] = 'body="empty-binary"'
+        headers["inline-body-key"] = "body"
         return { headers, body: undefined }
       }
       // Include the key with empty value - empty string becomes empty binary in Erlang
-      // Don't use ao-types="empty-binary" as it's not supported by dev_codec_structured
       headers[fieldName.toLowerCase()] = ""
       return { headers, body: undefined }
     }
@@ -244,7 +244,13 @@ function processHeaderFields(obj, bodyKeys, headers, headerTypes) {
         (value.length === 0 || value.byteLength === 0)
       ) {
         // Empty buffer becomes empty binary in Erlang - no ao-types needed
-        headers[key] = ""
+        // For 'body' field, we can't send it as a header (reserved name, gets stripped).
+        // Use inline-body-key to signal that body was present but empty.
+        if (key.toLowerCase() === "body") {
+          headers["inline-body-key"] = "body"
+        } else {
+          headers[key] = ""
+        }
       } else if (isPojo(value) && Object.keys(value).length === 0) {
         // Empty object - use map type annotation
         headers[key] = ""
