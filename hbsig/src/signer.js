@@ -361,6 +361,9 @@ async function _sign({
   // Only add path header if path is provided
   if (path) headersObj["path"] = path
 
+  // Add accept-bundle header to request inline data instead of links
+  headersObj["accept-bundle"] = "true"
+
   if (body && !headersObj["content-length"]) {
     const bodySize = body.size || body.byteLength || 0
     if (bodySize > 0) headersObj["content-length"] = String(bodySize)
@@ -378,10 +381,16 @@ async function _sign({
         .map(k => k.trim())
     : []
 
+  // Exclude metadata fields that get consumed/stripped during JSON codec parsing:
+  // - ao-types: used for type conversion, then removed by structured codec
+  // - content-digest: recomputed during verification, stripped by JSON codec
+  // - accept-bundle: request metadata for inlining nested data
+  // These fields are still included in the JSON body but not signed
+  const metadataFields = ["body-keys", "path", "ao-types", "content-digest", "accept-bundle"]
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
-    return key !== "body-keys" && key !== "path" && !bodyKeys.includes(key)
+    return !metadataFields.includes(key) && !bodyKeys.includes(key)
   })
 
   // Only add @path if signPath is enabled AND path header exists
