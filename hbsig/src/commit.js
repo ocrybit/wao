@@ -40,13 +40,9 @@ const buildAoTypes = (obj) => {
 // todo: handle @
 export const commit = async (obj, opts) => {
   const msg = await opts.signer(obj, opts)
-  console.log("[COMMIT DEBUG] msg.headers keys:", Object.keys(msg.headers))
-  console.log("[COMMIT DEBUG] msg.headers ao-types:", msg.headers["ao-types"])
-  console.log("[COMMIT DEBUG] msg.body exists:", !!msg.body, "type:", typeof msg.body, "length:", msg.body?.length || msg.body?.size)
   const {
     decodedSignatureInput: { components },
   } = await verify(msg)
-  console.log("[COMMIT DEBUG] components:", components)
 
   let body = {}
 
@@ -66,11 +62,9 @@ export const commit = async (obj, opts) => {
   // Handle body resolution
   let bodyContent = null
   if (msg.body) {
-    console.log("[COMMIT DEBUG] processing msg.body, inlineBodyKey:", inlineBodyKey)
     if (msg.body instanceof Blob) {
       const arrayBuffer = await msg.body.arrayBuffer()
       bodyContent = Buffer.from(arrayBuffer)
-      console.log("[COMMIT DEBUG] converted Blob to Buffer, length:", bodyContent.length)
     } else {
       bodyContent = msg.body
     }
@@ -78,16 +72,9 @@ export const commit = async (obj, opts) => {
     // If inline-body-key is "data", put content in data field
     if (inlineBodyKey === "data") {
       body.data = bodyContent
-      console.log("[COMMIT DEBUG] set body.data, length:", bodyContent.length || bodyContent.size)
-      console.log("[COMMIT DEBUG] body.data preview:", bodyContent?.substring?.(0, 50))
-      console.log("[COMMIT DEBUG] body.data type:", typeof bodyContent)
     } else {
       body.body = bodyContent
-      console.log("[COMMIT DEBUG] set body.body, length:", bodyContent.length || bodyContent.size)
-      console.log("[COMMIT DEBUG] body.body preview:", bodyContent?.substring?.(0, 50))
     }
-  } else {
-    console.log("[COMMIT DEBUG] no msg.body to process")
   }
 
   // Always include ao-types from headers (for type conversion in JSON codec)
@@ -131,7 +118,6 @@ export const commit = async (obj, opts) => {
     // Add the body key (e.g., "data") to committed fields if not already there
     if (!committedFields.includes(inlineBodyKey)) {
       committedFields.push(inlineBodyKey)
-      console.log("[COMMIT DEBUG] Added", inlineBodyKey, "to committedFields via content-digest")
     }
   }
 
@@ -149,7 +135,6 @@ export const commit = async (obj, opts) => {
     for (const key of bodyKeysList) {
       if (!committedFields.includes(key)) {
         committedFields.push(key)
-        console.log("[COMMIT DEBUG] Added", key, "to committedFields via body-keys")
       }
     }
   }
@@ -182,5 +167,6 @@ export const commit = async (obj, opts) => {
     },
     ...body,
   }
+
   return committed
 }

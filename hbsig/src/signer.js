@@ -262,17 +262,11 @@ const smartSign = async (obj, path) => {
       // Add the body to the message so httpsig_to can compute content-digest
       message.body = bodyFieldValue
 
-      console.log("[SMARTSIGN DEBUG] message before httpsig_to:", Object.keys(message))
-      console.log("[SMARTSIGN DEBUG] message.body type:", typeof message.body, "length:", message.body?.length)
-      console.log("[SMARTSIGN DEBUG] message.body preview:", message.body?.substring?.(0, 50))
 
       // Return with the body field value as the HTTP body
       // httpsig_to will add content-digest based on the body
       const encoded = httpsig_to(message)
 
-      console.log("[SMARTSIGN DEBUG] encoded keys:", Object.keys(encoded))
-      console.log("[SMARTSIGN DEBUG] encoded.body type:", typeof encoded.body, "length:", encoded.body?.length)
-      console.log("[SMARTSIGN DEBUG] encoded.body preview:", encoded.body?.substring?.(0, 50))
 
       const { body, ...headers } = encoded
 
@@ -388,13 +382,10 @@ const encode = async (obj, path) => {
   // Filter out undefined values before processing
   const filtered = filterUndefined(obj)
 
-  console.log("[ENCODE DEBUG] encode() called with keys:", Object.keys(filtered))
-  console.log("[ENCODE DEBUG] data exists:", !!filtered.data, "data length:", filtered.data?.length)
 
   // If object contains binary data, use enc() directly
   if (hasBinaryData(filtered)) {
     // For binary data, use enc() which handles multipart
-    console.log("[ENCODE DEBUG] Using enc() for binary data")
     return await enc(filtered)
   }
 
@@ -403,7 +394,6 @@ const encode = async (obj, path) => {
   // enc() properly sets body-keys header which is needed for content-digest signing
   const hasArrays = Object.values(filtered).some(v => Array.isArray(v))
   if (hasArrays) {
-    console.log("[ENCODE DEBUG] Using enc() for array data")
     return await enc(filtered)
   }
 
@@ -414,13 +404,11 @@ const encode = async (obj, path) => {
     typeof value === "string" && hasNonPrintableChars(value)
   )
 
-  console.log("[ENCODE DEBUG] complexStringFields:", complexStringFields.map(([k]) => k))
 
   if (complexStringFields.length > 0) {
     // Complex strings with newlines - use smartSign() for base64 encoding in headers
     // This encodes the data as :base64: structured field format which can be signed
     // For JSON POST, this keeps everything in headers (no multipart body needed)
-    console.log("[ENCODE DEBUG] Using smartSign() for complex string fields:", complexStringFields.map(([k]) => k))
     return await smartSign(filtered, path)
   }
 
@@ -431,19 +419,16 @@ const encode = async (obj, path) => {
 
   // Try the standard encoding pipeline for messages without complex strings
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))
-  console.log(`[ENCODE DEBUG] After pipeline, data field: ${encoded.data?.substring?.(0, 50) || encoded.data}`)
 
   // Check if the encoded result is valid for HTTP headers
   if (!isValid(encoded)) {
     // If invalid, fall back to enc()
-    console.log("[ENCODE DEBUG] isValid failed, falling back to enc()")
     return await enc(filtered)
   }
 
   // For non-binary data, return in the same format as enc()
   // httpsig_to returns a flattened object, so we need to separate headers and body
   const { body, ...headers } = encoded
-  console.log(`[ENCODE DEBUG] Final headers.data: ${headers.data?.substring?.(0, 50) || headers.data}`)
   return { headers, body }
 }
 

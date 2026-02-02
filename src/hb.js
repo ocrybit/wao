@@ -166,8 +166,6 @@ class HB {
         }
 
         if (jsonPart) {
-          console.log("[DEBUG] computeLegacy slot", slot, "extracted from multipart, keys:", Object.keys(jsonPart))
-          console.log("[DEBUG] computeLegacy Messages count:", jsonPart.Messages?.length, "first message:", JSON.stringify(jsonPart.Messages?.[0])?.substring(0, 300))
           if (jsonPart.Messages) return jsonPart
           if (jsonPart.Output && typeof jsonPart.Output === 'object') {
             return {
@@ -198,7 +196,6 @@ class HB {
             if (content) {
               try {
                 const output = JSON.parse(content)
-                console.log("[DEBUG] computeLegacy slot", slot, "Output part parsed:", Object.keys(output))
                 return {
                   Messages: output.Messages || [],
                   Spawns: output.Spawns || [],
@@ -206,7 +203,6 @@ class HB {
                   Error: output.Error,
                 }
               } catch (e) {
-                console.log("[DEBUG] computeLegacy Output parse failed:", e.message)
               }
             }
           }
@@ -216,11 +212,9 @@ class HB {
 
     // Fallback - check if res.out has the result directly
     if (res.out?.Messages) {
-      console.log("[DEBUG] computeLegacy slot", slot, "from res.out Messages:", res.out.Messages.length)
       return res.out
     }
 
-    console.log("[DEBUG] computeLegacy slot", slot, "no Messages found")
     return {
       Messages: [],
       Spawns: [],
@@ -308,25 +302,19 @@ class HB {
       })
       return { slot: res.out.slot, res, pid }
     } else {
-      let _tags = mergeLeft(tags, { type: "Message", target: pid })
+      // Add nonce to ensure each message is unique (prevents duplicate message issues)
+      let _tags = mergeLeft(tags, { type: "Message", target: pid, nonce: seed(8) })
       if (data) _tags.data = data
 
       // Always use JSON POST with commitment signatures for all messages
       // JSON can handle complex data (newlines, etc.) in the body field
       // HTTP multipart doesn't work because with_only_committed filters out body data
-      console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
 
       const committed = await this.commit(_tags, { path: false })
-      console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
-      console.log("[HB SCHEDULE DEBUG] committed keys:", Object.keys(committed))
-      console.log("[HB SCHEDULE DEBUG] commitments fields:", committed.commitments ? Object.keys(committed.commitments) : 'none')
       const sigId = committed.commitments ? Object.keys(committed.commitments)[0] : null
       if (sigId) {
-        console.log("[HB SCHEDULE DEBUG] commitment.committed:", committed.commitments[sigId].committed)
       }
       const jsonBody = JSON.stringify(committed)
-      console.log("[HB SCHEDULE DEBUG] JSON body length:", jsonBody.length)
-      console.log("[HB SCHEDULE DEBUG] data in JSON:", JSON.parse(jsonBody).data?.substring?.(0, 100))
 
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
@@ -419,7 +407,8 @@ class HB {
         type: "Process",
         "execution-device": "test-device@1.0",
         device: "process@1.0",
-        scheduler: this.addr,
+        // Use operator (HyperBEAM node address) for scheduler, not client's signing address
+        scheduler: this.operator ?? this.addr,
       })
 
       const committed = await this.commit(spawnTags, { path: false })
@@ -451,7 +440,8 @@ class HB {
     const legacyTags = {
       "data-protocol": "ao",
       variant: "ao.TN.1",
-      scheduler: this.addr,
+      // Use operator (HyperBEAM node address) for scheduler, not client's signing address
+      scheduler: this.operator ?? this.addr,
       module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
       "execution-device": "genesis-wasm@1.0",
@@ -463,13 +453,11 @@ class HB {
 
     // Use JSON POST with commitment signatures (beta3-compatible approach)
     const committed = await this.commit(t, { path: false })
-    console.log("[SPAWN DEBUG] sending JSON POST to", this.url)
     const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(committed),
     })
-    console.log("[SPAWN DEBUG] response status:", response.status)
 
     if (!response.ok) {
       const text = await response.text()
@@ -477,7 +465,6 @@ class HB {
     }
 
     const pid = response.headers.get("process")
-    console.log("[SPAWN DEBUG] got pid:", pid)
     return {
       pid,
       slot: parseInt(response.headers.get("slot")),
@@ -514,14 +501,18 @@ class HB {
     if (typeof action === "string") tags.action = action
     let json = { Tags: buildTags({ ...tags }), Owner: this.addr }
     if (data) json.Data = data
-    const res = await this.post({
-      path: "/~relay@1.0/call",
+    // Use direct fetch to the CU for dryrun (bypasses HyperBEAM relay)
+    // Dryrun doesn't modify state, so it doesn't need to be signed
+    const response = await fetch(`${this.cu}/dry-run?process-id=${pid}`, {
       method: "POST",
-      "relay-path": `${this.cu}/dry-run?process-id=${pid}`,
-      "Content-Type": "application/json",
-      "relay-body": JSON.stringify(json),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(json),
     })
-    return JSON.parse(res.body)
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Dryrun failed: ${response.status} - ${text.substring(0, 200)}`)
+    }
+    return await response.json()
   }
 
   async commit(obj, opts) {
@@ -602,7 +593,8 @@ class HB {
       "random-seed": seed(16),
       type: "Process",
       device: "process@1.0",
-      scheduler: this.addr,
+      // Use operator (HyperBEAM node address) for scheduler, not client's signing address
+      scheduler: this.operator ?? this.addr,
     }
 
     const committed = await this.commit(tags, { path: false })

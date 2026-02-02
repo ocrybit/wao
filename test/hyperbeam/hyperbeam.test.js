@@ -14,6 +14,10 @@ import { resolve } from "path"
 
 import AO2 from "../../src/ao.js"
 
+// Use a separate test account JWK (not HyperBEAM's JWK) to avoid multiple_matches
+// when both user and scheduler sign with the same key
+const testJwk = acc[0].jwk
+
 const src_data = `
 local count = 0
 Handlers.add("Add", "Add", function (msg)
@@ -44,7 +48,8 @@ describe("Hyperbeam Legacynet Suite1", function () {
     //server = new Server({ port: 6359, log: true, hb_url: URL })
     hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()
   })
-  beforeEach(async () => (hb = hbeam.hb))
+  // Use separate test JWK to avoid multiple_matches when scheduler signs with same key
+  beforeEach(async () => (hb = await new HB({ url: hbeam.url }).init(testJwk)))
   after(async () => {
     hbeam.kill()
     //server.end()
@@ -79,7 +84,7 @@ describe("Hyperbeam Legacynet Suite1", function () {
     assert.equal(res4.edges.length, i + 2)
 
     // recover process
-    const ao = await new AO({ hb_url: URL }).init(hbeam.jwk)
+    const ao = await new AO({ hb_url: URL }).init(testJwk)
     assert.equal((await ao.recover(pid)).recovered, 12)
 
     const d4 = await ao.hb.dryrun({ pid, action: "Get" })
@@ -145,7 +150,8 @@ describe("Hyperbeam Legacynet Suite1", function () {
 describe("Hyperbeam Legacynet", function () {
   let hb, hbeam
   before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
-  beforeEach(async () => (hb = hbeam.hb))
+  // Use separate test JWK to avoid multiple_matches when scheduler signs with same key
+  beforeEach(async () => (hb = await new HB({ url: hbeam.url }).init(testJwk)))
   after(async () => hbeam.kill())
 
   it("should deploy a process", async () => {
@@ -247,10 +253,10 @@ end)
 `
     console.log(hbeam.url)
     const ao = await new AOHB({ module_type: "mainnet", hb: hbeam.url }).init(
-      hbeam.jwk
+      testJwk
     )
     const ao2 = await new AOHB({ module_type: "mainnet", hb: hbeam.url }).init(
-      hbeam.jwk
+      testJwk
     )
     const { pid, p } = await ao.deploy({ src_data })
     const { pid: pid2, p: p2 } = await ao2.deploy({ src_data })
@@ -260,10 +266,10 @@ end)
 
   it("should test oracle", async () => {
     const ao = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      hbeam.jwk
+      testJwk
     )
     const ao2 = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      hbeam.jwk
+      testJwk
     )
     const src_data = `
 local count = 0
@@ -305,7 +311,7 @@ end)
     console.log(pid)
 
     const ao = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      hbeam.jwk
+      testJwk
     )
     const { p } = await ao.deploy({ src_data })
     await p.m("Add", { To: pid, Url: "https://arweave.net/" })
