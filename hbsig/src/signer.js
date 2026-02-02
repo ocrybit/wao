@@ -398,6 +398,15 @@ const encode = async (obj, path) => {
     return await enc(filtered)
   }
 
+  // If object contains arrays, use enc() directly
+  // Arrays get converted to numbered maps which trigger multipart encoding
+  // enc() properly sets body-keys header which is needed for content-digest signing
+  const hasArrays = Object.values(filtered).some(v => Array.isArray(v))
+  if (hasArrays) {
+    console.log("[ENCODE DEBUG] Using enc() for array data")
+    return await enc(filtered)
+  }
+
   // Check if any string values have non-printable characters (like newlines in Lua code)
   // For such strings, we put them directly in the body (not multipart) with inline-body-key
   // This is compatible with HyperBEAM's JSON codec which expects inline body content

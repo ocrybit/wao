@@ -135,6 +135,25 @@ export const commit = async (obj, opts) => {
     }
   }
 
+  // If body-keys is set (multipart encoding), add those fields to committed list
+  // The body-keys fields are in the multipart body, covered by content-digest
+  const bodyKeysHeader = msg.headers["body-keys"]
+  if (bodyKeysHeader && components.includes("content-digest")) {
+    // Parse body-keys: "device-stack", "other-field" -> ["device-stack", "other-field"]
+    const bodyKeysList = bodyKeysHeader
+      .replace(/"/g, "")
+      .split(",")
+      .map(k => k.trim())
+      .filter(k => k.length > 0)
+
+    for (const key of bodyKeysList) {
+      if (!committedFields.includes(key)) {
+        committedFields.push(key)
+        console.log("[COMMIT DEBUG] Added", key, "to committedFields via body-keys")
+      }
+    }
+  }
+
   // Extract just the base64 signature data from the header format "sig-xxx=:base64data:"
   // HyperBEAM expects raw base64 without colons (uses b64fast:encode/decode)
   const extractSignature = (sigHeader) => {
