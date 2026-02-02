@@ -166,7 +166,7 @@ Using official upstream release tags as checkpoints.
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE |
 | 5 | `faff.test.js` | 0/1 | ❌ FAIL |
 | 6 | `hyperbeam.test.js` | 5/14 | ⚠️ PARTIAL |
-| 7 | `json.test.js` | 0/1 | ❌ FAIL |
+| 7 | `json.test.js` | 1/1 | ✅ DONE |
 | 8 | `local_name.test.js` | 0/1 | ❌ FAIL |
 | 9 | `lookup.test.js` | 0/1 | ❌ FAIL |
 | 10 | `message.test.js` | 1/1 | ✅ DONE |
@@ -183,8 +183,8 @@ Using official upstream release tags as checkpoints.
 | 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL |
 | 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL |
 
-**Summary:** 19/71 tests passing (26.8%)
-- ✅ Fully passing: eunit (1/1), message (1/1), meta (1/1)
+**Summary:** 20/71 tests passing (28.2%)
+- ✅ Fully passing: eunit (1/1), json (1/1), message (1/1), meta (1/1)
 - ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
 
 **Common failure patterns:**
@@ -253,6 +253,24 @@ Also added overrides to prevent hex.pm dependency conflicts.
    Bypasses HyperBEAM relay which had JSON parsing issues.
 
 **Result:** Core legacynet tests now pass (4/15 in hyperbeam.test.js)
+
+### ✅ FIXED: json.test.js assertions (2026-02-02)
+
+**Problem:** Test expected `h["b+link"]` and `h["c+link"]` to be headers, but HyperBEAM doesn't return linkified fields as headers.
+
+**Root Cause:**
+- HyperBEAM returns primitive values as headers (e.g., `a: 1`)
+- Complex values (arrays, objects) go to multipart body parts, not headers
+- Linkification is indicated in `signature-input` field, not as separate headers
+
+**Fix Applied:**
+Updated assertions in `test/hyperbeam/json.test.js` to:
+1. Check primitive value `a` in headers
+2. Check `ao-types` header for type annotations
+3. Verify linkification through `signature-input` (contains `b+link`, `c+link`)
+4. Verify complex values are in multipart body (`name="b"`, `name="c"`)
+
+**Result:** json.test.js now passes (1/1)
 
 ### Previous Issue: ao-body-key (Now Working)
 
