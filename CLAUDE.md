@@ -164,7 +164,7 @@ Using official upstream release tags as checkpoints.
 | 2 | `cache.test.js` | 1/1 | ✅ DONE |
 | 3 | `cron.test.js` | 0/1 | ❌ FAIL |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE |
-| 5 | `faff.test.js` | 0/1 | ❌ FAIL |
+| 5 | `faff.test.js` | 1/1 | ✅ DONE |
 | 6 | `hyperbeam.test.js` | 5/14 | ⚠️ PARTIAL |
 | 7 | `json.test.js` | 1/1 | ✅ DONE |
 | 8 | `local_name.test.js` | 0/1 | ❌ FAIL |
@@ -183,8 +183,8 @@ Using official upstream release tags as checkpoints.
 | 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL |
 | 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL |
 
-**Summary:** 21/71 tests passing (29.6%)
-- ✅ Fully passing: cache (1/1), eunit (1/1), json (1/1), message (1/1), meta (1/1)
+**Summary:** 22/71 tests passing (31.0%)
+- ✅ Fully passing: cache (1/1), eunit (1/1), faff (1/1), json (1/1), message (1/1), meta (1/1)
 - ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
 
 **Common failure patterns:**
