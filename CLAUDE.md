@@ -98,7 +98,7 @@ Using official upstream release tags as checkpoints.
 
 ## Current Progress: CP2
 
-**Working branch:** [`claude/cp2-iteration-fS4l2`](https://github.com/ocrybit/wao/tree/claude/cp2-iteration-fS4l2)
+**Working branch:** [`claude/continue-cp2-SFiQM`](https://github.com/ocrybit/wao/tree/claude/continue-cp2-SFiQM)
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
@@ -129,28 +129,28 @@ Using official upstream release tags as checkpoints.
 
 #### Hyperbeam Integration Tests (Task 3) - ⚠️ IN PROGRESS
 
-**hyperbeam.test.js** results (15 tests total):
+**hyperbeam.test.js** results (14 tests total):
 
 | Test Name | Status | Notes |
 |-----------|--------|-------|
 | should interact with hyperbeam basic | ✅ PASS | Core legacynet test |
 | should get messages and recover them | ✅ PASS | Message recovery |
-| should test test device | ❌ FAIL | test-device@1.0 response format |
-| should test add@1.0 | ❌ FAIL | Missing NIF: dev_add_nif.so |
+| should test test device | ❌ FAIL | res.results undefined |
+| should test add@1.0 | ❌ FAIL | Missing NIF: dev_add.so |
 | should test mul@1.0 | ✅ PASS | Simple device call |
-| should upload module #2 | ❌ FAIL | wao@1.0 device issue |
+| should upload module #2 | ❌ FAIL | fetch failed (connection reset) |
 | should deploy a process | ✅ PASS | Process deployment |
-| should run hyper Lua | ❌ FAIL | lua@5.3a device |
+| should run hyper Lua | ❌ FAIL | JSON parse error (lua device) |
 | should interact with a hyperbeam node | ✅ PASS | Node interaction |
 | should handle counter with Add/Get | ❌ FAIL | wasm-64@1.0 device |
-| should execute AOS with WAMR | ❌ FAIL | WAMR device |
+| should execute AOS with WAMR | ❌ FAIL | 500 error (WAMR device) |
 | should test WAMR | ❌ FAIL | WAMR device |
-| should receive msg from another process | ❌ FAIL | Multi-process |
-| should test oracle (x2) | ❌ FAIL | Oracle device |
+| should receive msg from another process | ❌ FAIL | Schedule failed 500 |
+| should test oracle | ❌ FAIL | Schedule failed 500 |
 
-**hyperbeam.test.js:** 4/15 pass (26.7%)
+**hyperbeam.test.js:** 5/14 pass (35.7%)
 
-**Status:** IN PROGRESS - Core legacynet tests pass after multiple_matches fix. Remaining failures are due to missing NIFs or different device types.
+**Status:** IN PROGRESS - Core legacynet tests pass. Prometheus dependencies now properly compiled. Remaining failures are due to missing NIFs or device-specific issues.
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 
