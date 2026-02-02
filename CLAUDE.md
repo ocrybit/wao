@@ -139,46 +139,40 @@ Using official upstream release tags as checkpoints.
 
 **Hyperbeam Total:** 1/15 passing (7%)
 
-**Status:** BLOCKED - Tests that use CU relay fail due to upstream bug in `dev_relay.erl`
+**Status:** IN PROGRESS - Prometheus deps added, tests still failing due to CU/network issues
 
-### Blocking Issue #1: dev_relay.erl hb_opts Bug (2026-02-02)
+### Fix Applied: Prometheus Dependencies (2026-02-02)
 
-**Problem:** Tests using `computeLegacy` fail with proxy-related error:
+**Problem:** Tests using `computeLegacy` failed with:
 ```
 prometheus_http:status_class/"�" [No details]
 hb_http_client:httpc_req/3 [/home/user/wao/HyperBEAM/src/hb_http_client.erl:96]
 ```
 
-**Root Cause:** Bug in `HyperBEAM/src/dev_relay.erl` line 140:
-```erlang
-not_found -> hb_opts:get(relay_http_client, Opts);
-```
+**Root Cause:** The `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally at line 747, but prometheus modules were not included in the HyperBEAM build dependencies.
 
-This calls `hb_opts:get/2` which treats `Opts` as the **default value**, not the options map!
-The correct call should be:
-```erlang
-not_found -> hb_opts:get(relay_http_client, httpc, Opts);
-```
+**Fix Applied (commit 0e4378d0 on wao-m1, pending push):**
+Added prometheus dependencies to `HyperBEAM/rebar.config`:
+- `quantile_estimator` (required by prometheus)
+- `prometheus` (v4.11.0)
+- `prometheus_httpd` (v2.1.11)
+- `prometheus_cowboy` (v0.1.8)
 
-**Why It Matters:**
-- `httpc` (Erlang's HTTP client) respects system proxy settings
-- When proxy is set, `httpc` routes localhost CU requests through proxy
-- Proxy returns garbage/authentication errors, causing `prometheus_http:status_class` crash
-- Setting `relay_http_client => gun` in startup options has NO EFFECT because of this bug
+Also added overrides to prevent hex.pm dependency conflicts.
 
-**Attempted Workarounds:**
-1. ❌ Set `relay_http_client => gun` in `hb:start_mainnet()` options - doesn't work due to bug
-2. ❌ Clear proxy env vars in child process - doesn't help, httpc caches settings
-3. ❌ Call `httpc:set_options([{proxy, {undefined, []}}])` - doesn't help
-4. ❌ Use `http_client => gun` option - relay overrides with `relay_http_client`
+**Additional fix:** Created symlink `HyperBEAM/genesis-wasm-server -> _build/genesis-wasm-server` for CU path resolution.
 
-**Why We Can't Fix It:**
-- `dev_relay.erl` is NOT in the allowed modification list (only `dev_hbsig.erl` is allowed)
-- Requires upstream HyperBEAM fix
+**Current Status:**
+- ✅ Prometheus modules compile and load
+- ✅ No more `prometheus_http:status_class` errors
+- ⚠️ Tests still failing with "fetch failed" - likely timing/network issues with CU communication
+- ⏳ Need GitHub token to push HyperBEAM changes to wao-m1
+
+**Note:** The earlier analysis about `hb_opts:get/2` being buggy was incorrect. When `hb_opts:get(Key, Opts)` is called with a map as the second argument, it correctly interprets Opts as the options map (not the default value) due to the clause at line 390 of hb_opts.erl.
 
 **Tests Affected:**
-- All tests that call `computeLegacy` (which uses CU relay via `dev_delegated_compute`)
-- Tests using direct device calls like `mul@1.0` work fine
+- Tests using `computeLegacy` with CU relay
+- Direct device calls like `mul@1.0` work fine (1/15 passing)
 
 ### Previous Issue: ao-body-key (Now Working)
 
