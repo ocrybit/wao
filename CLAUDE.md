@@ -161,7 +161,7 @@ Using official upstream release tags as checkpoints.
 | # | Test File | Pass/Total | Status |
 |---|-----------|------------|--------|
 | 1 | `ans104.test.js` | 0/2 | ❌ FAIL |
-| 2 | `cache.test.js` | 0/1 | ❌ FAIL |
+| 2 | `cache.test.js` | 1/1 | ✅ DONE |
 | 3 | `cron.test.js` | 0/1 | ❌ FAIL |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE |
 | 5 | `faff.test.js` | 0/1 | ❌ FAIL |
@@ -183,8 +183,8 @@ Using official upstream release tags as checkpoints.
 | 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL |
 | 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL |
 
-**Summary:** 20/71 tests passing (28.2%)
-- ✅ Fully passing: eunit (1/1), json (1/1), message (1/1), meta (1/1)
+**Summary:** 21/71 tests passing (29.6%)
+- ✅ Fully passing: cache (1/1), eunit (1/1), json (1/1), message (1/1), meta (1/1)
 - ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
 
 **Common failure patterns:**
@@ -271,6 +271,27 @@ Updated assertions in `test/hyperbeam/json.test.js` to:
 4. Verify complex values are in multipart body (`name="b"`, `name="c"`)
 
 **Result:** json.test.js now passes (1/1)
+
+### ✅ FIXED: cache.test.js (2026-02-02)
+
+**Problem:** Test called `hb.p("/~cache@1.0/write", { body: bin })` but cache device returned "400: No body to write."
+
+**Root Cause:**
+- The `cache@1.0/write` endpoint expects binary data in HTTP body with `ao-body-key` header
+- The `hb.p()` method doesn't automatically set `ao-body-key` for body data
+
+**Fix Applied:**
+Use `hb.post()` with explicit `ao-body-key: body` header:
+```javascript
+const { headers: h } = await hb.post({
+  path: "/~cache@1.0/write",
+  "ao-body-key": "body",
+  body: bin,
+})
+const path = h.path
+```
+
+**Result:** cache.test.js now passes (1/1)
 
 ### Previous Issue: ao-body-key (Now Working)
 
