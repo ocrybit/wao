@@ -125,27 +125,45 @@ Using official upstream release tags as checkpoints.
 
 **hbsig Total:** 717/717 cases passing (100%)
 
-#### Hyperbeam Integration Tests (Task 3) - ⚠️ BLOCKED
+#### Hyperbeam Integration Tests (Task 3) - ⚠️ PARTIAL PROGRESS
 
 | # | Test Name | Status | Error |
 |---|-----------|--------|-------|
-| 1 | should interact with a hyperbeam node | ❌ FAIL | Messages array empty |
-| 2 | should get messages and recover them | ❌ FAIL | Messages array empty |
+| 1 | should interact with a hyperbeam node | ⚠️ PARTIAL | Lua works (Count: 1), but HB caching error |
+| 2 | should get messages and recover them | ⚠️ PARTIAL | Lua works (Count: 1), but HB caching error |
 | 3 | should test test device | ❌ FAIL | - |
 | 4 | should test add@1.0 | ❌ FAIL | - |
 | 5 | should test mul@1.0 | ✅ PASS | - |
 | 6 | should upload module #2 | ❌ FAIL | - |
-| 7 | should deploy a process | ❌ FAIL | Messages array empty |
+| 7 | should deploy a process | ⚠️ PARTIAL | Same pattern |
 | 8 | should run hyper Lua | ❌ FAIL | - |
 | 9-15 | (remaining tests) | ❌ FAIL | Connection/other errors |
 
-**Hyperbeam Total:** 1/15 passing (7%)
+**Hyperbeam Total:** 1/15 passing (7%), 3+ partially working
 
-**Status:** BLOCKED - Requires upstream HyperBEAM fix for `ao-body-key` handling
+**Status:** PARTIAL - Data field now works! But HyperBEAM caching error on subsequent requests
 
-### Current Issue: Body Content Not Preserved in JSON POST
+### Progress Update (2026-02-02)
 
-**Problem:** `data` field containing Lua code is filtered out, resulting in empty `Messages: []` from compute
+**MAJOR PROGRESS:** The `data` field with Lua code is now being properly preserved!
+- Lua handlers are registered and executed correctly
+- First `Inc` action returns `"Count: 1"` as expected
+- This proves the ao-body-key + content-digest signing approach works
+
+**New Issue: HyperBEAM Caching Error**
+
+After the first successful compute, subsequent requests fail with:
+```
+{necessary_message_not_found,<<>>,
+ <<"Lazy link: XXX/random-seed">>}
+```
+
+This error occurs in `hb_cache:write` when HyperBEAM tries to cache the compute result.
+The error is in HyperBEAM's lazy link resolution, not in the signing code.
+
+### Current Issue: HyperBEAM Lazy Link Caching
+
+**Problem:** After first compute succeeds, HyperBEAM fails when writing to cache
 
 **Root Cause Analysis:**
 
@@ -189,15 +207,27 @@ Since `hb_message.erl` is not in the allowed modification list, this requires up
 2. Modify message protocol to not require body content in committed fields
 3. Use ANS-104 format instead of httpsig for messages with body content
 
-### Changes Made This Session (2026-02-01 - 2026-02-02)
-1. **signer.js**: Added `encodeAsByteSequence()` helper for RFC 8941 byte sequences
-2. **signer.js**: Modified `encode()` to detect strings with non-printable characters
-3. **signer.js**: Single complex string encoded as base64 in headers with `ao-types: field="binary"`
-4. **signer.js**: Changed to use enc() for ALL complex strings (multipart encoding)
-5. **commit.js**: Removed base64-text decoding (send values as-is for signature verification)
-6. **hb.js**: Schedule now detects complex data and uses HTTP POST with multipart
-7. **Latest result**: First multipart request succeeds (200) but subsequent request fails (400)
-8. **Observation**: HyperBEAM scheduler endpoint returns `400: Message is not valid` for multipart format
+### Solution That Works (2026-02-02)
+
+**Working approach:** ao-body-key + content-digest signing
+
+1. Put complex string (Lua code) directly in HTTP body
+2. Set `ao-body-key: data` header to tell HyperBEAM which field the body maps to
+3. Sign `content-digest` header (covers HTTP body)
+4. Add body field name (e.g., `data`) to committed list via content-digest
+
+**Key Changes:**
+- **signer.js:smartSign()**: Detects data/body fields with non-printable chars, puts in HTTP body
+- **signer.js:sign()**: Sign content-digest when `ao-body-key` is set and body exists
+- **commit.js**: Add body field to committed list when content-digest is signed
+
+### Changes Made This Session (2026-02-02)
+1. **signer.js**: Changed `inline-body-key` to `ao-body-key` (HyperBEAM's expected header)
+2. **signer.js**: Modified `hasInlineBody` detection to sign content-digest
+3. **commit.js**: Add body field to committed list via content-digest mechanism
+4. **hb.js**: Added debug logging for JSON POST body
+5. **Result**: Lua handlers now work! "Count: 1" is returned correctly
+6. **New issue**: HyperBEAM caching error with lazy links (upstream issue)
 
 ---
 
