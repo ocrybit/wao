@@ -102,7 +102,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`b2da5db9`](https://github.com/ocrybit/HyperBEAM/commit/b2da5db9) - Added prometheus dependencies
+**Merged HB:** [`245a2ada`](https://github.com/ocrybit/HyperBEAM/commit/245a2ada) - Added prometheus deps + .gitignore for genesis-wasm-server
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
