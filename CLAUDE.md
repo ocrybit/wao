@@ -181,21 +181,23 @@ Since `hb_message.erl` is not in the allowed modification list, this requires up
 | 4 | Filter binary type annotations | `invalid_commitment` | Still signature/body mismatch |
 | 5 | Use `enc()` for multipart encoding | `invalid_commitment` | JSON POST always used |
 | 6 | Base64-text custom type | Messages: 0 | Field still not in committed list |
-| 7 | Encode complex strings as base64 headers | Messages: 0 | Field not in signature-input at all |
+| 7 | Encode complex strings as base64 headers | `invalid_commitment` | HyperBEAM decodes before signature verification |
+| 8 | HTTP POST with multipart (enc()) | 400: Message not valid | Scheduler endpoint rejects multipart |
 
 **Possible Workarounds:**
 1. Request upstream fix in `hb_message.erl` to implement `ao-body-key` handling
 2. Modify message protocol to not require body content in committed fields
 3. Use ANS-104 format instead of httpsig for messages with body content
 
-### Changes Made This Session (2026-02-01)
+### Changes Made This Session (2026-02-01 - 2026-02-02)
 1. **signer.js**: Added `encodeAsByteSequence()` helper for RFC 8941 byte sequences
 2. **signer.js**: Modified `encode()` to detect strings with non-printable characters
-3. **signer.js**: Single complex string encoded as base64 in headers with `ao-types: field="base64-text"`
-4. **signer.js**: Multiple complex strings fall back to multipart (enc)
-5. **commit.js**: Decode `base64-text` annotated fields from `:base64:` format before JSON
-6. **hb.js**: Schedule always uses JSON POST with commitment signatures
-7. **All changes unsuccessful** - data field still filtered out by `with_only_committed`
+3. **signer.js**: Single complex string encoded as base64 in headers with `ao-types: field="binary"`
+4. **signer.js**: Changed to use enc() for ALL complex strings (multipart encoding)
+5. **commit.js**: Removed base64-text decoding (send values as-is for signature verification)
+6. **hb.js**: Schedule now detects complex data and uses HTTP POST with multipart
+7. **Latest result**: First multipart request succeeds (200) but subsequent request fails (400)
+8. **Observation**: HyperBEAM scheduler endpoint returns `400: Message is not valid` for multipart format
 
 ---
 

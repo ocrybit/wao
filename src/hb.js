@@ -234,31 +234,45 @@ class HB {
       })
       return { slot: res.out.slot, res, pid }
     } else {
-      // Use JSON POST with commitment signatures (beta3-compatible approach)
-      // The signer/encode now handles body content properly with inline-body-key
       let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
 
-      console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
+      // Check if data contains newlines or special chars that require multipart
+      const hasComplexData = data && typeof data === "string" && /[\x00-\x1f\x7f-\x9f]/.test(data)
 
-      const committed = await this.commit(_tags, { path: false })
-      console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
+      if (hasComplexData) {
+        // Use HTTP POST with multipart for complex data
+        // This allows body content without base64 encoding in headers
+        console.log("[HB SCHEDULE DEBUG] Using HTTP POST for complex data")
+        const res = await this.post({ path: `/~scheduler@1.0/schedule`, ..._tags })
+        return {
+          slot: res.out?.slot ?? parseInt(res.headers?.get?.("slot")),
+          pid,
+          res,
+        }
+      } else {
+        // Use JSON POST with commitment signatures for simple messages
+        console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
 
-      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(committed),
-      })
+        const committed = await this.commit(_tags, { path: false })
+        console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
 
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
-      }
+        const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(committed),
+        })
 
-      return {
-        slot: parseInt(response.headers.get("slot")),
-        pid,
-        res: { status: response.status },
+        if (!response.ok) {
+          const text = await response.text()
+          throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
+        }
+
+        return {
+          slot: parseInt(response.headers.get("slot")),
+          pid,
+          res: { status: response.status },
+        }
       }
     }
   }

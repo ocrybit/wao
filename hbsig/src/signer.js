@@ -316,49 +316,11 @@ const encode = async (obj, path) => {
 
   console.log("[ENCODE DEBUG] complexStringFields:", complexStringFields.map(([k]) => k))
 
-  if (complexStringFields.length === 1) {
-    // Single complex string - encode as base64 in header so it CAN be signed
-    // This ensures the data is included in the commitment and not filtered out by with_only_committed
-    const [fieldName, fieldValue] = complexStringFields[0]
-    console.log("[ENCODE DEBUG] Using base64 header encoding for complex field:", fieldName)
-
-    // Build headers from all fields, encoding the complex string as base64
-    const headers = {}
-    const types = []
-
-    for (const [key, value] of Object.entries(filtered)) {
-      if (key === fieldName) {
-        // Encode complex string as base64 in structured field byte sequence format :base64:
-        // Use "base64-text" marker so commit.js decodes it, but HyperBEAM treats result as string
-        const buffer = Buffer.from(value, "utf-8")
-        headers[key] = `:${buffer.toString("base64")}:`
-        types.push(`${key}="base64-text"`)
-      } else if (typeof value === "number") {
-        types.push(`${key}="${Number.isInteger(value) ? "integer" : "float"}"`)
-        headers[key] = String(value)
-      } else if (typeof value === "boolean") {
-        types.push(`${key}="atom"`)
-        headers[key] = String(value)
-      } else if (value === null || value === undefined) {
-        types.push(`${key}="atom"`)
-        headers[key] = String(value)
-      } else if (typeof value === "string") {
-        headers[key] = value
-      } else if (Array.isArray(value) && isSimpleArray(value)) {
-        types.push(`${key}="list"`)
-        headers[key] = encodeAsStructuredFieldList(value)
-      }
-    }
-
-    if (types.length > 0) {
-      headers["ao-types"] = types.join(", ")
-    }
-
-    // Return with no HTTP body - all data is in headers as base64
-    return { headers, body: undefined }
-  } else if (complexStringFields.length > 1) {
-    // Multiple complex strings - need multipart
-    console.log("[ENCODE DEBUG] Using enc() for multiple complex strings")
+  if (complexStringFields.length > 0) {
+    // Complex strings with newlines - use enc() for multipart encoding
+    // This puts the complex content in the HTTP body, not headers
+    // The body content is NOT part of the signed fields, but uses inline-body-key
+    console.log("[ENCODE DEBUG] Using enc() for complex string fields:", complexStringFields.map(([k]) => k))
     return await enc(filtered)
   }
 

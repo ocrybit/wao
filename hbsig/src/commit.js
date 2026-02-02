@@ -49,36 +49,13 @@ export const commit = async (obj, opts) => {
   // Check for inline-body-key
   const inlineBodyKey = msg.headers["inline-body-key"] || msg.headers["ao-body-key"]
 
-  // Parse ao-types to find base64-text fields that need decoding before JSON
-  const aoTypes = msg.headers["ao-types"]
-  const base64TextFields = new Set()
-  if (aoTypes) {
-    const typeEntries = aoTypes.split(",").map(s => s.trim())
-    for (const entry of typeEntries) {
-      const match = entry.match(/^([^=]+)="base64-text"$/)
-      if (match) {
-        base64TextFields.add(match[1])
-      }
-    }
-  }
-
-  // Build body from components - copy from headers
-  // For base64-text fields, decode base64 byte sequence format :base64: to raw string
+  // Build body from components - copy from headers AS-IS (don't decode)
+  // The values must match what was signed for signature verification to work
+  // HyperBEAM's structured codec will decode :base64: format based on ao-types
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     if (msg.headers[key] !== undefined) {
-      let value = msg.headers[key]
-
-      // Decode base64 byte sequence format for base64-text fields
-      if (base64TextFields.has(key) && typeof value === "string") {
-        const base64Match = value.match(/^:([A-Za-z0-9+/=]+):$/)
-        if (base64Match) {
-          // Decode to raw string for JSON body
-          value = Buffer.from(base64Match[1], "base64").toString("utf-8")
-        }
-      }
-
-      body[key] = value
+      body[key] = msg.headers[key]
     }
   }
 
