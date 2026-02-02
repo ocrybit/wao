@@ -91,8 +91,6 @@ export default class HyperBEAM {
   }
   shell() {
     const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
-    // Create environment without proxy variables to prevent Erlang httpc issues
-    const cleanEnv = this.getCleanEnv()
     this._shell = spawn(
       "rebar3",
       [
@@ -102,7 +100,7 @@ export default class HyperBEAM {
         this.genEval({ gateway: this.gateway, wallet: this.wallet }),
       ],
       {
-        env: cleanEnv,
+        env: { ...process.env, ...this.genEnv() },
         cwd: resolve(process.cwd(), this.cwd),
       }
     )
@@ -274,32 +272,15 @@ export default class HyperBEAM {
     if (this.logs) console.log("CU server startup timeout, continuing anyway...")
     return true // Continue anyway, the CU process is running
   }
-  // Get clean environment without proxy variables for Erlang's httpc
-  getCleanEnv() {
-    const proxyKeys = [
-      'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-      'YARN_HTTP_PROXY', 'YARN_HTTPS_PROXY',
-      'GLOBAL_AGENT_HTTP_PROXY', 'GLOBAL_AGENT_HTTPS_PROXY'
-    ]
-    const cleanEnv = {}
-    for (const [key, value] of Object.entries(process.env)) {
-      if (!proxyKeys.includes(key)) {
-        cleanEnv[key] = value
-      }
-    }
-    // Add custom environment variables
-    if (this.diagnostic) cleanEnv.DIAGNOSTIC = this.diagnostic
-    if (this.c) {
-      cleanEnv.CC = `gcc-${this.c}`
-      cleanEnv.CXX = `g++-${this.c}`
-    }
-    if (this.cmake) cleanEnv.CMAKE_POLICY_VERSION_MINIMUM = this.cmake
-    return cleanEnv
-  }
-
   genEnv() {
-    // Deprecated - use getCleanEnv() instead
-    return this.getCleanEnv()
+    let _env = {}
+    if (this.diagnostic) _env.DIAGNOSTIC = this.diagnostic
+    if (this.c) {
+      _env.CC = `gcc-${this.c}`
+      _env.CXX = `g++-${this.c}`
+    }
+    if (this.cmake) _env.CMAKE_POLICY_VERSION_MINIMUM = this.cmake
+    return _env
   }
 
   genEval({ gateway, wallet = ".wallet.json" }) {
@@ -378,12 +359,14 @@ export default class HyperBEAM {
     // Add cache_writers to allow the wallet to write to cache (needed for WASM module uploads)
     // Use the wallet address (this.addr) which is always available from the wallet file
     const _cache_writers = `, cache_writers => [<<"${this.addr}">>]`
-    // Completely disable proxy for httpc with explicit no_proxy for localhost
-    // This is needed because Erlang's httpc may not respect the NO_PROXY env var correctly
-    const disableProxy = `inets:start(httpc, [{profile, default}]), httpc:set_options([{proxy, {{undefined, undefined}, ["localhost", "127.0.0.1", "::1"]}}]), `
-    // Use gun instead of httpc for both relay and general http - gun doesn't have proxy issues
-    const _http_client = `, http_client => gun, relay_http_client => gun`
-    const start = `${disableProxy}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_http_client}, prometheus => false}).`
+
+    // Parse HTTPS_PROXY URL and configure httpc with proxy settings and authentication
+    // The proxy requires JWT authentication, so we need to extract userinfo from the URL
+    // Note: uri_string:parse may return strings or binaries depending on Erlang version
+    const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
+    const proxySetup = `case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end, `
+
+    const start = `${proxySetup}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}, prometheus => false}).`
     return start
   }
 
