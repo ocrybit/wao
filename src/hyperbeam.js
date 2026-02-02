@@ -3,7 +3,7 @@ import { resolve } from "path"
 import { isNil, map } from "ramda"
 import { toAddr } from "./test.js"
 import HB from "./hb.js"
-import { rmSync, readFileSync, readdirSync, writeFileSync } from "fs"
+import { rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "fs"
 import devs from "./devs.js"
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.hyperbeam" })
@@ -35,7 +35,17 @@ export default class HyperBEAM {
     devices,
     genesis_wasm = false,
     arweave_gateway,
+    rebar3, // Use rebar3 shell (true) or direct erl (false). Defaults to HB_REBAR3 env or true
   } = {}) {
+    // Determine rebar3 mode: option > env var > default (true)
+    const envRebar3 = process.env.HB_REBAR3
+    if (rebar3 !== undefined) {
+      this.rebar3 = rebar3
+    } else if (envRebar3 !== undefined) {
+      this.rebar3 = envRebar3.toLowerCase() !== "false"
+    } else {
+      this.rebar3 = true // default to rebar3 mode
+    }
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
     this.arweave_gateway = arweave_gateway || process.env.ARWEAVE_GATEWAY
@@ -90,20 +100,62 @@ export default class HyperBEAM {
     if (shell) this.shell()
   }
   shell() {
-    const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
-    this._shell = spawn(
-      "rebar3",
-      [
-        ..._as,
-        "shell",
-        "--eval",
-        this.genEval({ gateway: this.gateway, wallet: this.wallet }),
-      ],
-      {
-        env: { ...process.env, ...this.genEnv() },
-        cwd: resolve(process.cwd(), this.cwd),
+    const evalCmd = this.genEval({ gateway: this.gateway, wallet: this.wallet })
+    const cwd = resolve(process.cwd(), this.cwd)
+    const env = this.genEnv() // genEnv() returns filtered process.env without proxy vars
+
+    // Debug: verify proxy filtering
+    if (this.logs) {
+      console.log(`[HB DEBUG] rebar3 mode: ${this.rebar3}`)
+      console.log(`[HB DEBUG] HTTPS_PROXY in parent env: ${process.env.HTTPS_PROXY ? 'SET' : 'NOT SET'}`)
+      console.log(`[HB DEBUG] HTTPS_PROXY in child env: ${env.HTTPS_PROXY ? 'SET' : 'NOT SET'}`)
+      console.log(`[HB DEBUG] HTTP_PROXY in child env: ${env.HTTP_PROXY ? 'SET' : 'NOT SET'}`)
+    }
+
+    if (this.rebar3) {
+      // rebar3 shell mode
+      const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
+      this._shell = spawn(
+        "rebar3",
+        [
+          ..._as,
+          "shell",
+          "--eval",
+          evalCmd,
+        ],
+        { env, cwd }
+      )
+    } else {
+      // Direct erl mode - compile first if needed, then start
+      // This mode is better for proxy environments as it gives more control
+      // Manually expand glob pattern to avoid shell interpretation issues
+      const buildDir = resolve(cwd, "_build/default/lib")
+      let ebinDirs = []
+      try {
+        const libs = readdirSync(buildDir)
+        for (const lib of libs) {
+          const ebinPath = resolve(buildDir, lib, "ebin")
+          if (existsSync(ebinPath)) {
+            ebinDirs.push(ebinPath)
+          }
+        }
+      } catch (e) {
+        console.error("Failed to enumerate ebin directories:", e.message)
       }
-    )
+
+      // Build -pa arguments for each ebin directory
+      const paArgs = ebinDirs.flatMap(dir => ["-pa", dir])
+
+      this._shell = spawn(
+        "erl",
+        [
+          ...paArgs,
+          "-eval", evalCmd,
+        ],
+        { env, cwd }
+      )
+    }
+
     if (this.logs) {
       this._shell.stdout.on("data", chunk => console.log(chunk.toString()))
       this._shell.stderr.on("data", err => console.error(err.toString()))
@@ -147,7 +199,7 @@ export default class HyperBEAM {
       const _arg = isTest ? "--test" : "--module"
       let params = [..._as, "eunit", _arg, _module]
       const _eunit = spawn("rebar3", params, {
-        env: { ...process.env, ...this.genEnv() },
+        env: this.genEnv(),
         cwd: resolve(process.cwd(), this.cwd),
       })
       if (this.logs) {
@@ -273,7 +325,13 @@ export default class HyperBEAM {
     return true // Continue anyway, the CU process is running
   }
   genEnv() {
-    let _env = {}
+    // Start with process.env but filter out proxy settings
+    // HyperBEAM uses arweave_gateway config for external access, not proxy
+    // This avoids httpc proxy issues with localhost CU connections
+    const proxyKeys = ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy', 'ALL_PROXY', 'all_proxy']
+    let _env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !proxyKeys.includes(key))
+    )
     if (this.diagnostic) _env.DIAGNOSTIC = this.diagnostic
     if (this.c) {
       _env.CC = `gcc-${this.c}`
@@ -360,13 +418,22 @@ export default class HyperBEAM {
     // Use the wallet address (this.addr) which is always available from the wallet file
     const _cache_writers = `, cache_writers => [<<"${this.addr}">>]`
 
-    // Parse HTTPS_PROXY URL and configure httpc with proxy settings and authentication
-    // The proxy requires JWT authentication, so we need to extract userinfo from the URL
-    // Note: uri_string:parse may return strings or binaries depending on Erlang version
-    const toList = `fun(B) when is_binary(B) -> binary_to_list(B); (L) when is_list(L) -> L end`
-    const proxySetup = `case os:getenv("HTTPS_PROXY") of false -> case os:getenv("https_proxy") of false -> ok; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end; P -> (fun(U) -> ToList = ${toList}, case uri_string:parse(U) of #{host := H, port := Pt} = M -> inets:start(), ProxyOpts = [{proxy, {{ToList(H), Pt}, ["localhost", "127.0.0.1"]}}], AuthOpts = case maps:get(userinfo, M, undefined) of undefined -> []; UI -> case string:split(ToList(UI), ":") of [User, Pass] -> [{proxy_auth, {User, Pass}}]; _ -> [] end end, httpc:set_options(ProxyOpts ++ AuthOpts); _ -> ok end end)(P) end, `
+    // Use gun HTTP client for relay calls instead of httpc
+    // gun doesn't use system proxy settings, avoiding the proxy issue with localhost CU
+    const _relay_http_client = `, relay_http_client => gun, http_client => gun`
 
-    const start = `${proxySetup}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}, prometheus => false}).`
+    // Explicitly clear httpc proxy settings at Erlang level before starting HyperBEAM
+    // This ensures no proxy is used regardless of any OS-level or cached settings
+    const clearProxy = `application:ensure_all_started(inets), httpc:set_options([{proxy, {undefined, []}}, {ipfamily, inet}]), `
+
+    const start = `${clearProxy}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}, prometheus => false}).`
+
+    // Debug: show the eval command being sent
+    if (this.logs) {
+      console.log("[HB DEBUG] Eval command includes relay_http_client:", start.includes("relay_http_client"))
+      console.log("[HB DEBUG] Eval command clears proxy:", start.includes("httpc:set_options"))
+    }
+
     return start
   }
 

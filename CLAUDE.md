@@ -109,7 +109,7 @@ Using official upstream release tags as checkpoints.
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
-### Test Results Report (Last Updated: 2026-02-01)
+### Test Results Report (Last Updated: 2026-02-02)
 
 #### hbsig Tests (Task 2) - ✅ COMPLETE
 
@@ -125,89 +125,62 @@ Using official upstream release tags as checkpoints.
 
 **hbsig Total:** 717/717 cases passing (100%)
 
-#### Hyperbeam Integration Tests (Task 3) - ⚠️ PARTIAL PROGRESS
+#### Hyperbeam Integration Tests (Task 3) - ⚠️ BLOCKED BY UPSTREAM BUG
 
 | # | Test Name | Status | Error |
 |---|-----------|--------|-------|
-| 1 | should interact with a hyperbeam node | ⚠️ PARTIAL | Lua works (Count: 1), but HB caching error |
-| 2 | should get messages and recover them | ⚠️ PARTIAL | Lua works (Count: 1), but HB caching error |
+| 1 | should interact with hyperbeam basic | ❌ FAIL | Proxy issue (see below) |
+| 2 | should get messages and recover them | ❌ FAIL | Proxy issue |
 | 3 | should test test device | ❌ FAIL | - |
-| 4 | should test add@1.0 | ❌ FAIL | - |
+| 4 | should test add@1.0 | ❌ FAIL | Missing NIF library |
 | 5 | should test mul@1.0 | ✅ PASS | - |
 | 6 | should upload module #2 | ❌ FAIL | - |
-| 7 | should deploy a process | ⚠️ PARTIAL | Same pattern |
-| 8 | should run hyper Lua | ❌ FAIL | - |
-| 9-15 | (remaining tests) | ❌ FAIL | Connection/other errors |
+| 7-15 | (remaining tests) | ❌ FAIL | Depend on CU relay |
 
-**Hyperbeam Total:** 1/15 passing (7%), 3+ partially working
+**Hyperbeam Total:** 1/15 passing (7%)
 
-**Status:** PARTIAL - Data field now works! But HyperBEAM caching error on subsequent requests
+**Status:** BLOCKED - Tests that use CU relay fail due to upstream bug in `dev_relay.erl`
 
-### Progress Update (2026-02-02)
+### Blocking Issue #1: dev_relay.erl hb_opts Bug (2026-02-02)
 
-**MAJOR PROGRESS:** The `data` field with Lua code is now being properly preserved!
-- Lua handlers are registered and executed correctly
-- First `Inc` action returns `"Count: 1"` as expected
-- This proves the ao-body-key + content-digest signing approach works
-
-**New Issue: HyperBEAM Caching Error**
-
-After the first successful compute, subsequent requests fail with:
+**Problem:** Tests using `computeLegacy` fail with proxy-related error:
 ```
-{necessary_message_not_found,<<>>,
- <<"Lazy link: XXX/random-seed">>}
+prometheus_http:status_class/"�" [No details]
+hb_http_client:httpc_req/3 [/home/user/wao/HyperBEAM/src/hb_http_client.erl:96]
 ```
 
-This error occurs in `hb_cache:write` when HyperBEAM tries to cache the compute result.
-The error is in HyperBEAM's lazy link resolution, not in the signing code.
-
-### Current Issue: HyperBEAM Lazy Link Caching
-
-**Problem:** After first compute succeeds, HyperBEAM fails when writing to cache
-
-**Root Cause Analysis:**
-
-The fundamental issue is a mismatch between HTTP Message Signatures and JSON POST:
-
-1. **HTTP Message Signatures** (RFC-9421) sign headers, not body content
-2. **Strings with newlines** (like Lua code) cannot be valid HTTP headers
-3. **JSON POST with commitment signatures** puts field values in JSON body
-4. **HyperBEAM's `with_only_committed`** filters messages to only fields in the committed list
-5. **Body content fields** (like `data`) are not in the signature-input, so they're filtered out
-
-**Blocking Upstream Issue:**
-
-In `HyperBEAM/src/hb_message.erl` lines 249-250, there's a comment:
+**Root Cause:** Bug in `HyperBEAM/src/dev_relay.erl` line 140:
 ```erlang
-%% Add the ao-body-key to the committed list if it is not already present
+not_found -> hb_opts:get(relay_http_client, Opts);
 ```
 
-However, this is **NOT actually implemented**. The `with_only_committed` function should:
-1. Check for `ao-body-key` header
-2. Add that key (e.g., `data`) to the committed list
-3. Preserve the body content field
+This calls `hb_opts:get/2` which treats `Opts` as the **default value**, not the options map!
+The correct call should be:
+```erlang
+not_found -> hb_opts:get(relay_http_client, httpc, Opts);
+```
 
-Since `hb_message.erl` is not in the allowed modification list, this requires upstream HyperBEAM changes.
+**Why It Matters:**
+- `httpc` (Erlang's HTTP client) respects system proxy settings
+- When proxy is set, `httpc` routes localhost CU requests through proxy
+- Proxy returns garbage/authentication errors, causing `prometheus_http:status_class` crash
+- Setting `relay_http_client => gun` in startup options has NO EFFECT because of this bug
 
-**Attempted Solutions:**
+**Attempted Workarounds:**
+1. ❌ Set `relay_http_client => gun` in `hb:start_mainnet()` options - doesn't work due to bug
+2. ❌ Clear proxy env vars in child process - doesn't help, httpc caches settings
+3. ❌ Call `httpc:set_options([{proxy, {undefined, []}}])` - doesn't help
+4. ❌ Use `http_client => gun` option - relay overrides with `relay_http_client`
 
-| # | Approach | Result | Why It Failed |
-|---|----------|--------|---------------|
-| 1 | Add `data` to committed list | `invalid_commitment` | `data` not in signature-input |
-| 2 | Encode `data` as `:base64:` byte sequence | `invalid_commitment` | Signature over base64, body has original |
-| 3 | Use original values in JSON body | `unexpected_type,binary` | ao-types mismatch |
-| 4 | Filter binary type annotations | `invalid_commitment` | Still signature/body mismatch |
-| 5 | Use `enc()` for multipart encoding | `invalid_commitment` | JSON POST always used |
-| 6 | Base64-text custom type | Messages: 0 | Field still not in committed list |
-| 7 | Encode complex strings as base64 headers | `invalid_commitment` | HyperBEAM decodes before signature verification |
-| 8 | HTTP POST with multipart (enc()) | 400: Message not valid | Scheduler endpoint rejects multipart |
+**Why We Can't Fix It:**
+- `dev_relay.erl` is NOT in the allowed modification list (only `dev_hbsig.erl` is allowed)
+- Requires upstream HyperBEAM fix
 
-**Possible Workarounds:**
-1. Request upstream fix in `hb_message.erl` to implement `ao-body-key` handling
-2. Modify message protocol to not require body content in committed fields
-3. Use ANS-104 format instead of httpsig for messages with body content
+**Tests Affected:**
+- All tests that call `computeLegacy` (which uses CU relay via `dev_delegated_compute`)
+- Tests using direct device calls like `mul@1.0` work fine
 
-### Solution That Works (2026-02-02)
+### Previous Issue: ao-body-key (Now Working)
 
 **Working approach:** ao-body-key + content-digest signing
 
@@ -220,14 +193,6 @@ Since `hb_message.erl` is not in the allowed modification list, this requires up
 - **signer.js:smartSign()**: Detects data/body fields with non-printable chars, puts in HTTP body
 - **signer.js:sign()**: Sign content-digest when `ao-body-key` is set and body exists
 - **commit.js**: Add body field to committed list when content-digest is signed
-
-### Changes Made This Session (2026-02-02)
-1. **signer.js**: Changed `inline-body-key` to `ao-body-key` (HyperBEAM's expected header)
-2. **signer.js**: Modified `hasInlineBody` detection to sign content-digest
-3. **commit.js**: Add body field to committed list via content-digest mechanism
-4. **hb.js**: Added debug logging for JSON POST body
-5. **Result**: Lua handlers now work! "Count: 1" is returned correctly
-6. **New issue**: HyperBEAM caching error with lazy links (upstream issue)
 
 ---
 
