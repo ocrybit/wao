@@ -68,9 +68,36 @@ Commands:
 ```
 
 ### Task 3: Make wao/test/hyperbeam Tests 100% Pass
-Run HyperBEAM integration tests:
+Run HyperBEAM integration tests (all files under `test/hyperbeam/`):
+
+| # | Test File | Purpose |
+|---|-----------|---------|
+| 1 | `ans104.test.js` | ANS-104 bundle format |
+| 2 | `cache.test.js` | Caching functionality |
+| 3 | `cron.test.js` | Cron scheduling |
+| 4 | `eunit.test.js` | Erlang unit tests |
+| 5 | `faff.test.js` | FAFF protocol |
+| 6 | `hyperbeam.test.js` | Core HyperBEAM integration |
+| 7 | `json.test.js` | JSON device |
+| 8 | `local_name.test.js` | Local name resolution |
+| 9 | `lookup.test.js` | Lookup functionality |
+| 10 | `message.test.js` | Message handling |
+| 11 | `meta.test.js` | Meta device |
+| 12 | `p4.test.js` | P4 protocol |
+| 13 | `patch.test.js` | Patch operations |
+| 14 | `process.test.js` | Process management |
+| 15 | `relay.test.js` | Relay functionality |
+| 16 | `router.test.js` | Router device |
+| 17 | `scheduler.test.js` | Scheduler device |
+| 18 | `server.test.js` | Server persistence |
+| 19 | `simple-pay.test.js` | Simple payment |
+| 20 | `stack.test.js` | Stack operations |
+| 21 | `upload.test.js` | Upload functionality |
+| 22 | `wao-hb.test.js` | WAO-HyperBEAM integration |
+
+Commands:
 ```bash
-. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/hyperbeam.test.js
+. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/<test-file>.test.js
 ```
 
 ### Task 4: Receive Confirmation from Human
@@ -129,28 +156,34 @@ Using official upstream release tags as checkpoints.
 
 #### Hyperbeam Integration Tests (Task 3) - ⚠️ IN PROGRESS
 
-**hyperbeam.test.js** results (14 tests total):
+**All test files under `test/hyperbeam/` (22 files total):**
 
-| Test Name | Status | Notes |
-|-----------|--------|-------|
-| should interact with hyperbeam basic | ✅ PASS | Core legacynet test |
-| should get messages and recover them | ✅ PASS | Message recovery |
-| should test test device | ❌ FAIL | res.results undefined |
-| should test add@1.0 | ❌ FAIL | Missing NIF: dev_add.so |
-| should test mul@1.0 | ✅ PASS | Simple device call |
-| should upload module #2 | ❌ FAIL | fetch failed (connection reset) |
-| should deploy a process | ✅ PASS | Process deployment |
-| should run hyper Lua | ❌ FAIL | JSON parse error (lua device) |
-| should interact with a hyperbeam node | ✅ PASS | Node interaction |
-| should handle counter with Add/Get | ❌ FAIL | wasm-64@1.0 device |
-| should execute AOS with WAMR | ❌ FAIL | 500 error (WAMR device) |
-| should test WAMR | ❌ FAIL | WAMR device |
-| should receive msg from another process | ❌ FAIL | Schedule failed 500 |
-| should test oracle | ❌ FAIL | Schedule failed 500 |
+| # | Test File | Pass/Total | Status |
+|---|-----------|------------|--------|
+| 1 | `ans104.test.js` | ⬜ | NOT TESTED |
+| 2 | `cache.test.js` | ⬜ | NOT TESTED |
+| 3 | `cron.test.js` | ⬜ | NOT TESTED |
+| 4 | `eunit.test.js` | ⬜ | NOT TESTED |
+| 5 | `faff.test.js` | ⬜ | NOT TESTED |
+| 6 | `hyperbeam.test.js` | 5/14 | ⚠️ PARTIAL |
+| 7 | `json.test.js` | ⬜ | NOT TESTED |
+| 8 | `local_name.test.js` | ⬜ | NOT TESTED |
+| 9 | `lookup.test.js` | ⬜ | NOT TESTED |
+| 10 | `message.test.js` | ⬜ | NOT TESTED |
+| 11 | `meta.test.js` | 1/1 | ✅ DONE |
+| 12 | `p4.test.js` | ⬜ | NOT TESTED |
+| 13 | `patch.test.js` | ⬜ | NOT TESTED |
+| 14 | `process.test.js` | ⬜ | NOT TESTED |
+| 15 | `relay.test.js` | ⬜ | NOT TESTED |
+| 16 | `router.test.js` | ⬜ | NOT TESTED |
+| 17 | `scheduler.test.js` | ⬜ | NOT TESTED |
+| 18 | `server.test.js` | 1/2 | ⚠️ PARTIAL |
+| 19 | `simple-pay.test.js` | ⬜ | NOT TESTED |
+| 20 | `stack.test.js` | ⬜ | NOT TESTED |
+| 21 | `upload.test.js` | ⬜ | NOT TESTED |
+| 22 | `wao-hb.test.js` | ⬜ | NOT TESTED |
 
-**hyperbeam.test.js:** 5/14 pass (35.7%)
-
-**Status:** IN PROGRESS - Core legacynet tests pass. Prometheus dependencies now properly compiled. Remaining failures are due to missing NIFs or device-specific issues.
+**Status:** IN PROGRESS - Testing all 22 files. Prometheus dependencies working.
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 
