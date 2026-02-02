@@ -188,9 +188,16 @@ Using official upstream release tags as checkpoints.
 - ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
 
 **Common failure patterns:**
-1. `invalid_commitment` error - device-stack sent as link object
-2. 500 errors on various device calls
-3. Missing NIFs (dev_add.so)
+1. `invalid_commitment` error - `device-stack` array gets linkified by hbsig, but HyperBEAM's commitment validation doesn't handle link objects
+2. `hb_name` registry not working - cron tasks can't be stopped because `hb_name:lookup` returns undefined
+3. `hb_cache:write` errors - local_name registration fails with cache write issues
+4. 500 errors on various device calls - related to process/message resolution
+
+**Blocked tests requiring HyperBEAM-level fixes:**
+- `cron.test.js`: hb_name registry not persisting task registrations
+- `local_name.test.js`: hb_cache write failures
+- `stack.test.js`, `process.test.js`: device-stack linkification causing invalid_commitment
+- Tests using `add@1.0`: Missing NIF (dev_add.so)
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 
