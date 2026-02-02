@@ -114,6 +114,21 @@ function parseSfDict(str) {
   return dict
 }
 
+// Helper to parse ao-types string into a map of key -> type
+function parseAoTypesSimple(str) {
+  const dict = {}
+  if (!str) return dict
+
+  const parts = str.split(/,\s*/)
+  for (const part of parts) {
+    const match = part.match(/^(.+?)="(.+?)"$/)
+    if (match) {
+      dict[match[1]] = match[2]
+    }
+  }
+  return dict
+}
+
 // Helper to generate boundary from parts using fast-sha256
 function boundaryFromParts(parts) {
   const bodyBin = parts.map(p => p.body).join(CRLF)
@@ -680,12 +695,31 @@ export function httpsig_from(http) {
 export function httpsig_to(tabm) {
   if (typeof tabm === "string") return tabm
 
+  // Preserve ao-types from original tabm before transformation
+  // The structuredTo/structuredFrom cycle may lose ao-types for values that
+  // are already encoded (e.g., :base64: strings with ao-types: 'data="binary"')
+  const originalAoTypes = tabm["ao-types"]
+
   // Bundle logic: TABM → structured → TABM
   // This matches Erlang's behavior when bundle=true:
   // 1. Convert TABM to structured@1.0 (interprets ao-types, decodes to native types)
   // 2. Convert back to TABM (re-encodes with ao-types)
   const structured = structuredTo(tabm)
   const bundledTabm = structuredFrom(structured)
+
+  // Restore original ao-types if it was present but not regenerated
+  // This preserves type annotations for pre-encoded values like :base64: binary strings
+  if (originalAoTypes && !bundledTabm["ao-types"]) {
+    bundledTabm["ao-types"] = originalAoTypes
+  } else if (originalAoTypes && bundledTabm["ao-types"]) {
+    // Merge: prefer original types that aren't regenerated, but keep regenerated ones
+    const originalTypes = parseAoTypesSimple(originalAoTypes)
+    const newTypes = parseAoTypesSimple(bundledTabm["ao-types"])
+    const merged = { ...originalTypes, ...newTypes }
+    bundledTabm["ao-types"] = Object.entries(merged)
+      .map(([k, v]) => `${k}="${v}"`)
+      .join(", ")
+  }
 
   // Group IDs
   const withGroupedIds = groupIds(bundledTabm)

@@ -38,7 +38,7 @@ end)`
 
 const URL = "http://localhost:10001"
 
-describe("Hyperbeam Legacynet", function () {
+describe("Hyperbeam Legacynet Suite1", function () {
   let hb, hbeam, server
   before(async () => {
     //server = new Server({ port: 6359, log: true, hb_url: URL })
@@ -50,7 +50,7 @@ describe("Hyperbeam Legacynet", function () {
     //server.end()
   })
 
-  it("should interact with a hyperbeam node", async () => {
+  it("should interact with hyperbeam basic", async () => {
     const { pid } = await hb.spawnLegacy()
     const { slot } = await hb.scheduleLegacy({ pid, data })
     const r = await hb.computeLegacy({ pid, slot })
