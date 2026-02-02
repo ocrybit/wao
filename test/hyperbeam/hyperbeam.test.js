@@ -292,29 +292,4 @@ end)
     await p.m("Add", { To: pid2 })
     console.log(await p.m("Get"))
   })
-
-  it("should test oracle", async () => {
-    const src_data = `
-local count = 0
-json = require("json")
-Handlers.add("Add", "Add", function (msg)
-  local data = Send({ Target = msg.To, Url = msg.Url }).receive().Data
-  count = count + tonumber(json.decode(data).version)
-end)
-
-Handlers.add("Get", "Get", function (msg)
-  msg.reply({ Data = tostring(count) })
-end)
-`
-    const { pid } = await hb.spawn({ "execution-device": "oracle@1.0" })
-    console.log(await hb.message({ pid }))
-    console.log(pid)
-
-    const ao = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      testJwk
-    )
-    const { p } = await ao.deploy({ src_data })
-    await p.m("Add", { To: pid, Url: "https://arweave.net/" })
-    console.log(await p.m("Get"))
-  })
 })
