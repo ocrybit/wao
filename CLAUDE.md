@@ -160,30 +160,37 @@ Using official upstream release tags as checkpoints.
 
 | # | Test File | Pass/Total | Status |
 |---|-----------|------------|--------|
-| 1 | `ans104.test.js` | ⬜ | NOT TESTED |
-| 2 | `cache.test.js` | ⬜ | NOT TESTED |
-| 3 | `cron.test.js` | ⬜ | NOT TESTED |
-| 4 | `eunit.test.js` | ⬜ | NOT TESTED |
-| 5 | `faff.test.js` | ⬜ | NOT TESTED |
+| 1 | `ans104.test.js` | 0/2 | ❌ FAIL |
+| 2 | `cache.test.js` | 0/1 | ❌ FAIL |
+| 3 | `cron.test.js` | 0/1 | ❌ FAIL |
+| 4 | `eunit.test.js` | 1/1 | ✅ DONE |
+| 5 | `faff.test.js` | 0/1 | ❌ FAIL |
 | 6 | `hyperbeam.test.js` | 5/14 | ⚠️ PARTIAL |
-| 7 | `json.test.js` | ⬜ | NOT TESTED |
-| 8 | `local_name.test.js` | ⬜ | NOT TESTED |
-| 9 | `lookup.test.js` | ⬜ | NOT TESTED |
-| 10 | `message.test.js` | ⬜ | NOT TESTED |
+| 7 | `json.test.js` | 0/1 | ❌ FAIL |
+| 8 | `local_name.test.js` | 0/1 | ❌ FAIL |
+| 9 | `lookup.test.js` | 0/1 | ❌ FAIL |
+| 10 | `message.test.js` | 1/1 | ✅ DONE |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE |
-| 12 | `p4.test.js` | ⬜ | NOT TESTED |
-| 13 | `patch.test.js` | ⬜ | NOT TESTED |
-| 14 | `process.test.js` | ⬜ | NOT TESTED |
-| 15 | `relay.test.js` | ⬜ | NOT TESTED |
-| 16 | `router.test.js` | ⬜ | NOT TESTED |
-| 17 | `scheduler.test.js` | ⬜ | NOT TESTED |
+| 12 | `p4.test.js` | 0/2 | ❌ FAIL |
+| 13 | `patch.test.js` | 0/3 | ❌ FAIL |
+| 14 | `process.test.js` | 0/2 | ❌ FAIL |
+| 15 | `relay.test.js` | 0/1 | ❌ FAIL |
+| 16 | `router.test.js` | 9/25 | ⚠️ PARTIAL |
+| 17 | `scheduler.test.js` | 0/1 | ❌ FAIL |
 | 18 | `server.test.js` | 1/2 | ⚠️ PARTIAL |
-| 19 | `simple-pay.test.js` | ⬜ | NOT TESTED |
-| 20 | `stack.test.js` | ⬜ | NOT TESTED |
-| 21 | `upload.test.js` | ⬜ | NOT TESTED |
-| 22 | `wao-hb.test.js` | ⬜ | NOT TESTED |
+| 19 | `simple-pay.test.js` | 0/1 | ❌ FAIL |
+| 20 | `stack.test.js` | 0/2 | ❌ FAIL |
+| 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL |
+| 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL |
 
-**Status:** IN PROGRESS - Testing all 22 files. Prometheus dependencies working.
+**Summary:** 19/71 tests passing (26.8%)
+- ✅ Fully passing: eunit (1/1), message (1/1), meta (1/1)
+- ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
+
+**Common failure patterns:**
+1. `invalid_commitment` error - device-stack sent as link object
+2. 500 errors on various device calls
+3. Missing NIFs (dev_add.so)
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 
