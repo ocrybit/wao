@@ -129,29 +129,103 @@ class HB {
   }
 
   async computeLegacy({ pid, slot }) {
-    // In beta3, try to get results directly via bundle format which avoids cache lazy link issues
-    try {
-      const json = await this.compute({ pid, slot, path: "/results/json" })
-      const result = JSON.parse(json.body)
-      console.log("[DEBUG] computeLegacy slot", slot, "Messages:", result.Messages?.length || 0, "Output:", result.Output?.slice?.(0, 50) || result.Output)
-      return result
-    } catch (e) {
-      console.log("[DEBUG] computeLegacy error for slot", slot, ":", e.message, "- trying fallback")
-      // Fallback: get results via bundle and extract Output
-      const res = await this.getJSON({
-        path: `/${pid}/compute/results`,
-        slot,
-        headers: { "accept-bundle": "true" }
-      })
-      console.log("[DEBUG] computeLegacy fallback result keys:", Object.keys(res), "Output keys:", res.Output ? Object.keys(res.Output) : "none")
-      // Convert bundle format to legacy format
-      const output = res.Output || {}
-      return {
-        Messages: output.Messages || [],
-        Spawns: output.Spawns || [],
-        Output: output.Output || "",
-        Error: output.Error,
+    // In beta3, the genesis-wasm compute result is returned as multipart/form-data
+    // We need to parse the multipart body to extract the actual result
+
+    const res = await this.get({
+      path: `/${pid}/compute/results`,
+      slot
+    })
+
+    // Check if response is multipart - extract result from body
+    const contentType = res.headers?.["content-type"] || res.out?.["content-type"] || ""
+    if (contentType.includes("multipart/form-data")) {
+      // Extract boundary from content-type
+      const boundaryMatch = contentType.match(/boundary="?([^";\s]+)"?/)
+      const boundary = boundaryMatch ? boundaryMatch[1] : null
+
+      if (boundary && res.body) {
+        // Parse multipart body to extract the result
+        const parts = res.body.split(`--${boundary}`)
+        let jsonPart = null
+
+        for (const part of parts) {
+          if (part.includes("Output") || part.includes("Messages") || part.includes('"data"')) {
+            // Look for JSON content in this part
+            const jsonMatch = part.match(/\{[\s\S]*\}/)
+            if (jsonMatch) {
+              try {
+                const parsed = JSON.parse(jsonMatch[0])
+                if (parsed.Output || parsed.Messages) {
+                  jsonPart = parsed
+                  break
+                }
+              } catch (e) {}
+            }
+          }
+        }
+
+        if (jsonPart) {
+          console.log("[DEBUG] computeLegacy slot", slot, "extracted from multipart, keys:", Object.keys(jsonPart))
+          console.log("[DEBUG] computeLegacy Messages count:", jsonPart.Messages?.length, "first message:", JSON.stringify(jsonPart.Messages?.[0])?.substring(0, 300))
+          if (jsonPart.Messages) return jsonPart
+          if (jsonPart.Output && typeof jsonPart.Output === 'object') {
+            return {
+              Messages: jsonPart.Output.Messages || [],
+              Spawns: jsonPart.Output.Spawns || [],
+              Output: jsonPart.Output.Output || jsonPart.Output,
+              Error: jsonPart.Output.Error,
+            }
+          }
+        }
+
+        // If no JSON found, try to find Output field in the multipart parts
+        // The Output is typically in a part with content-disposition: form-data; name="Output"
+        for (const part of parts) {
+          if (part.includes('name="Output"') || part.includes("name=Output")) {
+            // Extract content after headers (blank line separates headers from content)
+            const lines = part.split(/\r?\n/)
+            let inContent = false
+            let content = ""
+            for (const line of lines) {
+              if (inContent) {
+                content += line + "\n"
+              } else if (line.trim() === "") {
+                inContent = true
+              }
+            }
+            content = content.trim()
+            if (content) {
+              try {
+                const output = JSON.parse(content)
+                console.log("[DEBUG] computeLegacy slot", slot, "Output part parsed:", Object.keys(output))
+                return {
+                  Messages: output.Messages || [],
+                  Spawns: output.Spawns || [],
+                  Output: output.Output || output,
+                  Error: output.Error,
+                }
+              } catch (e) {
+                console.log("[DEBUG] computeLegacy Output parse failed:", e.message)
+              }
+            }
+          }
+        }
       }
+    }
+
+    // Fallback - check if res.out has the result directly
+    if (res.out?.Messages) {
+      console.log("[DEBUG] computeLegacy slot", slot, "from res.out Messages:", res.out.Messages.length)
+      return res.out
+    }
+
+    console.log("[DEBUG] computeLegacy slot", slot, "no Messages found")
+    return {
+      Messages: [],
+      Spawns: [],
+      Output: res.out || {},
+      Error: null,
     }
   }
 
@@ -237,42 +311,38 @@ class HB {
       let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
 
-      // Check if data contains newlines or special chars that require multipart
-      const hasComplexData = data && typeof data === "string" && /[\x00-\x1f\x7f-\x9f]/.test(data)
+      // Always use JSON POST with commitment signatures for all messages
+      // JSON can handle complex data (newlines, etc.) in the body field
+      // HTTP multipart doesn't work because with_only_committed filters out body data
+      console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
 
-      if (hasComplexData) {
-        // Use HTTP POST with multipart for complex data
-        // This allows body content without base64 encoding in headers
-        console.log("[HB SCHEDULE DEBUG] Using HTTP POST for complex data")
-        const res = await this.post({ path: `/~scheduler@1.0/schedule`, ..._tags })
-        return {
-          slot: res.out?.slot ?? parseInt(res.headers?.get?.("slot")),
-          pid,
-          res,
-        }
-      } else {
-        // Use JSON POST with commitment signatures for simple messages
-        console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
+      const committed = await this.commit(_tags, { path: false })
+      console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
+      console.log("[HB SCHEDULE DEBUG] committed keys:", Object.keys(committed))
+      console.log("[HB SCHEDULE DEBUG] commitments fields:", committed.commitments ? Object.keys(committed.commitments) : 'none')
+      const sigId = committed.commitments ? Object.keys(committed.commitments)[0] : null
+      if (sigId) {
+        console.log("[HB SCHEDULE DEBUG] commitment.committed:", committed.commitments[sigId].committed)
+      }
+      const jsonBody = JSON.stringify(committed)
+      console.log("[HB SCHEDULE DEBUG] JSON body length:", jsonBody.length)
+      console.log("[HB SCHEDULE DEBUG] data in JSON:", JSON.parse(jsonBody).data?.substring?.(0, 100))
 
-        const committed = await this.commit(_tags, { path: false })
-        console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
+      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(committed),
+      })
 
-        const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(committed),
-        })
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
+      }
 
-        if (!response.ok) {
-          const text = await response.text()
-          throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
-        }
-
-        return {
-          slot: parseInt(response.headers.get("slot")),
-          pid,
-          res: { status: response.status },
-        }
+      return {
+        slot: parseInt(response.headers.get("slot")),
+        pid,
+        res: { status: response.status },
       }
     }
   }
@@ -393,19 +463,23 @@ class HB {
 
     // Use JSON POST with commitment signatures (beta3-compatible approach)
     const committed = await this.commit(t, { path: false })
+    console.log("[SPAWN DEBUG] sending JSON POST to", this.url)
     const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(committed),
     })
+    console.log("[SPAWN DEBUG] response status:", response.status)
 
     if (!response.ok) {
       const text = await response.text()
       throw new Error(`SpawnLegacy failed: ${response.status} - ${text.substring(0, 200)}`)
     }
 
+    const pid = response.headers.get("process")
+    console.log("[SPAWN DEBUG] got pid:", pid)
     return {
-      pid: response.headers.get("process"),
+      pid,
       slot: parseInt(response.headers.get("slot")),
       res: { status: response.status },
     }

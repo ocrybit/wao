@@ -40,9 +40,13 @@ const buildAoTypes = (obj) => {
 // todo: handle @
 export const commit = async (obj, opts) => {
   const msg = await opts.signer(obj, opts)
+  console.log("[COMMIT DEBUG] msg.headers keys:", Object.keys(msg.headers))
+  console.log("[COMMIT DEBUG] msg.headers ao-types:", msg.headers["ao-types"])
+  console.log("[COMMIT DEBUG] msg.body exists:", !!msg.body, "type:", typeof msg.body, "length:", msg.body?.length || msg.body?.size)
   const {
     decodedSignatureInput: { components },
   } = await verify(msg)
+  console.log("[COMMIT DEBUG] components:", components)
 
   let body = {}
 
@@ -62,9 +66,11 @@ export const commit = async (obj, opts) => {
   // Handle body resolution
   let bodyContent = null
   if (msg.body) {
+    console.log("[COMMIT DEBUG] processing msg.body, inlineBodyKey:", inlineBodyKey)
     if (msg.body instanceof Blob) {
       const arrayBuffer = await msg.body.arrayBuffer()
       bodyContent = Buffer.from(arrayBuffer)
+      console.log("[COMMIT DEBUG] converted Blob to Buffer, length:", bodyContent.length)
     } else {
       bodyContent = msg.body
     }
@@ -72,9 +78,16 @@ export const commit = async (obj, opts) => {
     // If inline-body-key is "data", put content in data field
     if (inlineBodyKey === "data") {
       body.data = bodyContent
+      console.log("[COMMIT DEBUG] set body.data, length:", bodyContent.length || bodyContent.size)
+      console.log("[COMMIT DEBUG] body.data preview:", bodyContent?.substring?.(0, 50))
+      console.log("[COMMIT DEBUG] body.data type:", typeof bodyContent)
     } else {
       body.body = bodyContent
+      console.log("[COMMIT DEBUG] set body.body, length:", bodyContent.length || bodyContent.size)
+      console.log("[COMMIT DEBUG] body.body preview:", bodyContent?.substring?.(0, 50))
     }
+  } else {
+    console.log("[COMMIT DEBUG] no msg.body to process")
   }
 
   // Always include ao-types from headers (for type conversion in JSON codec)
@@ -110,7 +123,17 @@ export const commit = async (obj, opts) => {
   const keyid = extractKeyidFromSigInput(msg.headers["signature-input"]) || `publickey:${pubKeyBase64}`
 
   // Build the list of committed fields (same as components, normalized to match what Erlang expects)
-  const committedFields = components.map(v => v === "@path" ? "path" : v)
+  let committedFields = components.map(v => v === "@path" ? "path" : v)
+
+  // If content-digest was signed and ao-body-key is set, the body field is committed through content-digest
+  // We need to add it to the committed list so HyperBEAM's with_only_committed doesn't strip it
+  if (components.includes("content-digest") && inlineBodyKey && inlineBodyKey !== "body") {
+    // Add the body key (e.g., "data") to committed fields if not already there
+    if (!committedFields.includes(inlineBodyKey)) {
+      committedFields.push(inlineBodyKey)
+      console.log("[COMMIT DEBUG] Added", inlineBodyKey, "to committedFields via content-digest")
+    }
+  }
 
   // Extract just the base64 signature data from the header format "sig-xxx=:base64data:"
   // HyperBEAM expects raw base64 without colons (uses b64fast:encode/decode)

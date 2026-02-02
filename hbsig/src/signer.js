@@ -155,8 +155,20 @@ const smartSign = async (obj, path) => {
     let canUseSimpleEncoding = true
     let hasBodyField = false
 
+    // Check if we have a data/body field with non-printable chars
+    // If so, we'll put it directly in the HTTP body (not multipart) with inline-body-key
+    let bodyFieldKey = null
+    let bodyFieldValue = null
+
     for (const [key, value] of Object.entries(filtered)) {
       if (key === "path") continue
+
+      // Check if this is the "body" or "data" field with complex string
+      if ((key === "body" || key === "data") && typeof value === "string" && hasNonPrintableChars(value)) {
+        bodyFieldKey = key
+        bodyFieldValue = value
+        continue // Don't set canUseSimpleEncoding to false for this - we'll handle it specially
+      }
 
       // Check if this is the "body" field
       if (key === "body" || key === "data") {
@@ -192,6 +204,80 @@ const smartSign = async (obj, path) => {
         canUseSimpleEncoding = false
         break
       }
+    }
+
+    // Handle case where only the data/body field has non-printable chars
+    // Put the data directly in the HTTP body with inline-body-key, not multipart
+    if (canUseSimpleEncoding && bodyFieldKey) {
+      const message = {}
+      if (path) message.path = path
+
+      const types = []
+
+      for (const [key, value] of Object.entries(filtered)) {
+        if (key === "path") continue
+        if (key === bodyFieldKey) continue // Skip the body field, we'll add it separately
+
+        if (value === "" || (Buffer.isBuffer(value) && value.length === 0)) {
+          message[key] = ""
+        } else if (Array.isArray(value) && value.length === 0) {
+          types.push(`${key}="list"`)
+          message[key] = ""
+        } else if (
+          value &&
+          typeof value === "object" &&
+          !Buffer.isBuffer(value) &&
+          Object.keys(value).length === 0
+        ) {
+          types.push(`${key}="map"`)
+          message[key] = ""
+        } else if (isSimpleArray(value)) {
+          types.push(`${key}="list"`)
+          message[key] = encodeAsStructuredFieldList(value)
+        } else if (typeof value === "number") {
+          types.push(
+            `${key}="${Number.isInteger(value) ? "integer" : "float"}"`
+          )
+          message[key] = String(value)
+        } else if (typeof value === "boolean") {
+          types.push(`${key}="atom"`)
+          message[key] = String(value)
+        } else if (value === null || value === undefined) {
+          types.push(`${key}="atom"`)
+          message[key] = String(value)
+        } else if (typeof value === "string") {
+          message[key] = value
+        }
+      }
+
+      if (types.length > 0) {
+        message["ao-types"] = types.join(", ")
+      }
+
+      // Set ao-body-key to tell HyperBEAM which field the body maps to
+      if (bodyFieldKey !== "body") {
+        message["ao-body-key"] = bodyFieldKey
+      }
+
+      // Add the body to the message so httpsig_to can compute content-digest
+      message.body = bodyFieldValue
+
+      console.log("[SMARTSIGN DEBUG] message before httpsig_to:", Object.keys(message))
+      console.log("[SMARTSIGN DEBUG] message.body type:", typeof message.body, "length:", message.body?.length)
+      console.log("[SMARTSIGN DEBUG] message.body preview:", message.body?.substring?.(0, 50))
+
+      // Return with the body field value as the HTTP body
+      // httpsig_to will add content-digest based on the body
+      const encoded = httpsig_to(message)
+
+      console.log("[SMARTSIGN DEBUG] encoded keys:", Object.keys(encoded))
+      console.log("[SMARTSIGN DEBUG] encoded.body type:", typeof encoded.body, "length:", encoded.body?.length)
+      console.log("[SMARTSIGN DEBUG] encoded.body preview:", encoded.body?.substring?.(0, 50))
+
+      const { body, ...headers } = encoded
+
+      // Return the headers and body
+      return { headers, body }
     }
 
     if (canUseSimpleEncoding) {
@@ -251,7 +337,10 @@ const smartSign = async (obj, path) => {
         message["ao-types"] = types.join(", ")
       }
 
-      return httpsig_to(message)
+      // Return in { headers, body } format to match what _sign expects
+      const encoded = httpsig_to(message)
+      const { body, ...headers } = encoded
+      return { headers, body }
     }
 
     // For complex structures that need multipart, use enc()
@@ -272,7 +361,9 @@ const smartSign = async (obj, path) => {
     // httpsig_to expects the structured format
     const encoded = httpsig_to(flattened)
 
-    return encoded
+    // Return in { headers, body } format to match what _sign expects
+    const { body, ...headers } = encoded
+    return { headers, body }
   } catch (error) {
     console.error("Encoding failed:", error)
 
@@ -317,11 +408,11 @@ const encode = async (obj, path) => {
   console.log("[ENCODE DEBUG] complexStringFields:", complexStringFields.map(([k]) => k))
 
   if (complexStringFields.length > 0) {
-    // Complex strings with newlines - use enc() for multipart encoding
-    // This puts the complex content in the HTTP body, not headers
-    // The body content is NOT part of the signed fields, but uses inline-body-key
-    console.log("[ENCODE DEBUG] Using enc() for complex string fields:", complexStringFields.map(([k]) => k))
-    return await enc(filtered)
+    // Complex strings with newlines - use smartSign() for base64 encoding in headers
+    // This encodes the data as :base64: structured field format which can be signed
+    // For JSON POST, this keeps everything in headers (no multipart body needed)
+    console.log("[ENCODE DEBUG] Using smartSign() for complex string fields:", complexStringFields.map(([k]) => k))
+    return await smartSign(filtered, path)
   }
 
   // Otherwise use the standard pipeline for simple flat messages
@@ -422,10 +513,16 @@ async function _sign({
 
   // Exclude metadata fields that get consumed/stripped during JSON codec parsing:
   // - ao-types: used for type conversion, then removed by structured codec
-  // - content-digest: HyperBEAM recomputes this during verification, so don't sign it
   // - accept-bundle: request metadata for inlining nested data
-  // These fields are still included in the JSON body but not signed
-  const metadataFields = ["body-keys", "path", "ao-types", "content-digest", "accept-bundle"]
+  // NOTE: content-digest MUST be signed when there's body content
+  // When body-keys is set (multipart) OR ao-body-key is set (inline body),
+  // content-digest verifies the body and must be in the signature
+  const metadataFields = ["body-keys", "path", "ao-types", "accept-bundle"]
+  const hasInlineBody = lowercaseHeaders["ao-body-key"] && body
+  // Only exclude content-digest when there's no body content
+  if (bodyKeys.length === 0 && !hasInlineBody) {
+    metadataFields.push("content-digest")
+  }
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
