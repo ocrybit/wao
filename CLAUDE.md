@@ -119,7 +119,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`1ebe8537`](https://github.com/ocrybit/HyperBEAM/commit/1ebe8537) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`8cc185a6`](https://github.com/ocrybit/HyperBEAM/commit/8cc185a6) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -129,20 +129,22 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`a326f607`](https://github.com/ocrybit/HyperBEAM/commit/a326f607) - Fix malformed .gitignore entry
+**Merged HB:** [`8cc185a6`](https://github.com/ocrybit/HyperBEAM/commit/8cc185a6) - Add on_load hot-patch for hb_util:atom/1 and clean debug output
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
-- [ ] Task 2: Make hbsig Tests 100% Pass ⚠️ 1 EDGE CASE REMAINING (empty_map)
+- [x] Task 2: Make hbsig Tests 100% Pass ✅ ALL 7 TESTS PASSING (137/137 signer, 120/120 httpsig)
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass ⚠️ IN PROGRESS
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
 ### Test Results Report (Last Updated: 2026-02-03)
 
-#### hbsig Tests (Task 2) - ✅ MOSTLY PASSING (1 edge case)
+#### hbsig Tests (Task 2) - ✅ ALL PASSING
 
-**Linkification Issue FIXED:** Changed `to_erl/1` in dev_hbsig.erl to bypass dev_codec_json and use json:decode + dev_codec_structured with bundle=>true.
+**Key Fixes:**
+- Changed `to_erl/1` in dev_hbsig.erl to bypass dev_codec_json and use json:decode + dev_codec_structured with bundle=>true (linkification fix)
+- Added `-on_load(init/0)` hot-patch of `hb_util:atom/1` to use `list_to_atom` instead of `list_to_existing_atom` (custom symbol/atom fix)
 
 | # | Test File | Subtests | Status | Notes |
 |---|-----------|----------|--------|-------|
@@ -151,10 +153,8 @@ Using official upstream release tags as checkpoints.
 | 3 | `erl_json.test.js` | 3 | ✅ PASS | 3/3 passing (100/100 cases) |
 | 4 | `flat.test.js` | 2 | ✅ PASS | 2/2 passing (40/40 cases) |
 | 5 | `structured.test.js` | 3 | ✅ PASS | 3/3 passing (20/20 cases) |
-| 6 | `httpsig.test.js` | 2 | ⚠️ PARTIAL | 1/2 passing (119/120 cases, 1 edge case) |
-| 7 | `signer.test.js` | 1 | ⚠️ PARTIAL | 0/1 passing (136/137 cases, 1 edge case) |
-
-**Remaining Edge Case:** Complex object with `empty_map: {}` and `symbol: Symbol("atom_value")` fails in httpsig_to and signer tests. This is a minor issue that doesn't affect core functionality.
+| 6 | `httpsig.test.js` | 2 | ✅ PASS | 2/2 passing (120/120 cases) |
+| 7 | `signer.test.js` | 1 | ✅ PASS | 1/1 passing (137/137 cases) |
 
 #### Hyperbeam Integration Tests (Task 3) - ⚠️ IN PROGRESS
 
