@@ -138,7 +138,7 @@ Using official upstream release tags as checkpoints.
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
-### Test Results Report (Last Updated: 2026-02-02)
+### Test Results Report (Last Updated: 2026-02-03)
 
 #### hbsig Tests (Task 2) - ✅ COMPLETE
 
@@ -175,7 +175,7 @@ Using official upstream release tags as checkpoints.
 | 13 | `patch.test.js` | 0/3 | ❌ FAIL |
 | 14 | `process.test.js` | 0/2 | ❌ FAIL |
 | 15 | `relay.test.js` | 0/1 | ❌ FAIL |
-| 16 | `router.test.js` | 9/25 | ⚠️ PARTIAL |
+| 16 | `router.test.js` | 9/21 | ⚠️ PARTIAL |
 | 17 | `scheduler.test.js` | 0/1 | ❌ FAIL |
 | 18 | `server.test.js` | 1/2 | ⚠️ PARTIAL |
 | 19 | `simple-pay.test.js` | 0/1 | ❌ FAIL |
@@ -183,20 +183,20 @@ Using official upstream release tags as checkpoints.
 | 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL |
 | 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL |
 
-**Summary:** 22/71 tests passing (31.0%)
+**Summary:** 22/67 tests passing (32.8%)
 - ✅ Fully passing: cache (1/1), eunit (1/1), faff (1/1), json (1/1), message (1/1), meta (1/1)
-- ⚠️ Partial: hyperbeam (5/14), router (9/25), server (1/2), upload (1/3)
+- ⚠️ Partial: hyperbeam (5/14), router (9/21), server (1/2), upload (1/3)
 
 **Common failure patterns:**
-1. `invalid_commitment` error - `device-stack` array gets linkified by hbsig, but HyperBEAM's commitment validation doesn't handle link objects
+1. `invalid_commitment` error - `device-stack` array encoding mismatch between hbsig and HyperBEAM (see detailed analysis below)
 2. `hb_name` registry not working - cron tasks can't be stopped because `hb_name:lookup` returns undefined
 3. `hb_cache:write` errors - local_name registration fails with cache write issues
 4. 500 errors on various device calls - related to process/message resolution
 
 **Blocked tests requiring HyperBEAM-level fixes:**
+- `stack.test.js`, `process.test.js`: Array encoding mismatch (see "⚠️ BLOCKED: device-stack Array Encoding Mismatch" below)
 - `cron.test.js`: hb_name registry not persisting task registrations
 - `local_name.test.js`: hb_cache write failures
-- `stack.test.js`, `process.test.js`: device-stack linkification causing invalid_commitment
 - Tests using `add@1.0`: Missing NIF (dev_add.so)
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
@@ -313,6 +313,48 @@ const path = h.path
 - **signer.js:smartSign()**: Detects data/body fields with non-printable chars, puts in HTTP body
 - **signer.js:sign()**: Sign content-digest when `ao-body-key` is set and body exists
 - **commit.js**: Add body field to committed list when content-digest is signed
+
+### ⚠️ BLOCKED: device-stack Array Encoding Mismatch (2026-02-03)
+
+**Affected Tests:** `stack.test.js`, `process.test.js`, and any test using `device-stack` arrays
+
+**Problem:** When spawning a process with `device-stack: ["inc@1.0", "double@1.0"]`, signature verification fails with `invalid_commitment`.
+
+**Root Cause:** Fundamental encoding mismatch between hbsig and HyperBEAM for array values:
+
+1. **hbsig encoding (client-side):**
+   - Arrays are encoded as RFC 8941 structured field list strings
+   - Example: `device-stack: ["inc@1.0", "double@1.0"]` → HTTP header: `device-stack: "inc@1.0", "double@1.0"`
+   - This string is what gets signed in the signature base
+
+2. **HyperBEAM parsing (server-side):**
+   - JSON codec receives `ao-types: device-stack="list"`
+   - Parses the structured field string into Erlang list: `[<<"inc@1.0">>, <<"double@1.0">>]`
+   - The list may get linkified (converted to hash reference) by `hb_link:normalize()`
+
+3. **HyperBEAM verification (signature check):**
+   - HTTPSig codec needs to re-encode the list to verify signature
+   - HTTPSig codec encodes lists as numbered maps: `{1 => ..., 2 => ...}`
+   - This produces a DIFFERENT signature base than the original RFC 8941 string
+   - Signature verification fails because bases don't match
+
+**Attempted Fixes and Results:**
+
+1. **Remove array from ao-types** (hbsig-side):
+   - Prevented HyperBEAM from parsing as list, kept as string
+   - Result: `{badmap, <<"\"inc@1.0\", \"double@1.0\"">>}` - stack device can't use string
+
+2. **Disable linkification** (HyperBEAM-side, `bundle => true`):
+   - Prevented list from being converted to link reference
+   - Result: Still failed - encoding mismatch still exists for list verification
+
+**Required Fix (HyperBEAM-level):**
+Either:
+- A) HTTPSig codec update: Encode simple string lists as RFC 8941 structured field strings (matching hbsig format)
+- B) Stack device update: Parse RFC 8941 structured field format strings directly
+- C) New signing approach: Use multipart body for device-stack instead of header
+
+**Workaround:** None currently available for tests using device-stack arrays.
 
 ---
 
