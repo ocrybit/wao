@@ -53,29 +53,11 @@ const canArrayBeInHeader = array => {
   // Empty arrays can be in headers
   if (array.length === 0) return true
 
-  // Arrays with objects must go to body
-  if (array.some(item => isPojo(item))) return false
-
-  // Arrays with binary data must go to body
-  if (array.some(item => isBytes(item) && item.length > 0)) return false
-
-  // Arrays with non-ASCII strings must go to body
-  if (array.some(item => typeof item === "string" && hasNonAscii(item)))
-    return false
-
-  // Arrays with nested arrays must go to body (to match original behavior)
-  if (array.some(item => Array.isArray(item))) return false
-
-  // Arrays with nested arrays that have objects must go to body
-  if (
-    array.some(
-      item => Array.isArray(item) && item.some(subItem => isPojo(subItem))
-    )
-  )
-    return false
-
-  // Simple arrays of primitives can stay in headers
-  return true
+  // ALL non-empty arrays must go to body for HTTPSig multipart encoding
+  // This ensures arrays are covered by content-digest signature verification
+  // Previously simple arrays stayed in headers, but this caused signature
+  // verification failures when HyperBEAM parsed and re-encoded them
+  return false
 }
 
 // Array analysis helper

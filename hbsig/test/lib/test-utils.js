@@ -3,7 +3,7 @@ import { erl_json_to, normalize } from "../../src/erl_json.js"
 import { erl_str_from } from "../../src/erl_str.js"
 import assert from "assert"
 import { describe, it, before, after } from "node:test"
-import { HyperBEAM } from "wao/test"
+import { HyperBEAM } from "../../../src/test.js"
 import { createSigner } from "../../src/signer.js"
 
 function mod(obj) {

@@ -133,26 +133,28 @@ Using official upstream release tags as checkpoints.
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
-- [x] Task 2: Make hbsig Tests 100% Pass (717/717 passing)
+- [ ] Task 2: Make hbsig Tests 100% Pass ⚠️ LINKIFICATION ISSUES (core tests pass, linkification affects many test comparisons)
 - [ ] Task 3: Make wao/test/hyperbeam Tests 100% Pass ⚠️ BLOCKED
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
 ### Test Results Report (Last Updated: 2026-02-03)
 
-#### hbsig Tests (Task 2) - ✅ COMPLETE
+#### hbsig Tests (Task 2) - ⚠️ LINKIFICATION ISSUES
 
-| # | Test File | Subtests | Cases Passed | Cases Failed | Status |
-|---|-----------|----------|--------------|--------------|--------|
-| 1 | `id.test.js` | 1 | 1/1 | 0 | ✅ DONE |
-| 2 | `commit.test.js` | 2 | 2/2 | 0 | ✅ DONE |
-| 3 | `erl_json.test.js` | 3 | 257/257 | 0 | ✅ DONE |
-| 4 | `flat.test.js` | 2 | 40/40 | 0 | ✅ DONE |
-| 5 | `structured.test.js` | 3 | 150/150 | 0 | ✅ DONE |
-| 6 | `httpsig.test.js` | 2 | 130/130 | 0 | ✅ DONE |
-| 7 | `signer.test.js` | 1 | 137/137 | 0 | ✅ DONE |
+**Note:** Tests previously passed with node_modules HyperBEAM which failed to start (silently skipped). With fixed imports, tests now reach HyperBEAM but encounter linkification issues.
 
-**hbsig Total:** 717/717 cases passing (100%)
+| # | Test File | Subtests | Status | Notes |
+|---|-----------|----------|--------|-------|
+| 1 | `id.test.js` | 1 | ✅ PASS | 1/1 passing |
+| 2 | `commit.test.js` | 2 | ✅ PASS | 2/2 passing |
+| 3 | `erl_json.test.js` | 3 | ⚠️ PARTIAL | ~170/257 passing (87 fail due to linkification) |
+| 4 | `flat.test.js` | 2 | ⚠️ PARTIAL | flat_from passes (20/20), flat_to fails (18/20 due to linkification) |
+| 5 | `structured.test.js` | 3 | ⚠️ UNKNOWN | Needs retest |
+| 6 | `httpsig.test.js` | 2 | ⚠️ UNKNOWN | Needs retest |
+| 7 | `signer.test.js` | 1 | ⚠️ UNKNOWN | Needs retest |
+
+**Note:** Core signing functionality works. Linkification affects test result comparisons.
 
 #### Hyperbeam Integration Tests (Task 3) - ⚠️ IN PROGRESS
 
@@ -313,6 +315,72 @@ const path = h.path
 - **signer.js:smartSign()**: Detects data/body fields with non-printable chars, puts in HTTP body
 - **signer.js:sign()**: Sign content-digest when `ao-body-key` is set and body exists
 - **commit.js**: Add body field to committed list when content-digest is signed
+
+### ✅ FIXED: test-utils.js HyperBEAM Import (2026-02-03)
+
+**Problem:** hbsig tests were failing with "Cannot read properties of undefined (reading 'n')" error because HyperBEAM wasn't starting.
+
+**Root Cause:**
+- `hbsig/test/lib/test-utils.js` imported `HyperBEAM` from `wao/test` (node_modules)
+- The node_modules version is outdated and always uses rebar3 mode
+- rebar3 mode has a "Hook for compile failed!" issue that prevents HyperBEAM from starting
+- The `.env.hyperbeam` file sets `HB_REBAR3=false`, but node_modules version ignores it
+
+**Fix Applied:**
+Changed import in `test-utils.js` from:
+```javascript
+import { HyperBEAM } from "wao/test"
+```
+to:
+```javascript
+import { HyperBEAM } from "../../../src/test.js"
+```
+
+**Result:** HyperBEAM now starts correctly using `HB_REBAR3=false` (direct erl mode instead of rebar3 shell).
+
+### ✅ FIXED: content-digest Signing for Body Content (2026-02-03)
+
+**Problem:** Tests sending JSON body to `/~hbsig@1.0/flat_from` failed with `{badkey,<<"body">>}` because the body field was stripped by `with_only_committed()`.
+
+**Root Cause:**
+- In `signer.js:_sign()`, `content-digest` was excluded from signing when `ao-body-key` wasn't set
+- Without `content-digest` in committed fields, HyperBEAM's `with_only_committed()` stripped the body
+- The condition `!hasInlineBody` checked for `ao-body-key` header, but body content can exist without this header
+
+**Fix Applied:**
+Changed condition in `signer.js:_sign()` from:
+```javascript
+if (bodyKeys.length === 0 && !hasInlineBody) {
+  metadataFields.push("content-digest")
+}
+```
+to:
+```javascript
+if (bodyKeys.length === 0 && !body) {
+  metadataFields.push("content-digest")
+}
+```
+
+**Result:** `content-digest` is now signed whenever there's body content, allowing HyperBEAM to verify and preserve the body.
+
+### ⚠️ Linkification Affecting hbsig Tests (2026-02-03)
+
+**Note:** With the above fixes, hbsig tests now reach HyperBEAM correctly. However, many test cases fail due to linkification:
+- Nested objects get converted to `+link` references (e.g., `{ a: { b: "value" } }` → `{ "a+link": "hash" }`)
+- Arrays get linkified similarly (e.g., `{ items: [1, 2, 3] }` → `{ "items+link": "hash" }`)
+- Even empty strings can be linkified in some contexts
+
+**Affected Tests:**
+- `erl_json.test.js`: ~87 cases fail due to linkification of nested structures
+- `flat.test.js` flat_to: ~18 cases fail due to linkification
+- Other tests with nested/array structures
+
+**Root Cause:** HyperBEAM's `hb_link:normalize()` converts nested structures to link references for efficiency. The tests expect inline data, but linkification transforms the response structure.
+
+**Possible Solutions:**
+1. Modify tests to expect linkified output
+2. Add `accept-bundle: true` header (already present, but may not apply to all code paths)
+3. Adjust HyperBEAM's bundle mode handling for hbsig device responses
 
 ### ⚠️ BLOCKED: device-stack Array Encoding Mismatch (2026-02-03)
 

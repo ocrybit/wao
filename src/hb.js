@@ -401,7 +401,6 @@ class HB {
       })
       return { res, pid: res.out.process }
     } else {
-      // Use JSON POST with commitment signatures (beta3-compatible approach)
       const spawnTags = mergeLeft(tags, {
         "random-seed": seed(16),
         type: "Process",
@@ -411,6 +410,22 @@ class HB {
         scheduler: this.operator ?? this.addr,
       })
 
+      // Check if spawn has arrays (like device-stack) that need HTTPSig multipart
+      // JSON POST linkifies arrays which breaks signature verification
+      const hasArrays = Object.values(spawnTags).some(v => Array.isArray(v))
+
+      if (hasArrays) {
+        // Use HTTPSig multipart for arrays - arrays go to body parts with body-keys
+        // This works because content-digest covers the body, not individual array fields
+        const result = await this.post({ ...spawnTags, path: "/~scheduler@1.0/schedule" })
+        return {
+          pid: result.headers?.process,
+          slot: parseInt(result.headers?.slot ?? "0"),
+          res: { status: 200 },
+        }
+      }
+
+      // Use JSON POST with commitment signatures for simple messages
       const committed = await this.commit(spawnTags, { path: false })
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",

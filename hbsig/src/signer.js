@@ -301,7 +301,14 @@ const smartSign = async (obj, path) => {
           types.push(`${key}="map"`)
           message[key] = ""
         } else if (isSimpleArray(value)) {
-          types.push(`${key}="list"`)
+          // DON'T add type annotation for arrays sent via JSON POST
+          // If we add ao-types: device-stack="list", HyperBEAM will:
+          // 1. Parse the string into a list
+          // 2. Linkify the list (convert to hash reference)
+          // 3. Try to verify signature against the linkified value (FAILS)
+          // By NOT adding ao-types, the string stays as-is and verification passes.
+          // The receiving device needs to parse the structured field format string.
+          // types.push(`${key}="list"`)  // DISABLED to prevent linkification
           message[key] = encodeAsStructuredFieldList(value)
         } else if (typeof value === "number") {
           types.push(
@@ -331,10 +338,12 @@ const smartSign = async (obj, path) => {
         message["ao-types"] = types.join(", ")
       }
 
-      // Return in { headers, body } format to match what _sign expects
-      const encoded = httpsig_to(message)
-      const { body, ...headers } = encoded
-      return { headers, body }
+      // For simple flat messages with arrays encoded as structured field lists,
+      // DON'T call httpsig_to() as it would trigger structuredTo/structuredFrom cycle
+      // which converts list strings back to arrays and then to numbered maps,
+      // triggering unwanted multipart encoding.
+      // Instead, just return the message directly with headers/body separated.
+      return { headers: message, body: undefined }
     }
 
     // For complex structures that need multipart, use enc()
@@ -389,9 +398,9 @@ const encode = async (obj, path) => {
     return await enc(filtered)
   }
 
-  // If object contains arrays, use enc() directly
-  // Arrays get converted to numbered maps which trigger multipart encoding
-  // enc() properly sets body-keys header which is needed for content-digest signing
+  // ALL arrays need HTTPSig multipart encoding via enc()
+  // Arrays go to body parts and are covered by content-digest
+  // This avoids linkification issues during signature verification
   const hasArrays = Object.values(filtered).some(v => Array.isArray(v))
   if (hasArrays) {
     return await enc(filtered)
@@ -509,12 +518,10 @@ async function _sign({
   // - ao-types: used for type conversion, then removed by structured codec
   // - accept-bundle: request metadata for inlining nested data
   // NOTE: content-digest MUST be signed when there's body content
-  // When body-keys is set (multipart) OR ao-body-key is set (inline body),
-  // content-digest verifies the body and must be in the signature
+  // This allows HyperBEAM to verify the body is intact and include it in committed fields
   const metadataFields = ["body-keys", "path", "ao-types", "accept-bundle"]
-  const hasInlineBody = lowercaseHeaders["ao-body-key"] && body
-  // Only exclude content-digest when there's no body content
-  if (bodyKeys.length === 0 && !hasInlineBody) {
+  // Only exclude content-digest when there's no body content at all
+  if (bodyKeys.length === 0 && !body) {
     metadataFields.push("content-digest")
   }
   let isPath = false

@@ -21,6 +21,8 @@ const computeContentDigest = (body) => {
 }
 
 // Helper to build ao-types string from an object
+// Arrays ARE included in ao-types - HyperBEAM needs this to parse RFC 8941 structured field strings
+// The string format "item1", "item2" will be parsed into an Erlang list
 const buildAoTypes = (obj) => {
   const types = []
   for (const [key, value] of Object.entries(obj)) {
@@ -30,7 +32,9 @@ const buildAoTypes = (obj) => {
       types.push(`${key}="atom"`)
     } else if (value === null) {
       types.push(`${key}="atom"`)
-    } else if (Array.isArray(value)) {
+    } else if (Array.isArray(value) && value.length > 0) {
+      // Add ao-types for arrays so HyperBEAM parses them as lists
+      // The structured field string format will be parsed into an Erlang list
       types.push(`${key}="list"`)
     }
   }

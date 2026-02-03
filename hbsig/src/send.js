@@ -39,10 +39,15 @@ export async function send(signedMsg, fetchImpl = fetch) {
     signedMsg.method !== "GET" &&
     signedMsg.method !== "HEAD"
   ) {
-    fetchOptions.body = signedMsg.body
+    // Convert Blob to Buffer for Node.js fetch compatibility
+    // Node.js fetch may not correctly handle Blob bodies
+    if (signedMsg.body instanceof Blob) {
+      const arrayBuffer = await signedMsg.body.arrayBuffer()
+      fetchOptions.body = Buffer.from(arrayBuffer)
+    } else {
+      fetchOptions.body = signedMsg.body
+    }
   }
-  // Debug: log what we're actually sending
-  const bodySize = fetchOptions.body?.size || fetchOptions.body?.length || fetchOptions.body?.byteLength || 0
   const response = await fetchImpl(signedMsg.url, fetchOptions)
   if (response.status >= 400) {
     const errorText = await response.text()
