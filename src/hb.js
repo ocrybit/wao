@@ -129,97 +129,29 @@ class HB {
   }
 
   async computeLegacy({ pid, slot }) {
-    // In beta3, the genesis-wasm compute result is returned as multipart/form-data
-    // We need to parse the multipart body to extract the actual result
-
-    const res = await this.get({
-      path: `/${pid}/compute/results`,
-      slot
-    })
-
-    // Check if response is multipart - extract result from body
-    const contentType = res.headers?.["content-type"] || res.out?.["content-type"] || ""
-    if (contentType.includes("multipart/form-data")) {
-      // Extract boundary from content-type
-      const boundaryMatch = contentType.match(/boundary="?([^";\s]+)"?/)
-      const boundary = boundaryMatch ? boundaryMatch[1] : null
-
-      if (boundary && res.body) {
-        // Parse multipart body to extract the result
-        const parts = res.body.split(`--${boundary}`)
-        let jsonPart = null
-
-        for (const part of parts) {
-          if (part.includes("Output") || part.includes("Messages") || part.includes('"data"')) {
-            // Look for JSON content in this part
-            const jsonMatch = part.match(/\{[\s\S]*\}/)
-            if (jsonMatch) {
-              try {
-                const parsed = JSON.parse(jsonMatch[0])
-                if (parsed.Output || parsed.Messages) {
-                  jsonPart = parsed
-                  break
-                }
-              } catch (e) {}
-            }
-          }
-        }
-
-        if (jsonPart) {
-          if (jsonPart.Messages) return jsonPart
-          if (jsonPart.Output && typeof jsonPart.Output === 'object') {
-            return {
-              Messages: jsonPart.Output.Messages || [],
-              Spawns: jsonPart.Output.Spawns || [],
-              Output: jsonPart.Output.Output || jsonPart.Output,
-              Error: jsonPart.Output.Error,
-            }
-          }
-        }
-
-        // If no JSON found, try to find Output field in the multipart parts
-        // The Output is typically in a part with content-disposition: form-data; name="Output"
-        for (const part of parts) {
-          if (part.includes('name="Output"') || part.includes("name=Output")) {
-            // Extract content after headers (blank line separates headers from content)
-            const lines = part.split(/\r?\n/)
-            let inContent = false
-            let content = ""
-            for (const line of lines) {
-              if (inContent) {
-                content += line + "\n"
-              } else if (line.trim() === "") {
-                inContent = true
-              }
-            }
-            content = content.trim()
-            if (content) {
-              try {
-                const output = JSON.parse(content)
-                return {
-                  Messages: output.Messages || [],
-                  Spawns: output.Spawns || [],
-                  Output: output.Output || output,
-                  Error: output.Error,
-                }
-              } catch (e) {
-              }
-            }
-          }
-        }
+    // In beta3, try to get results directly via bundle format which avoids cache lazy link issues
+    try {
+      const json = await this.compute({ pid, slot, path: "/results/json" })
+      const result = JSON.parse(json.body)
+      console.log("[DEBUG] computeLegacy slot", slot, "Messages:", result.Messages?.length || 0, "Output:", result.Output?.slice?.(0, 50) || result.Output)
+      return result
+    } catch (e) {
+      console.log("[DEBUG] computeLegacy error for slot", slot, ":", e.message, "- trying fallback")
+      // Fallback: get results via bundle and extract Output
+      const res = await this.getJSON({
+        path: `/${pid}/compute/results`,
+        slot,
+        headers: { "accept-bundle": "true" }
+      })
+      console.log("[DEBUG] computeLegacy fallback result keys:", Object.keys(res), "Output keys:", res.Output ? Object.keys(res.Output) : "none")
+      // Convert bundle format to legacy format
+      const output = res.Output || {}
+      return {
+        Messages: output.Messages || [],
+        Spawns: output.Spawns || [],
+        Output: output.Output || "",
+        Error: output.Error,
       }
-    }
-
-    // Fallback - check if res.out has the result directly
-    if (res.out?.Messages) {
-      return res.out
-    }
-
-    return {
-      Messages: [],
-      Spawns: [],
-      Output: res.out || {},
-      Error: null,
     }
   }
 
@@ -302,35 +234,45 @@ class HB {
       })
       return { slot: res.out.slot, res, pid }
     } else {
-      // Add nonce to ensure each message is unique (prevents duplicate message issues)
-      let _tags = mergeLeft(tags, { type: "Message", target: pid, nonce: seed(8) })
+      let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
 
-      // Always use JSON POST with commitment signatures for all messages
-      // JSON can handle complex data (newlines, etc.) in the body field
-      // HTTP multipart doesn't work because with_only_committed filters out body data
+      // Check if data contains newlines or special chars that require multipart
+      const hasComplexData = data && typeof data === "string" && /[\x00-\x1f\x7f-\x9f]/.test(data)
 
-      const committed = await this.commit(_tags, { path: false })
-      const sigId = committed.commitments ? Object.keys(committed.commitments)[0] : null
-      if (sigId) {
-      }
-      const jsonBody = JSON.stringify(committed)
+      if (hasComplexData) {
+        // Use HTTP POST with multipart for complex data
+        // This allows body content without base64 encoding in headers
+        console.log("[HB SCHEDULE DEBUG] Using HTTP POST for complex data")
+        const res = await this.post({ path: `/~scheduler@1.0/schedule`, ..._tags })
+        return {
+          slot: res.out?.slot ?? parseInt(res.headers?.get?.("slot")),
+          pid,
+          res,
+        }
+      } else {
+        // Use JSON POST with commitment signatures for simple messages
+        console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
 
-      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(committed),
-      })
+        const committed = await this.commit(_tags, { path: false })
+        console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
 
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
-      }
+        const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(committed),
+        })
 
-      return {
-        slot: parseInt(response.headers.get("slot")),
-        pid,
-        res: { status: response.status },
+        if (!response.ok) {
+          const text = await response.text()
+          throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
+        }
+
+        return {
+          slot: parseInt(response.headers.get("slot")),
+          pid,
+          res: { status: response.status },
+        }
       }
     }
   }
@@ -401,31 +343,15 @@ class HB {
       })
       return { res, pid: res.out.process }
     } else {
+      // Use JSON POST with commitment signatures (beta3-compatible approach)
       const spawnTags = mergeLeft(tags, {
         "random-seed": seed(16),
         type: "Process",
         "execution-device": "test-device@1.0",
         device: "process@1.0",
-        // Use operator (HyperBEAM node address) for scheduler, not client's signing address
-        scheduler: this.operator ?? this.addr,
+        scheduler: this.addr,
       })
 
-      // Check if spawn has arrays (like device-stack) that need HTTPSig multipart
-      // JSON POST linkifies arrays which breaks signature verification
-      const hasArrays = Object.values(spawnTags).some(v => Array.isArray(v))
-
-      if (hasArrays) {
-        // Use HTTPSig multipart for arrays - arrays go to body parts with body-keys
-        // This works because content-digest covers the body, not individual array fields
-        const result = await this.post({ ...spawnTags, path: "/~scheduler@1.0/schedule" })
-        return {
-          pid: result.headers?.process,
-          slot: parseInt(result.headers?.slot ?? "0"),
-          res: { status: 200 },
-        }
-      }
-
-      // Use JSON POST with commitment signatures for simple messages
       const committed = await this.commit(spawnTags, { path: false })
       const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
         method: "POST",
@@ -455,8 +381,7 @@ class HB {
     const legacyTags = {
       "data-protocol": "ao",
       variant: "ao.TN.1",
-      // Use operator (HyperBEAM node address) for scheduler, not client's signing address
-      scheduler: this.operator ?? this.addr,
+      scheduler: this.addr,
       module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
       "execution-device": "genesis-wasm@1.0",
@@ -479,9 +404,8 @@ class HB {
       throw new Error(`SpawnLegacy failed: ${response.status} - ${text.substring(0, 200)}`)
     }
 
-    const pid = response.headers.get("process")
     return {
-      pid,
+      pid: response.headers.get("process"),
       slot: parseInt(response.headers.get("slot")),
       res: { status: response.status },
     }
@@ -516,18 +440,14 @@ class HB {
     if (typeof action === "string") tags.action = action
     let json = { Tags: buildTags({ ...tags }), Owner: this.addr }
     if (data) json.Data = data
-    // Use direct fetch to the CU for dryrun (bypasses HyperBEAM relay)
-    // Dryrun doesn't modify state, so it doesn't need to be signed
-    const response = await fetch(`${this.cu}/dry-run?process-id=${pid}`, {
+    const res = await this.post({
+      path: "/~relay@1.0/call",
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(json),
+      "relay-path": `${this.cu}/dry-run?process-id=${pid}`,
+      "Content-Type": "application/json",
+      "relay-body": JSON.stringify(json),
     })
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`Dryrun failed: ${response.status} - ${text.substring(0, 200)}`)
-    }
-    return await response.json()
+    return JSON.parse(res.body)
   }
 
   async commit(obj, opts) {
@@ -608,8 +528,7 @@ class HB {
       "random-seed": seed(16),
       type: "Process",
       device: "process@1.0",
-      // Use operator (HyperBEAM node address) for scheduler, not client's signing address
-      scheduler: this.operator ?? this.addr,
+      scheduler: this.addr,
     }
 
     const committed = await this.commit(tags, { path: false })

@@ -39,19 +39,15 @@ export async function send(signedMsg, fetchImpl = fetch) {
     signedMsg.method !== "GET" &&
     signedMsg.method !== "HEAD"
   ) {
-    // Convert Blob to Buffer for Node.js fetch compatibility
-    // Node.js fetch may not correctly handle Blob bodies
-    if (signedMsg.body instanceof Blob) {
-      const arrayBuffer = await signedMsg.body.arrayBuffer()
-      fetchOptions.body = Buffer.from(arrayBuffer)
-    } else {
-      fetchOptions.body = signedMsg.body
-    }
+    fetchOptions.body = signedMsg.body
   }
+  // Debug: log what we're actually sending
+  const bodySize = fetchOptions.body?.size || fetchOptions.body?.length || fetchOptions.body?.byteLength || 0
+  console.log("[SEND DEBUG] url:", signedMsg.url, "body size:", bodySize)
+  console.log("[SEND DEBUG] headers:", JSON.stringify(signedMsg.headers, null, 2).substring(0, 1000))
   const response = await fetchImpl(signedMsg.url, fetchOptions)
   if (response.status >= 400) {
-    const errorText = await response.text()
-    throw new Error(`${response.status}: ${errorText}`)
+    throw new Error(`${response.status}: ${await response.text()}`)
   }
   return await result(response)
 }
@@ -61,9 +57,8 @@ export const httpSigName = address => {
   const hexString = [...decoded.subarray(1, 9)]
     .map(byte => byte.toString(16).padStart(2, "0"))
     .join("")
-  // Use 'comm-' prefix to match HyperBEAM's expected pattern in siginfo_to_commitments
-  // HyperBEAM expects signature headers to start with 'comm-' (see dev_codec_httpsig_siginfo.erl)
-  return `comm-${hexString}`
+  // Use 'sig-' prefix to match HyperBEAM's expected pattern in siginfo_to_commitments
+  return `sig-${hexString}`
 }
 
 const toView = value => {

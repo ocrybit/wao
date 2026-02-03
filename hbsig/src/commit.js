@@ -21,8 +21,6 @@ const computeContentDigest = (body) => {
 }
 
 // Helper to build ao-types string from an object
-// Arrays ARE included in ao-types - HyperBEAM needs this to parse RFC 8941 structured field strings
-// The string format "item1", "item2" will be parsed into an Erlang list
 const buildAoTypes = (obj) => {
   const types = []
   for (const [key, value] of Object.entries(obj)) {
@@ -32,9 +30,7 @@ const buildAoTypes = (obj) => {
       types.push(`${key}="atom"`)
     } else if (value === null) {
       types.push(`${key}="atom"`)
-    } else if (Array.isArray(value) && value.length > 0) {
-      // Add ao-types for arrays so HyperBEAM parses them as lists
-      // The structured field string format will be parsed into an Erlang list
+    } else if (Array.isArray(value)) {
       types.push(`${key}="list"`)
     }
   }
@@ -114,34 +110,7 @@ export const commit = async (obj, opts) => {
   const keyid = extractKeyidFromSigInput(msg.headers["signature-input"]) || `publickey:${pubKeyBase64}`
 
   // Build the list of committed fields (same as components, normalized to match what Erlang expects)
-  let committedFields = components.map(v => v === "@path" ? "path" : v)
-
-  // If content-digest was signed and ao-body-key is set, the body field is committed through content-digest
-  // We need to add it to the committed list so HyperBEAM's with_only_committed doesn't strip it
-  if (components.includes("content-digest") && inlineBodyKey && inlineBodyKey !== "body") {
-    // Add the body key (e.g., "data") to committed fields if not already there
-    if (!committedFields.includes(inlineBodyKey)) {
-      committedFields.push(inlineBodyKey)
-    }
-  }
-
-  // If body-keys is set (multipart encoding), add those fields to committed list
-  // The body-keys fields are in the multipart body, covered by content-digest
-  const bodyKeysHeader = msg.headers["body-keys"]
-  if (bodyKeysHeader && components.includes("content-digest")) {
-    // Parse body-keys: "device-stack", "other-field" -> ["device-stack", "other-field"]
-    const bodyKeysList = bodyKeysHeader
-      .replace(/"/g, "")
-      .split(",")
-      .map(k => k.trim())
-      .filter(k => k.length > 0)
-
-    for (const key of bodyKeysList) {
-      if (!committedFields.includes(key)) {
-        committedFields.push(key)
-      }
-    }
-  }
+  const committedFields = components.map(v => v === "@path" ? "path" : v)
 
   // Extract just the base64 signature data from the header format "sig-xxx=:base64data:"
   // HyperBEAM expects raw base64 without colons (uses b64fast:encode/decode)
@@ -171,6 +140,5 @@ export const commit = async (obj, opts) => {
     },
     ...body,
   }
-
   return committed
 }
