@@ -129,7 +129,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`0fb04aa6`](https://github.com/ocrybit/HyperBEAM/commit/0fb04aa6) - Fix linkification in dev_hbsig by bypassing dev_codec_json
+**Merged HB:** [`a326f607`](https://github.com/ocrybit/HyperBEAM/commit/a326f607) - Fix malformed .gitignore entry
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
