@@ -297,13 +297,8 @@ const encode = async (obj, path) => {
   // Filter out undefined values before processing
   const filtered = filterUndefined(obj)
 
-  console.log("[ENCODE DEBUG] encode() called with keys:", Object.keys(filtered))
-  console.log("[ENCODE DEBUG] data exists:", !!filtered.data, "data length:", filtered.data?.length)
-
   // If object contains binary data, use enc() directly
   if (hasBinaryData(filtered)) {
-    // For binary data, use enc() which handles multipart
-    console.log("[ENCODE DEBUG] Using enc() for binary data")
     return await enc(filtered)
   }
 
@@ -314,13 +309,7 @@ const encode = async (obj, path) => {
     typeof value === "string" && hasNonPrintableChars(value)
   )
 
-  console.log("[ENCODE DEBUG] complexStringFields:", complexStringFields.map(([k]) => k))
-
   if (complexStringFields.length > 0) {
-    // Complex strings with newlines - use enc() for multipart encoding
-    // This puts the complex content in the HTTP body, not headers
-    // The body content is NOT part of the signed fields, but uses inline-body-key
-    console.log("[ENCODE DEBUG] Using enc() for complex string fields:", complexStringFields.map(([k]) => k))
     return await enc(filtered)
   }
 
@@ -331,19 +320,16 @@ const encode = async (obj, path) => {
 
   // Try the standard encoding pipeline for messages without complex strings
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))
-  console.log(`[ENCODE DEBUG] After pipeline, data field: ${encoded.data?.substring?.(0, 50) || encoded.data}`)
 
   // Check if the encoded result is valid for HTTP headers
   if (!isValid(encoded)) {
     // If invalid, fall back to enc()
-    console.log("[ENCODE DEBUG] isValid failed, falling back to enc()")
     return await enc(filtered)
   }
 
   // For non-binary data, return in the same format as enc()
   // httpsig_to returns a flattened object, so we need to separate headers and body
   const { body, ...headers } = encoded
-  console.log(`[ENCODE DEBUG] Final headers.data: ${headers.data?.substring?.(0, 50) || headers.data}`)
   return { headers, body }
 }
 

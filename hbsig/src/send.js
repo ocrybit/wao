@@ -41,10 +41,6 @@ export async function send(signedMsg, fetchImpl = fetch) {
   ) {
     fetchOptions.body = signedMsg.body
   }
-  // Debug: log what we're actually sending
-  const bodySize = fetchOptions.body?.size || fetchOptions.body?.length || fetchOptions.body?.byteLength || 0
-  console.log("[SEND DEBUG] url:", signedMsg.url, "body size:", bodySize)
-  console.log("[SEND DEBUG] headers:", JSON.stringify(signedMsg.headers, null, 2).substring(0, 1000))
   const response = await fetchImpl(signedMsg.url, fetchOptions)
   if (response.status >= 400) {
     throw new Error(`${response.status}: ${await response.text()}`)
