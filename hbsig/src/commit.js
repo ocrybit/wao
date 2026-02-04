@@ -58,14 +58,21 @@ export const commit = async (obj, opts) => {
   // Always skip content-digest and inline-body-key (transport artifacts re-derived by HyperBEAM).
   // Skip ao-body-key only for native body keys (HyperBEAM re-derives it).
   // Keep ao-body-key for custom body keys (HyperBEAM needs it to find the body field).
+  // Create case-insensitive lookup map for headers (HTTP headers are case-insensitive)
+  const headerLookup = new Map()
+  for (const [k, v] of Object.entries(msg.headers)) {
+    headerLookup.set(k.toLowerCase(), v)
+  }
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     if (key === "content-length") continue
     if (key === "content-digest") continue
     if (key === "inline-body-key") continue
     if (isNativeBodyKey && key === "ao-body-key") continue
-    if (msg.headers[key] !== undefined) {
-      body[key] = msg.headers[key]
+    // Use lowercase key for both lookup and body key (matches committed list)
+    const value = headerLookup.get(key)
+    if (value !== undefined) {
+      body[key] = value
     }
   }
 
