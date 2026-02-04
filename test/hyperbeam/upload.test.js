@@ -32,6 +32,7 @@ describe("Hyperbeam Device", function () {
       reset: true,
       bundler_ans104: false,
       bundler_httpsig: "http://localhost:4001",
+      genesis_wasm: true, // Required for genesis-wasm@1.0 execution device
     })
     bd = bundler({ jwk: _hbeam.jwk })
     hbeam = await _hbeam.ready()

@@ -360,9 +360,12 @@ export default class HyperBEAM {
       _devices = `, preloaded_devices => [${_devs.join(", ")}]`
     }
     const _wallet = `, priv_key_location => <<"${wallet}">>`
-    const _gateway = gateway
-      ? `, gateway => <<"http://localhost:${gateway}">>`
-      : ""
+    // Use arweave_gateway (Cloudflare proxy) if set, otherwise local gateway port, otherwise default
+    const _gateway = this.arweave_gateway
+      ? `, gateway => <<"${this.arweave_gateway}">>`
+      : gateway
+        ? `, gateway => <<"http://localhost:${gateway}">>`
+        : ""
 
     // store option will be overwritten by hb.erl
     const _store = this.store_prefix
@@ -422,6 +425,25 @@ export default class HyperBEAM {
     // gun doesn't use system proxy settings, avoiding the proxy issue with localhost CU
     const _relay_http_client = `, relay_http_client => gun, http_client => gun`
 
+    // Custom routes using Cloudflare proxy instead of arweave.net
+    const _routes = this.arweave_gateway
+      ? `, routes => [
+          #{ <<"template">> => <<"/result/*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu_port}">> } },
+          #{ <<"template">> => <<"/graphql">>, <<"nodes">> => [
+              #{ <<"prefix">> => <<"${this.arweave_gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }
+          ]},
+          #{ <<"template">> => <<"/arweave">>, <<"node">> => #{
+              <<"match">> => <<"^/arweave">>,
+              <<"with">> => <<"${this.arweave_gateway}">>,
+              <<"opts">> => #{ http_client => gun, protocol => http2 }
+          }},
+          #{ <<"template">> => <<"/raw">>, <<"node">> => #{
+              <<"prefix">> => <<"${this.arweave_gateway}">>,
+              <<"opts">> => #{ http_client => gun, protocol => http2 }
+          }}
+        ]`
+      : ""
+
     // Explicitly clear httpc proxy settings at Erlang level before starting HyperBEAM
     // This ensures no proxy is used regardless of any OS-level or cached settings
     const clearProxy = `application:ensure_all_started(inets), httpc:set_options([{proxy, {undefined, []}}, {ipfamily, inet}]), `
@@ -429,7 +451,7 @@ export default class HyperBEAM {
     // Force-load dev_hbsig early to apply hot-patches (dev_stack binary parsing, hb_util atom fix)
     // before any device-stack processing occurs
     const loadHbsig = `code:ensure_loaded(dev_hbsig), `
-    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}, prometheus => false}).`
+    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}, prometheus => false}).`
 
     // Debug: show the eval command being sent
     if (this.logs) {
