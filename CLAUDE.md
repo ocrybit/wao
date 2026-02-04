@@ -120,7 +120,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`dc6f9329`](https://github.com/ocrybit/HyperBEAM/commit/dc6f9329) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`710ce4ce`](https://github.com/ocrybit/HyperBEAM/commit/710ce4ce) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -130,7 +130,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`8cc185a6`](https://github.com/ocrybit/HyperBEAM/commit/8cc185a6) - Add on_load hot-patch for hb_util:atom/1 and clean debug output
+**Merged HB:** [`710ce4ce`](https://github.com/ocrybit/HyperBEAM/commit/710ce4ce) - Fix cache_module to decode base64-encoded WASM data
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
@@ -163,19 +163,19 @@ Using official upstream release tags as checkpoints.
 
 | # | Test File | Pass/Total | Status | Notes |
 |---|-----------|------------|--------|-------|
-| 1 | `ans104.test.js` | ?/2 | ⏱️ TIMEOUT | Needs >180s timeout; ANS-104 format |
+| 1 | `ans104.test.js` | 1/2 | ⚠️ PARTIAL | ANS-104 passes; HTTPSig commitment parsing |
 | 2 | `cache.test.js` | 1/1 | ✅ DONE | |
 | 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
-| 6 | `hyperbeam.test.js` | ?/14 | ⏱️ TIMEOUT | Needs >180s timeout; Suite1 6/6, Suite2 Lua/AOS issues |
+| 6 | `hyperbeam.test.js` | 7/14 | ⚠️ PARTIAL | Suite1 passes; Suite2 AOS/Lua issues |
 | 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: accept-bundle inline data assertions |
 | 8 | `local_name.test.js` | 1/1 | ✅ DONE | |
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
-| 12 | `p4.test.js` | ?/2 | ⏱️ TIMEOUT | Test #2 hangs on second HyperBEAM startup |
-| 13 | `patch.test.js` | 0/3 | ❌ FAIL | `.body` undefined in `hb.now()` response |
+| 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Test #2 hangs on second HyperBEAM startup |
+| 13 | `patch.test.js` | 3/3 | ✅ DONE | Fixed: cache_module base64 decoding |
 | 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
 | 16 | `router.test.js` | 21/21 | ✅ DONE | Fixed: all 21 subtests passing |
@@ -183,22 +183,18 @@ Using official upstream release tags as checkpoints.
 | 18 | `server.test.js` | 2/2 | ✅ DONE | |
 | 19 | `simple-pay.test.js` | 1/1 | ✅ DONE | |
 | 20 | `stack.test.js` | 2/2 | ✅ DONE | dev_add NIF compiled |
-| 21 | `upload.test.js` | 2/3 | ⚠️ PARTIAL | #0 and #1 pass; #2 compute fails |
-| 22 | `wao-hb.test.js` | ?/4 | ⏱️ TIMEOUT | Needs >180s timeout; genesis-wasm heavy |
+| 21 | `upload.test.js` | 2/3 | ⚠️ PARTIAL | #0 and #1 pass; #2 CU tag validation |
+| 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with Lua/WASM issues |
 
-**Summary (2026-02-04 sweep):**
-- ✅ Fully passing (17 files, 42 subtests): cache, cron, eunit, faff, json, local_name, lookup, message, meta, process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
-- ⚠️ Partial (1 file): upload (2/3)
-- ❌ Failing (1 file): patch (0/3)
-- ⏱️ Timeout/untested (4 files): ans104, hyperbeam, p4, wao-hb
+**Summary (2026-02-04):**
+- ✅ Fully passing (16 files, 43 subtests): cache, cron, eunit, faff, json, local_name, lookup, message, meta, patch (3), process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (6 files): ans104 (1/2), hyperbeam (7/14), p4 (1/2), upload (2/3), wao-hb (2/4)
 
 **Remaining failure categories:**
-1. **Lua device ao.init error**: `computeLua` returns 500 with `ao.init` trace; `computeLegacy` works but returns empty Messages (Lua code not evaluating)
-2. **patch .body undefined**: `hb.now({ pid, path: "/cache/square" })` returns object without `.body` field
-4. **Process #0**: fetch fails on direct path API after rapid requests
-5. **Upload #2**: compute results `undefined == 3`
-6. **P4 #2**: Second HyperBEAM instance hangs on startup
-7. **Timeouts**: hyperbeam, ans104, wao-hb need >3min per test
+1. **Cross-process messaging**: Tests involving Send().receive() across processes fail with Lua issues
+2. **Lua/AOS execution**: Tests using `spawnAOS`, `messageAOS`, `computeAOS` have partial failures
+3. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
+4. **Upload #2**: CU validation issues
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 
@@ -440,6 +436,40 @@ cron(Msg1, Msg2, Opts) ->
 4. Return `{ok, #{}}` immediately without blocking
 
 **Result:** `cron.test.js` now passes 1/1, with cron iterations completing in ~300ms each.
+
+### ✅ FIXED: cache_module Base64 Decoding for WASM (2026-02-04)
+
+**Problem:** `patch.test.js` test #3 "should patch with legacy aos" failed with `wasm_module_new_ex failed`. The WASM module couldn't be loaded by WAMR.
+
+**Root Cause:**
+- `hb.cacheBinary()` sends WASM binary as base64 string to avoid HTTP signature mismatch
+- `dev_wao:cache_module/3` stored the data as-is without decoding
+- When `dev_wasm:init` read the cached module, it got base64 string instead of raw binary
+- WAMR couldn't parse the base64 string as a valid WASM module
+
+**Fix in `dev_wao.erl`:**
+```erlang
+cache_module(Msg1, _Msg2, Opts) ->
+    RawData = hb_ao:get(<<"data">>, Msg1, <<>>, Opts),
+    Type = hb_ao:get(<<"type">>, Msg1, <<>>, Opts),
+    %% Decode base64 if the data appears to be base64-encoded.
+    Binary = try_decode_base64(RawData),
+    ModuleMsg = #{ <<"content-type">> => Type, <<"body">> => Binary },
+    ...
+
+try_decode_base64(Data) when is_binary(Data) ->
+    case is_likely_base64(Data) of
+        true -> base64:decode(Data);
+        false -> Data
+    end;
+try_decode_base64(Data) -> Data.
+
+is_likely_base64(Data) when is_binary(Data) ->
+    %% Base64 only contains A-Z, a-z, 0-9, +, /, =
+    lists:all(fun(Byte) -> is_base64_char(Byte) end, binary_to_list(Data)).
+```
+
+**Result:** `patch.test.js` now passes 3/3, with the AOS WASM module loading correctly in WAMR.
 
 ---
 
