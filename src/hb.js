@@ -133,17 +133,14 @@ class HB {
     try {
       const json = await this.compute({ pid, slot, path: "/results/json" })
       const result = JSON.parse(json.body)
-      console.log("[DEBUG] computeLegacy slot", slot, "Messages:", result.Messages?.length || 0, "Output:", result.Output?.slice?.(0, 50) || result.Output)
       return result
     } catch (e) {
-      console.log("[DEBUG] computeLegacy error for slot", slot, ":", e.message, "- trying fallback")
       // Fallback: get results via bundle and extract Output
       const res = await this.getJSON({
         path: `/${pid}/compute/results`,
         slot,
         headers: { "accept-bundle": "true" }
       })
-      console.log("[DEBUG] computeLegacy fallback result keys:", Object.keys(res), "Output keys:", res.Output ? Object.keys(res.Output) : "none")
       // Convert bundle format to legacy format
       const output = res.Output || {}
       return {
@@ -237,42 +234,16 @@ class HB {
       let _tags = mergeLeft(tags, { type: "Message", target: pid })
       if (data) _tags.data = data
 
-      // Check if data contains newlines or special chars that require multipart
-      const hasComplexData = data && typeof data === "string" && /[\x00-\x1f\x7f-\x9f]/.test(data)
+      const res = await this.post({
+        path: "/~scheduler@1.0/schedule",
+        ..._tags,
+      })
 
-      if (hasComplexData) {
-        // Use HTTP POST with multipart for complex data
-        // This allows body content without base64 encoding in headers
-        console.log("[HB SCHEDULE DEBUG] Using HTTP POST for complex data")
-        const res = await this.post({ path: `/~scheduler@1.0/schedule`, ..._tags })
-        return {
-          slot: res.out?.slot ?? parseInt(res.headers?.get?.("slot")),
-          pid,
-          res,
-        }
-      } else {
-        // Use JSON POST with commitment signatures for simple messages
-        console.log("[HB SCHEDULE DEBUG] Using JSON POST, _tags keys:", Object.keys(_tags))
-
-        const committed = await this.commit(_tags, { path: false })
-        console.log("[HB SCHEDULE DEBUG] committed JSON has data:", !!committed.data, "data length:", committed.data?.length)
-
-        const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(committed),
-        })
-
-        if (!response.ok) {
-          const text = await response.text()
-          throw new Error(`Schedule failed: ${response.status} - ${text.substring(0, 200)}`)
-        }
-
-        return {
-          slot: parseInt(response.headers.get("slot")),
-          pid,
-          res: { status: response.status },
-        }
+      const slot = parseInt(res.headers?.slot ?? res.out?.slot)
+      return {
+        slot,
+        pid,
+        res: { status: res.status },
       }
     }
   }
@@ -343,31 +314,24 @@ class HB {
       })
       return { res, pid: res.out.process }
     } else {
-      // Use JSON POST with commitment signatures (beta3-compatible approach)
+      // Use httpsig-signed multipart POST (beta3-compatible approach)
       const spawnTags = mergeLeft(tags, {
         "random-seed": seed(16),
         type: "Process",
         "execution-device": "test-device@1.0",
         device: "process@1.0",
-        scheduler: this.addr,
+        scheduler: this.operator ?? this.addr,
       })
 
-      const committed = await this.commit(spawnTags, { path: false })
-      const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(committed),
+      const res = await this.post({
+        path: "/~scheduler@1.0/schedule",
+        ...spawnTags,
       })
-
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`Spawn failed: ${response.status} - ${text.substring(0, 200)}`)
-      }
 
       return {
-        pid: response.headers.get("process"),
-        slot: parseInt(response.headers.get("slot")),
-        res: { status: response.status },
+        pid: res.headers?.process || res.out?.process,
+        slot: parseInt(res.headers?.slot ?? res.out?.slot),
+        res: { status: res.status },
       }
     }
   }
@@ -375,13 +339,10 @@ class HB {
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
     // Use genesis-wasm directly as execution-device for legacynet AOS
-    // Note: 'authority' is NOT included here because it conflicts with HTTP Message
-    // Signatures RFC-9421 derived component '@authority'. HyperBEAM will set authority
-    // automatically based on node configuration (see dev_process.erl).
     const legacyTags = {
       "data-protocol": "ao",
       variant: "ao.TN.1",
-      scheduler: this.addr,
+      scheduler: this.operator ?? this.addr,
       module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
       "execution-device": "genesis-wasm@1.0",
@@ -391,23 +352,16 @@ class HB {
     const t = mergeLeft(tags, legacyTags)
     if (data) t.data = data
 
-    // Use JSON POST with commitment signatures (beta3-compatible approach)
-    const committed = await this.commit(t, { path: false })
-    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(committed),
+    // Use httpsig-signed multipart POST (beta3-compatible approach)
+    const res = await this.post({
+      path: "/~scheduler@1.0/schedule",
+      ...t,
     })
 
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`SpawnLegacy failed: ${response.status} - ${text.substring(0, 200)}`)
-    }
-
     return {
-      pid: response.headers.get("process"),
-      slot: parseInt(response.headers.get("slot")),
-      res: { status: response.status },
+      pid: res.headers?.process || res.out?.process,
+      slot: parseInt(res.headers?.slot ?? res.out?.slot),
+      res: { status: res.status },
     }
   }
 
@@ -464,8 +418,102 @@ class HB {
   async post(obj, opt = {}) {
     const _json = opt.json ? "/~json@1.0/serialize" : ""
     obj.path += _json
-    const signed = await this.sign(obj, opt)
-    return await this.send(signed)
+    // Flatten nested 'body' object to top-level fields for JSON POST.
+    // Old API used body: { key: value } for multipart POST; now these
+    // fields must be at the top level for JSON POST with commitments.
+    if (obj.body && typeof obj.body === "object" && !Buffer.isBuffer(obj.body)
+        && !(obj.body instanceof Blob) && !Array.isArray(obj.body)) {
+      const { body, ...rest } = obj
+      obj = { ...rest, ...body }
+    }
+    // Convert Buffer body to UTF-8 string for JSON POST.
+    // JSON can't represent raw binary; Buffers get base64-encoded by JSON.stringify,
+    // which causes content-digest hash mismatch (SHA-256 of base64 ≠ SHA-256 of binary).
+    // Converting to string before signing ensures the signed content matches the JSON value.
+    if (Buffer.isBuffer(obj.body)) {
+      obj.body = obj.body.toString()
+    }
+    // Remove ao-body-key when it points to "body" - the encoding pipeline handles
+    // "body" fields natively without this header. When ao-body-key: "body" is signed,
+    // it causes invalid_commitment because HyperBEAM's to() doesn't produce ao-body-key
+    // for "body" fields (only for non-default names like "data").
+    if (obj["ao-body-key"] === "body") {
+      delete obj["ao-body-key"]
+    }
+    // Add nonce to ensure committed list is never empty.
+    // HyperBEAM rejects messages with empty committed lists as invalid_commitment.
+    // This also prevents replay attacks.
+    obj.nonce ??= seed(8)
+    // Always use JSON POST with commitment signatures (beta3-compatible)
+    // path: false because @path derived component causes mismatch when
+    // HyperBEAM reconstructs signature base from committed field "path"
+    // All field values are header strings; ao-types guides type conversion
+    const committed = await this.commit(obj, { path: false })
+    const jsonReplacer = (key, value) => {
+      if (value?.type === "Buffer" && Array.isArray(value?.data)) {
+        return Buffer.from(value.data).toString("base64")
+      }
+      if (Buffer.isBuffer(value)) {
+        return value.toString("base64")
+      }
+      return value
+    }
+    const jsonBody = JSON.stringify(committed, jsonReplacer)
+    const response = await fetch(`${this.url}${obj.path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: jsonBody,
+    })
+    if (response.status >= 400) {
+      const text = await response.text()
+      throw new Error(`${response.status}: ${text}`)
+    }
+    return await result(response)
+  }
+
+  // Decode base64-encoded multipart body from HyperBEAM responses.
+  // When HyperBEAM returns cached/stored messages, the body may be
+  // base64-encoded multipart form-data. This method decodes it and
+  // extracts parts based on the ao-result header.
+  _decodeResult(res) {
+    if (!res.body || typeof res.body !== "string") return res
+    const aoResult = res.headers?.["ao-result"]
+
+    // Try to detect and decode base64-encoded multipart body
+    try {
+      const decoded = Buffer.from(res.body, "base64").toString("binary")
+      if (decoded.startsWith("--") && decoded.includes("content-disposition")) {
+        // It's multipart form-data encoded as base64
+        res.body = decoded
+
+        if (aoResult) {
+          // Extract the named part from multipart
+          const boundaryMatch = decoded.match(/^--([^\r\n]+)/)
+          if (boundaryMatch) {
+            const boundary = boundaryMatch[1]
+            const parts = decoded.split(`--${boundary}`)
+            for (const part of parts) {
+              if (!part || part.startsWith("--")) continue
+              const nameMatch = part.match(/name="([^"]+)"/)
+              if (nameMatch && nameMatch[1] === aoResult) {
+                const sepIdx = part.indexOf("\r\n\r\n")
+                if (sepIdx !== -1) {
+                  let content = part.substring(sepIdx + 4)
+                  // Remove trailing CRLF
+                  content = content.replace(/\r\n$/, "")
+                  res.out = content
+                }
+                break
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Not valid base64 or not multipart - use as-is
+    }
+
+    return res
   }
 
   async g(path, ...args) {
@@ -491,7 +539,7 @@ class HB {
     const response = await fetch(`${this.url}${path}${_json}${_params}`, {
       headers: { "accept-bundle": "true" }
     })
-    return await result(response)
+    return this._decodeResult(await result(response))
   }
 
   async postJSON(args, opt = {}) {
@@ -500,8 +548,10 @@ class HB {
   }
 
   async getJSON(args, opt = {}) {
-    const res = await this.get(args, { ...opt, json: true })
-    return JSON.parse(res.body)
+    // Use regular GET with structured output instead of json@1.0/serialize
+    // because the JSON serializer doesn't resolve linkified fields (body+link)
+    const res = await this.get(args, opt)
+    return res.out
   }
   async spawnAOS(image) {
     await this.setInfo()
@@ -528,25 +578,19 @@ class HB {
       "random-seed": seed(16),
       type: "Process",
       device: "process@1.0",
-      scheduler: this.addr,
+      scheduler: this.operator ?? this.addr,
     }
 
-    const committed = await this.commit(tags, { path: false })
-    const response = await fetch(`${this.url}/~scheduler@1.0/schedule`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(committed),
+    // Use httpsig-signed multipart POST (beta3-compatible approach)
+    const res = await this.post({
+      path: "/~scheduler@1.0/schedule",
+      ...tags,
     })
 
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`SpawnAOS failed: ${response.status} - ${text.substring(0, 200)}`)
-    }
-
     return {
-      pid: response.headers.get("process"),
-      slot: parseInt(response.headers.get("slot")),
-      res: { status: response.status },
+      pid: res.headers?.process || res.out?.process,
+      slot: parseInt(res.headers?.slot ?? res.out?.slot),
+      res: { status: res.status },
     }
   }
 

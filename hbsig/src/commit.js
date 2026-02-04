@@ -30,8 +30,6 @@ const buildAoTypes = (obj) => {
       types.push(`${key}="atom"`)
     } else if (value === null) {
       types.push(`${key}="atom"`)
-    } else if (Array.isArray(value)) {
-      types.push(`${key}="list"`)
     }
   }
   return types.length > 0 ? types.join(", ") : null
@@ -46,20 +44,32 @@ export const commit = async (obj, opts) => {
 
   let body = {}
 
-  // Check for inline-body-key
+  // Check for inline-body-key (indicates a field was moved to HTTP body during encoding)
   const inlineBodyKey = msg.headers["inline-body-key"] || msg.headers["ao-body-key"]
 
-  // Build body from components - copy from headers AS-IS (don't decode)
-  // The values must match what was signed for signature verification to work
-  // HyperBEAM's structured codec will decode :base64: format based on ao-types
+  // Body field names that HyperBEAM's inline_key() recognizes natively.
+  // For these, normalize_for_encoding() re-derives ao-body-key automatically.
+  // For custom names (e.g., "json"), we must keep ao-body-key in committed list
+  // so HyperBEAM knows which field to inline during verification.
+  const NATIVE_BODY_KEYS = new Set(["body", "data"])
+  const isNativeBodyKey = !inlineBodyKey || NATIVE_BODY_KEYS.has(inlineBodyKey)
+
+  // Build body from committed components using header string values.
+  // Always skip content-digest and inline-body-key (transport artifacts re-derived by HyperBEAM).
+  // Skip ao-body-key only for native body keys (HyperBEAM re-derives it).
+  // Keep ao-body-key for custom body keys (HyperBEAM needs it to find the body field).
   for (const v of components) {
     const key = v === "@path" ? "path" : v
+    if (key === "content-length") continue
+    if (key === "content-digest") continue
+    if (key === "inline-body-key") continue
+    if (isNativeBodyKey && key === "ao-body-key") continue
     if (msg.headers[key] !== undefined) {
       body[key] = msg.headers[key]
     }
   }
 
-  // Handle body resolution
+  // Handle body resolution - restore the inlined field to its AO-Core name
   let bodyContent = null
   if (msg.body) {
     if (msg.body instanceof Blob) {
@@ -69,28 +79,37 @@ export const commit = async (obj, opts) => {
       bodyContent = msg.body
     }
 
-    // If inline-body-key is "data", put content in data field
-    if (inlineBodyKey === "data") {
-      body.data = bodyContent
+    // Put body content under the original field name (e.g., "data", "json")
+    if (inlineBodyKey) {
+      body[inlineBodyKey] = bodyContent
     } else {
       body.body = bodyContent
     }
   }
 
-  // Always include ao-types from headers (for type conversion in JSON codec)
-  // This is NOT signed (excluded from signing) but still needed in the body
-  if (!body["ao-types"] && msg.headers["ao-types"]) {
-    body["ao-types"] = msg.headers["ao-types"]
-  } else if (!body["ao-types"]) {
-    // Build ao-types from the original object if not in headers
-    const aoTypes = buildAoTypes(obj)
-    if (aoTypes) {
-      body["ao-types"] = aoTypes
-    }
+  // Include non-committed fields from the original object as JSON values.
+  // This covers: (1) body-key fields (arrays/objects encoded as multipart,
+  // which can't be included as raw multipart in JSON), and (2) any other
+  // fields excluded from signing. These fields are unsigned but present
+  // so HyperBEAM can parse them directly as JSON types.
+  // Use case-insensitive matching: signing normalizes keys to lowercase,
+  // but the original object may use mixed case (e.g., "To" vs "to").
+  const committedSetLower = new Set(components.map(v => (v === "@path" ? "path" : v).toLowerCase()))
+  // Also track lowercase keys already in body to prevent duplicates
+  const bodyKeysLower = new Set(Object.keys(body).map(k => k.toLowerCase()))
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "path" || key === "method") continue
+    if (committedSetLower.has(key.toLowerCase())) continue
+    if (bodyKeysLower.has(key.toLowerCase())) continue
+    if (value === undefined) continue
+    body[key] = value
+    bodyKeysLower.add(key.toLowerCase())
   }
 
-  // Note: We don't add ao-body-key here - it's not supported by HyperBEAM's JSON codec
-  // Keep inline-body-key in the body if it was committed (signed) - HyperBEAM validates all committed fields
+  // Include ao-types so HyperBEAM knows how to convert string values to proper types.
+  if (msg.headers["ao-types"]) {
+    body["ao-types"] = msg.headers["ao-types"]
+  }
 
   const rsaId = rsaid(msg.headers)
   const pub = extractPubKey(msg.headers)
@@ -109,8 +128,23 @@ export const commit = async (obj, opts) => {
   }
   const keyid = extractKeyidFromSigInput(msg.headers["signature-input"]) || `publickey:${pubKeyBase64}`
 
-  // Build the list of committed fields (same as components, normalized to match what Erlang expects)
-  const committedFields = components.map(v => v === "@path" ? "path" : v)
+  // Build the list of committed fields.
+  // Always transform HTTPSig transport keys to AO-Core keys:
+  // - Replace content-digest with the body field name (HyperBEAM re-derives content-digest)
+  // - For native body keys ("body", "data"): also remove ao-body-key (HyperBEAM re-derives it)
+  // - For custom body keys (e.g., "json"): keep ao-body-key (HyperBEAM needs it to find the field)
+  let committedFields = components.map(v => v === "@path" ? "path" : v)
+  if (committedFields.includes("content-digest") && (inlineBodyKey || msg.body)) {
+    const bodyFieldName = inlineBodyKey || "body"
+    committedFields = committedFields.filter(k => k !== "content-digest")
+    if (!committedFields.includes(bodyFieldName)) {
+      committedFields.push(bodyFieldName)
+    }
+  }
+  if (isNativeBodyKey) {
+    // For native body keys, ao-body-key is a transport artifact - remove it
+    committedFields = committedFields.filter(k => k !== "ao-body-key")
+  }
 
   // Extract just the base64 signature data from the header format "sig-xxx=:base64data:"
   // HyperBEAM expects raw base64 without colons (uses b64fast:encode/decode)

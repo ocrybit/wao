@@ -426,7 +426,10 @@ export default class HyperBEAM {
     // This ensures no proxy is used regardless of any OS-level or cached settings
     const clearProxy = `application:ensure_all_started(inets), httpc:set_options([{proxy, {undefined, []}}, {ipfamily, inet}]), `
 
-    const start = `${clearProxy}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}, prometheus => false}).`
+    // Force-load dev_hbsig early to apply hot-patches (dev_stack binary parsing, hb_util atom fix)
+    // before any device-stack processing occurs
+    const loadHbsig = `code:ensure_loaded(dev_hbsig), `
+    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}, prometheus => false}).`
 
     // Debug: show the eval command being sent
     if (this.logs) {

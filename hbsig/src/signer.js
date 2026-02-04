@@ -302,23 +302,11 @@ const encode = async (obj, path) => {
     return await enc(filtered)
   }
 
-  // Check if any string values have non-printable characters (like newlines in Lua code)
-  // For such strings, we put them directly in the body (not multipart) with inline-body-key
-  // This is compatible with HyperBEAM's JSON codec which expects inline body content
-  const complexStringFields = Object.entries(filtered).filter(([key, value]) =>
-    typeof value === "string" && hasNonPrintableChars(value)
-  )
-
-  if (complexStringFields.length > 0) {
-    return await enc(filtered)
-  }
-
-  // Otherwise use the standard pipeline for simple flat messages
-  let fields = { ...filtered }
   // Only add path if explicitly provided
+  let fields = { ...filtered }
   if (path) fields.path = path
 
-  // Try the standard encoding pipeline for messages without complex strings
+  // Try the standard encoding pipeline
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))
 
   // Check if the encoded result is valid for HTTP headers
@@ -408,10 +396,13 @@ async function _sign({
 
   // Exclude metadata fields that get consumed/stripped during JSON codec parsing:
   // - ao-types: used for type conversion, then removed by structured codec
-  // - content-digest: HyperBEAM recomputes this during verification, so don't sign it
   // - accept-bundle: request metadata for inlining nested data
-  // These fields are still included in the JSON body but not signed
-  const metadataFields = ["body-keys", "path", "ao-types", "content-digest", "accept-bundle"]
+  // - content-digest: only exclude when no body; when body exists, sign it so
+  //   HyperBEAM can map content-digest → body → ao-body-key field in committed list
+  const metadataFields = ["body-keys", "path", "ao-types", "accept-bundle", "content-length"]
+  if (!body) {
+    metadataFields.push("content-digest")
+  }
   let isPath = false
   const signingFields = Object.keys(lowercaseHeaders).filter(key => {
     if (key === "path") isPath = true
@@ -444,6 +435,28 @@ async function _sign({
   return result
 }
 
+// Pre-convert specific array fields (like device-stack) to RFC 8941 string format
+// so they are encoded as header values (committed/signed) rather than multipart body parts.
+// HyperBEAM's dev_hbsig hot-patch will parse these strings back to maps for dev_stack.
+const STACK_ARRAY_FIELDS = ["device-stack"]
+const preprocessStackArrays = obj => {
+  let hasChanges = false
+  for (const field of STACK_ARRAY_FIELDS) {
+    if (Array.isArray(obj[field]) && isSimpleArray(obj[field])) {
+      hasChanges = true
+      break
+    }
+  }
+  if (!hasChanges) return obj
+  const result = { ...obj }
+  for (const field of STACK_ARRAY_FIELDS) {
+    if (Array.isArray(result[field]) && isSimpleArray(result[field])) {
+      result[field] = encodeAsStructuredFieldList(result[field])
+    }
+  }
+  return result
+}
+
 export function signer(config) {
   const { signer, url = "http://localhost:10001" } = config
   if (!signer) throw new Error("Signer is required for mainnet mode")
@@ -453,9 +466,11 @@ export function signer(config) {
   ) => {
     const { path = "/relay/process", method = "POST", ...aoFields } = fields
     const filteredFields = filterUndefined(aoFields)
+    // Pre-convert device-stack arrays to RFC 8941 strings before encoding
+    const preprocessed = preprocessStackArrays(filteredFields)
     const encoded = _encoded
       ? filteredFields
-      : await encode(filteredFields, path)
+      : await encode(preprocessed, path)
     return await _sign({ path, signPath, method, encoded, signer, url })
   }
 }

@@ -258,7 +258,8 @@ function decodeValue(type, value) {
  * @returns {*} - Parsed value
  */
 function parseStructuredItem(value) {
-  // This is a simplified parser - you'd want to use a proper structured fields parser
+  // Handle non-string values (e.g., numbers from HyperBEAM responses)
+  if (typeof value !== "string") return String(value)
   if (value.startsWith('"') && value.endsWith('"')) {
     return value.slice(1, -1) // Remove quotes
   }
@@ -271,7 +272,7 @@ function parseStructuredItem(value) {
  * @returns {Array} - Parsed list
  */
 function parseStructuredList(value) {
-  // This is a simplified parser - you'd want to use a proper structured fields parser
+  if (typeof value !== "string") return [value]
   return value.split(", ").map(item => {
     if (item.startsWith('"') && item.endsWith('"')) {
       // Remove quotes and unescape SF string escapes

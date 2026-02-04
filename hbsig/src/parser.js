@@ -126,10 +126,16 @@ export function extractPubKey(headers, signatureName) {
   if (!decoded) return null
 
   // If we decoded a specific signature, use its keyid
-  const keyid =
-    signatureName && decoded.params
-      ? decoded.params.keyid
-      : Object.values(decoded)[0]?.params?.keyid
+  // When no specific signatureName, prefer RSA signature over HMAC
+  // (HMAC keyid is "constant:ao" which is not a real public key)
+  let keyid = null
+  if (signatureName && decoded.params) {
+    keyid = decoded.params.keyid
+  } else {
+    const entries = Object.values(decoded)
+    const rsaEntry = entries.find(e => e.params?.alg?.startsWith("rsa-"))
+    keyid = rsaEntry?.params?.keyid || entries[0]?.params?.keyid
+  }
 
   if (!keyid) return null
 
