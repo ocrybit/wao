@@ -163,42 +163,43 @@ Using official upstream release tags as checkpoints.
 
 | # | Test File | Pass/Total | Status | Notes |
 |---|-----------|------------|--------|-------|
-| 1 | `ans104.test.js` | 0/2 | ❌ FAIL | ANS-104 format issues, test too slow |
+| 1 | `ans104.test.js` | ?/2 | ⏱️ TIMEOUT | Needs >180s timeout; ANS-104 format |
 | 2 | `cache.test.js` | 1/1 | ✅ DONE | |
 | 3 | `cron.test.js` | 0/1 | ❌ FAIL | count=1 not 4; cron fires once then stops |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
-| 6 | `hyperbeam.test.js` | 5-8/14 | ⚠️ PARTIAL | 5 stable + 3 flaky; Legacynet Lua/WAMR/oracle fail |
-| 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: custom body key AO-Core transformation |
-| 8 | `local_name.test.js` | 1/1 | ✅ DONE | Fixed: commit.js transformation |
-| 9 | `lookup.test.js` | 1/1 | ✅ DONE | Fixed: commit.js transformation |
+| 6 | `hyperbeam.test.js` | ?/14 | ⏱️ TIMEOUT | Needs >180s timeout; Suite1 6/6, Suite2 Lua/AOS issues |
+| 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: accept-bundle inline data assertions |
+| 8 | `local_name.test.js` | 1/1 | ✅ DONE | |
+| 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
-| 12 | `p4.test.js` | 0/2 | ❌ FAIL | Missing `scripts/p4-payment-process.lua` (renamed) |
-| 13 | `patch.test.js` | 0/3 | ❌ FAIL | AOS device-stack needs wasi/wasm-64 NIFs |
-| 14 | `process.test.js` | 1/2 | ⚠️ PARTIAL | #0 fetch fails (HB crash); #2 passes |
-| 15 | `relay.test.js` | 0/1 | ❌ FAIL | `cast.body` undefined - response format mismatch |
-| 16 | `router.test.js` | 15/25 | ⚠️ PARTIAL | Device info, suffix, preprocess, load dist fail |
+| 12 | `p4.test.js` | ?/2 | ⏱️ TIMEOUT | Test #2 hangs on second HyperBEAM startup |
+| 13 | `patch.test.js` | 0/3 | ❌ FAIL | `.body` undefined in `hb.now()` response |
+| 14 | `process.test.js` | 1/2 | ⚠️ PARTIAL | #0 fetch fails; #2 passes |
+| 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
+| 16 | `router.test.js` | 21/21 | ✅ DONE | Fixed: all 21 subtests passing |
 | 17 | `scheduler.test.js` | 1/1 | ✅ DONE | |
 | 18 | `server.test.js` | 2/2 | ✅ DONE | |
-| 19 | `simple-pay.test.js` | 1/1 | ✅ DONE | Fixed: commit.js transformation |
-| 20 | `stack.test.js` | 2/2 | ✅ DONE | Fixed: device-stack array now works |
-| 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL | #0 ANS-104 500; #1 ANS-104 format; #2 passes |
-| 22 | `wao-hb.test.js` | 0/4 | ❌ FAIL | Uses AO SDK; genesis-wasm timeout issues |
+| 19 | `simple-pay.test.js` | 1/1 | ✅ DONE | |
+| 20 | `stack.test.js` | 2/2 | ✅ DONE | dev_add NIF compiled |
+| 21 | `upload.test.js` | 2/3 | ⚠️ PARTIAL | #0 and #1 pass; #2 compute fails |
+| 22 | `wao-hb.test.js` | ?/4 | ⏱️ TIMEOUT | Needs >180s timeout; genesis-wasm heavy |
 
-**Summary:** ~38-41/75 tests passing (~51-55%)
-- ✅ Fully passing (13 files): cache, eunit, faff, json, local_name, lookup, message, meta, scheduler, server, simple-pay, stack (12 files, 15 subtests)
-- ⚠️ Partial (4 files): hyperbeam (5-8/14), process (1/2), router (15/25), upload (1/3)
-- ❌ Failing (5 files): ans104, cron, p4, patch, relay, wao-hb
+**Summary (2026-02-04 sweep):**
+- ✅ Fully passing (15 files, 38 subtests): cache, eunit, faff, json, local_name, lookup, message, meta, relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (2 files): process (1/2), upload (2/3)
+- ❌ Failing (1 file): cron (0/1), patch (0/3)
+- ⏱️ Timeout/untested (4 files): ans104, hyperbeam, p4, wao-hb
 
 **Remaining failure categories:**
-1. **Missing NIFs/devices**: `add@1.0` (missing NIF), `lua@5.3a`, WAMR/WASI (need native compilation)
-2. **Response format mismatch**: relay (cast.body), router (device info, preprocess), hyperbeam (Legacynet compute results)
-3. **HyperBEAM stability**: process#0 (fetch fails after rapid requests), hyperbeam (flaky Legacynet tests)
-4. **Missing files**: p4 (`p4-payment-process.lua` renamed to `hyper-token-p4.lua`)
-5. **Cron timing**: cron fires once instead of expected 4 times
-6. **ANS-104 format**: ans104 and upload#0/#1 use ANS-104 binary format (different from JSON POST)
-7. **Slow/timeout**: wao-hb and ans104 tests take 5+ minutes due to genesis-wasm
+1. **Lua device ao.init error**: `computeLua` returns 500 with `ao.init` trace; `computeLegacy` works but returns empty Messages (Lua code not evaluating)
+2. **patch .body undefined**: `hb.now({ pid, path: "/cache/square" })` returns object without `.body` field
+3. **Cron timing**: cron fires once instead of expected 4 times
+4. **Process #0**: fetch fails on direct path API after rapid requests
+5. **Upload #2**: compute results `undefined == 3`
+6. **P4 #2**: Second HyperBEAM instance hangs on startup
+7. **Timeouts**: hyperbeam, ans104, wao-hb need >3min per test
 
 ### Fix Applied: Prometheus Dependencies (2026-02-02)
 

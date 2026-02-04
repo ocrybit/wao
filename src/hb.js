@@ -94,7 +94,8 @@ class HB {
   }
 
   async getLua() {
-    const lua = Buffer.from(hyper_aos, "base64")
+    // Decode base64 to UTF-8 text string (Lua source code)
+    const lua = Buffer.from(hyper_aos, "base64").toString("utf-8")
     const id = await this.cacheBinary(lua, "application/lua")
     this.lua ??= id
     return id
@@ -167,7 +168,15 @@ class HB {
   }
 
   async cacheBinary(data, type) {
-    const res = await this.post({ path: "/~wao@1.0/cache_module", data, type })
+    // Convert Buffer to base64 string to avoid signature mismatch in JSON POST.
+    // Buffer goes through structured field byte encoding in commit (`:base64:`)
+    // but jsonReplacer converts to plain base64 string, causing invalid_commitment.
+    const dataStr = Buffer.isBuffer(data) ? data.toString("base64") : data
+    const res = await this.post({
+      path: "/~wao@1.0/cache_module",
+      data: dataStr,
+      type,
+    })
     return res.out.id
   }
 
