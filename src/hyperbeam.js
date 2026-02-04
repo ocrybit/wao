@@ -426,19 +426,25 @@ export default class HyperBEAM {
     const _relay_http_client = `, relay_http_client => gun, http_client => gun`
 
     // Custom routes using Cloudflare proxy instead of arweave.net
-    const _routes = this.arweave_gateway
+    // Also add CU routes for genesis_wasm when enabled
+    const cuRoutes = this.genesis_wasm
+      ? `#{ <<"template">> => <<"/result/*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu_port}">> } },
+          #{ <<"template">> => <<"/snapshot/*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu_port}">> } },
+          #{ <<"template">> => <<"/dry-run">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu_port}">> } },`
+      : ""
+    const _routes = this.arweave_gateway || this.genesis_wasm
       ? `, routes => [
-          #{ <<"template">> => <<"/result/*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu_port}">> } },
+          ${cuRoutes}
           #{ <<"template">> => <<"/graphql">>, <<"nodes">> => [
-              #{ <<"prefix">> => <<"${this.arweave_gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }
+              #{ <<"prefix">> => <<"${this.arweave_gateway || 'https://arweave.net'}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }
           ]},
           #{ <<"template">> => <<"/arweave">>, <<"node">> => #{
               <<"match">> => <<"^/arweave">>,
-              <<"with">> => <<"${this.arweave_gateway}">>,
+              <<"with">> => <<"${this.arweave_gateway || 'https://arweave.net'}">>,
               <<"opts">> => #{ http_client => gun, protocol => http2 }
           }},
           #{ <<"template">> => <<"/raw">>, <<"node">> => #{
-              <<"prefix">> => <<"${this.arweave_gateway}">>,
+              <<"prefix">> => <<"${this.arweave_gateway || 'https://arweave.net'}">>,
               <<"opts">> => #{ http_client => gun, protocol => http2 }
           }}
         ]`

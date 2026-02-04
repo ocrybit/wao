@@ -28,7 +28,7 @@ end)
 
 describe("Hyperbeam Legacynet", function () {
   let hbeam, ao, ao2
-  before(async () => (hbeam = await new HyperBEAM({ reset: true }).ready()))
+  before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
 
   beforeEach(async () => {
     ao = await new AO({ module_type: "mainnet", hb: hbeam.url }).init(hbeam.jwk)
