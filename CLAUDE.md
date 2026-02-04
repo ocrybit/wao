@@ -120,7 +120,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`8cc185a6`](https://github.com/ocrybit/HyperBEAM/commit/8cc185a6) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`dc6f9329`](https://github.com/ocrybit/HyperBEAM/commit/dc6f9329) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -165,7 +165,7 @@ Using official upstream release tags as checkpoints.
 |---|-----------|------------|--------|-------|
 | 1 | `ans104.test.js` | ?/2 | ⏱️ TIMEOUT | Needs >180s timeout; ANS-104 format |
 | 2 | `cache.test.js` | 1/1 | ✅ DONE | |
-| 3 | `cron.test.js` | 0/1 | ❌ FAIL | count=1 not 4; cron fires once then stops |
+| 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
 | 6 | `hyperbeam.test.js` | ?/14 | ⏱️ TIMEOUT | Needs >180s timeout; Suite1 6/6, Suite2 Lua/AOS issues |
@@ -176,7 +176,7 @@ Using official upstream release tags as checkpoints.
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
 | 12 | `p4.test.js` | ?/2 | ⏱️ TIMEOUT | Test #2 hangs on second HyperBEAM startup |
 | 13 | `patch.test.js` | 0/3 | ❌ FAIL | `.body` undefined in `hb.now()` response |
-| 14 | `process.test.js` | 1/2 | ⚠️ PARTIAL | #0 fetch fails; #2 passes |
+| 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
 | 16 | `router.test.js` | 21/21 | ✅ DONE | Fixed: all 21 subtests passing |
 | 17 | `scheduler.test.js` | 1/1 | ✅ DONE | |
@@ -187,15 +187,14 @@ Using official upstream release tags as checkpoints.
 | 22 | `wao-hb.test.js` | ?/4 | ⏱️ TIMEOUT | Needs >180s timeout; genesis-wasm heavy |
 
 **Summary (2026-02-04 sweep):**
-- ✅ Fully passing (15 files, 38 subtests): cache, eunit, faff, json, local_name, lookup, message, meta, relay, router (21), scheduler, server (2), simple-pay, stack (2)
-- ⚠️ Partial (2 files): process (1/2), upload (2/3)
-- ❌ Failing (1 file): cron (0/1), patch (0/3)
+- ✅ Fully passing (17 files, 42 subtests): cache, cron, eunit, faff, json, local_name, lookup, message, meta, process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (1 file): upload (2/3)
+- ❌ Failing (1 file): patch (0/3)
 - ⏱️ Timeout/untested (4 files): ans104, hyperbeam, p4, wao-hb
 
 **Remaining failure categories:**
 1. **Lua device ao.init error**: `computeLua` returns 500 with `ao.init` trace; `computeLegacy` works but returns empty Messages (Lua code not evaluating)
 2. **patch .body undefined**: `hb.now({ pid, path: "/cache/square" })` returns object without `.body` field
-3. **Cron timing**: cron fires once instead of expected 4 times
 4. **Process #0**: fetch fails on direct path API after rapid requests
 5. **Upload #2**: compute results `undefined == 3`
 6. **P4 #2**: Second HyperBEAM instance hangs on startup
@@ -404,6 +403,43 @@ if (bodyKeys.length === 0 && !body) {
 - Skip `ao-body-key` only for native body keys ("body", "data") where HyperBEAM re-derives it automatically
 
 **Result:** json.test.js, local_name.test.js, lookup.test.js, simple-pay.test.js all now pass.
+
+### ✅ FIXED: Cron Device Fire-and-Forget Scheduling (2026-02-04)
+
+**Problem:** `cron.test.js` hung on the first cron iteration. The cron device's `hb_ao:resolve` call would block inside the scheduler server's `do_assign` function.
+
+**Root Cause:**
+1. The original `dev_wao:cron` called `hb_ao:resolve` to send a schedule message
+2. This triggered `dev_scheduler_server:do_assign` which called `hb_cache:ensure_all_loaded`
+3. The committed body `hb_message:commit(#{}, Wallet)` lacked type metadata
+4. `ensure_all_loaded` hung trying to resolve the empty body without a `type` field
+5. The scheduler server was single-threaded, so while processing the cron message, it couldn't respond to `info` requests needed for `/<pid>/now` queries
+
+**Fix in `dev_wao.erl`:**
+```erlang
+cron(Msg1, Msg2, Opts) ->
+    Target = case hb_ao:get(<<"target">>, Msg1, not_found, Opts) of
+        not_found -> hb_ao:get(<<"target">>, Msg2, not_found, Opts);
+        T -> T
+    end,
+    Wallet = hb_opts:get(priv_wallet, not_found, Opts),
+    %% Add type => Message to fix ensure_all_loaded
+    Body = hb_message:commit( #{ <<"type">> => <<"Message">> }, Wallet ),
+    SchedPid = dev_scheduler_registry:find(Target),
+    %% Fire-and-forget: send directly to scheduler server, don't wait
+    Sink = spawn(fun() -> receive _ -> ok after 30000 -> ok end end),
+    AbortTime = erlang:system_time(millisecond) + 30000,
+    SchedPid ! {schedule, Body, Sink, AbortTime},
+    {ok, #{}}.
+```
+
+**Key Changes:**
+1. Added `<<"type">> => <<"Message">>` to committed body to fix `ensure_all_loaded`
+2. Use fire-and-forget pattern: spawn throwaway "sink" process as reply target
+3. Send `{schedule, Body, Sink, AbortTime}` directly to scheduler server PID
+4. Return `{ok, #{}}` immediately without blocking
+
+**Result:** `cron.test.js` now passes 1/1, with cron iterations completing in ~300ms each.
 
 ---
 
