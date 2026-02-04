@@ -18,7 +18,7 @@ describe("Hyperbeam", function () {
   it("should handle payment with lua", async () => {
     const port = 10002
     const addr2 = toAddr(acc[0].jwk.n)
-    const process = hbeam.file("scripts/p4-payment-process.lua")
+    const process = hbeam.file("scripts/hyper-token-p4.lua")
     const { pid: cache_pid } = await hb.spawn({})
     const { slot } = await hb.schedule({
       pid: cache_pid,
@@ -35,7 +35,7 @@ describe("Hyperbeam", function () {
     } = JSON.parse(body)
     const pid = msg.node.message.Id
     assert(pid)
-    const client = hbeam.file("scripts/p4-payment-client.lua")
+    const client = hbeam.file("scripts/hyper-token-p4-client.lua")
 
     const { slot: slot2 } = await hb.schedule({
       pid: cache_pid,
@@ -57,9 +57,9 @@ describe("Hyperbeam", function () {
   it("should handle payment with lua", async () => {
     const port = 10002
     const addr2 = toAddr(acc[0].jwk.n)
-    const process = hbeam.file("scripts/p4-payment-process.lua")
+    const process = hbeam.file("scripts/hyper-token-p4.lua")
     const pid = await hb.cacheScript(process)
-    const client = hbeam.file("scripts/p4-payment-client.lua")
+    const client = hbeam.file("scripts/hyper-token-p4-client.lua")
     const cid = await hb.cacheScript(client)
 
     const hbeam2 = await new HyperBEAM({

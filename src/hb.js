@@ -157,10 +157,10 @@ class HB {
       const { pid } = await this.spawn({})
       this.cache = pid
     }
-    const { slot } = await this.scheduleFlat({
+    const { slot } = await this.schedule({
       data,
       pid: this.cache,
-      tags: { "Content-Type": type },
+      tags: { "content-type": type },
     })
     const msgs = await this.messages({ pid: this.cache, from: slot, limit: 1 })
     return msgs.edges[0].node.message.Id
@@ -461,7 +461,7 @@ class HB {
     const jsonBody = JSON.stringify(committed, jsonReplacer)
     const response = await fetch(`${this.url}${obj.path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "accept-bundle": "true" },
       body: jsonBody,
     })
     if (response.status >= 400) {
