@@ -30,6 +30,9 @@ const buildAoTypes = (obj) => {
       types.push(`${key}="atom"`)
     } else if (value === null) {
       types.push(`${key}="atom"`)
+    } else if (typeof value === "symbol") {
+      // Symbols are Erlang atoms
+      types.push(`${key}="atom"`)
     }
   }
   return types.length > 0 ? types.join(", ") : null
@@ -54,25 +57,50 @@ export const commit = async (obj, opts) => {
   const NATIVE_BODY_KEYS = new Set(["body", "data"])
   const isNativeBodyKey = !inlineBodyKey || NATIVE_BODY_KEYS.has(inlineBodyKey)
 
-  // Build body from committed components using header string values.
+  // Build body from committed components.
+  // IMPORTANT: Use original typed values from obj (preserves integers, booleans, etc.)
+  // instead of string values from headers. This is critical because:
+  // 1. HTTP headers are always strings (e.g., quantity: 100 → "100")
+  // 2. We include ao-types to tell HyperBEAM the original types
+  // 3. HyperBEAM applies ao-types BEFORE signature verification
+  // 4. If we send strings, HyperBEAM converts to integers, breaking signature
+  // 5. If we send original integers, HyperBEAM re-encodes them as strings for verification
+  //
   // Always skip content-digest and inline-body-key (transport artifacts re-derived by HyperBEAM).
   // Skip ao-body-key only for native body keys (HyperBEAM re-derives it).
   // Keep ao-body-key for custom body keys (HyperBEAM needs it to find the body field).
-  // Create case-insensitive lookup map for headers (HTTP headers are case-insensitive)
+
+  // Create case-insensitive lookup maps
   const headerLookup = new Map()
   for (const [k, v] of Object.entries(msg.headers)) {
     headerLookup.set(k.toLowerCase(), v)
   }
+  // Case-insensitive lookup for original object values (preserves types)
+  const objLookup = new Map()
+  for (const [k, v] of Object.entries(obj)) {
+    objLookup.set(k.toLowerCase(), v)
+  }
+
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     if (key === "content-length") continue
     if (key === "content-digest") continue
     if (key === "inline-body-key") continue
     if (isNativeBodyKey && key === "ao-body-key") continue
-    // Use lowercase key for both lookup and body key (matches committed list)
-    const value = headerLookup.get(key)
-    if (value !== undefined) {
-      body[key] = value
+
+    // Prefer original value from input object (preserves integer/boolean/etc. types)
+    // Fall back to header string value if not found in original object
+    // Note: For JSON codec paths (like scheduleNP), HyperBEAM applies ao-types BEFORE
+    // signature verification, which can cause invalid_commitment errors. This is a known
+    // limitation requiring HyperBEAM-side fixes to the JSON codec.
+    const originalValue = objLookup.get(key.toLowerCase())
+    if (originalValue !== undefined) {
+      body[key] = originalValue
+    } else {
+      const headerValue = headerLookup.get(key)
+      if (headerValue !== undefined) {
+        body[key] = headerValue
+      }
     }
   }
 
@@ -117,8 +145,14 @@ export const commit = async (obj, opts) => {
   }
 
   // Include ao-types so HyperBEAM knows how to convert string values to proper types.
-  if (msg.headers["ao-types"]) {
-    body["ao-types"] = msg.headers["ao-types"]
+  // First check if it was set by the signer, otherwise compute it from the original object
+  let aoTypes = msg.headers["ao-types"]
+  if (!aoTypes) {
+    // Compute ao-types from the original typed values in obj
+    aoTypes = buildAoTypes(obj)
+  }
+  if (aoTypes) {
+    body["ao-types"] = aoTypes
   }
 
   const rsaId = rsaid(msg.headers)

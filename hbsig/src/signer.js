@@ -292,6 +292,24 @@ const smartSign = async (obj, path) => {
   }
 }
 
+// Helper to build ao-types string from an object
+const buildAoTypes = (obj) => {
+  const types = []
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "number") {
+      types.push(`${key}="${Number.isInteger(value) ? "integer" : "float"}"`)
+    } else if (typeof value === "boolean") {
+      types.push(`${key}="atom"`)
+    } else if (value === null) {
+      types.push(`${key}="atom"`)
+    } else if (typeof value === "symbol") {
+      // Symbols are Erlang atoms
+      types.push(`${key}="atom"`)
+    }
+  }
+  return types.length > 0 ? types.join(", ") : null
+}
+
 // Internal encode function that uses the original impl as much as possible
 const encode = async (obj, path) => {
   // Filter out undefined values before processing
@@ -305,6 +323,13 @@ const encode = async (obj, path) => {
   // Only add path if explicitly provided
   let fields = { ...filtered }
   if (path) fields.path = path
+
+  // Build ao-types annotation for typed values (integers, booleans, etc.)
+  // This tells HyperBEAM how to convert values during verification
+  const aoTypes = buildAoTypes(filtered)
+  if (aoTypes) {
+    fields["ao-types"] = aoTypes
+  }
 
   // Try the standard encoding pipeline
   const encoded = httpsig_to(normalize(structured_from(normalize(fields))))

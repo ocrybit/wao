@@ -219,6 +219,7 @@ const applyAoTypes = obj => {
     }
   }
 
+
   // Process ao-types in this object
   let aoTypesRaw = obj["ao-types"]
   // Convert Buffer to string if needed
@@ -275,6 +276,9 @@ const applyAoTypes = obj => {
             obj[actualKey] = null
           } else if (strValue === "undefined") {
             obj[actualKey] = undefined
+          } else {
+            // General atoms (like "ok") become global Symbols
+            obj[actualKey] = Symbol.for(strValue)
           }
         }
       }
