@@ -204,7 +204,7 @@ Using official upstream release tags as checkpoints.
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
-| 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Fixed node names; #2 has P4 ledger 500 error |
+| 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | #1 passes; #2 has type conversion issue (ao-types before sig verify) |
 | 13 | `patch.test.js` | 3/3 | ✅ DONE | Fixed: prometheus deps |
 | 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
@@ -594,6 +594,58 @@ async scheduleNP({ pid, tags = {}, data } = {}) {
 ```
 
 **Result:** P4 test #1 passes. P4 test #2 still fails with Lua ledger 500 error (separate issue).
+
+### ✅ FIXED: Path Data Field Handling (2026-02-05)
+
+**Problem:** P4 test #1 failed with `invalid_commitment` because `path` was being added to signed fields for spawn operations that don't use path as a data field.
+
+**Root Cause:**
+1. In `signer.js`, the `signer()` function always extracted `path` from fields and used it as HTTP path
+2. The `_sign()` function always added `path` to headers if provided
+3. For spawn operations, this caused an HTTP path like `/~scheduler@1.0/schedule` to be signed as a data field
+4. HyperBEAM couldn't verify because the message had a different path value
+
+**Fix in `hbsig/src/signer.js`:**
+1. Distinguish URL paths from data fields:
+```javascript
+const fieldsPath = restFields.path
+const isUrlPath = typeof fieldsPath === "string" && fieldsPath.startsWith("/")
+const path = isUrlPath ? fieldsPath : "/relay/process"
+// Keep path in data fields if it's not a URL path
+aoFields = isUrlPath ? rest : restFields
+```
+
+2. Only add path to headers if it's a data field:
+```javascript
+const isDataFieldPath = path && typeof path === "string" && !path.startsWith("/")
+if (isDataFieldPath && !headersObj["path"]) headersObj["path"] = path
+```
+
+3. Never pass path to encode() (it's either in aoFields or shouldn't be signed):
+```javascript
+const encoded = await encode(preprocessed, null)
+```
+
+**Fix in `hbsig/src/commit.js`:**
+Allow path as a data field (removed skip for path in non-committed loop).
+
+**Result:** P4 test #1 passes (spawn and cacheScript work correctly).
+
+### ⚠️ KNOWN ISSUE: P4 Test #2 Type Conversion (2026-02-05)
+
+**Problem:** P4 test #2 fails with `invalid_commitment` for scheduleNP with `path: "credit-notice", quantity: 100`.
+
+**Root Cause:** HyperBEAM's JSON codec applies type conversion (based on `ao-types`) BEFORE signature verification.
+- We sign string values: `quantity: "100"` (string), `ao-types: "quantity=\"integer\""`
+- HyperBEAM parses JSON and converts: `quantity: 100` (integer)
+- Signature verification fails because the values don't match
+
+**Observations:**
+- The committed fields are correct: `[nonce, path, quantity, recipient]`
+- The path value is correct: `path: "credit-notice"`
+- The error shows `quantity => 100` (integer) instead of `quantity => "100"` (binary string)
+
+**Status:** Requires HyperBEAM-side fix. The JSON codec needs to verify signatures BEFORE applying type conversion, or use string values for verification.
 
 ### ✅ FIXED: Upload Tests ANS-104 Scheduling (2026-02-05)
 

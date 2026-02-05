@@ -371,8 +371,11 @@ async function _sign({
   let url_path = typeof signPath === "string" ? signPath : path
   const _url = joinUrl({ url, path: url_path })
 
-  // Only add path header if path is provided
-  if (path) headersObj["path"] = path
+  // Only add path header if it's a data field (doesn't start with "/").
+  // URL paths (like "/relay/process") should NOT be added to headers.
+  // Data fields named "path" (e.g., "credit-notice") should be signed.
+  const isDataFieldPath = path && typeof path === "string" && !path.startsWith("/")
+  if (isDataFieldPath && !headersObj["path"]) headersObj["path"] = path
 
   // Add accept-bundle header to request inline data instead of links
   headersObj["accept-bundle"] = "true"
@@ -399,7 +402,9 @@ async function _sign({
   // - accept-bundle: request metadata for inlining nested data
   // - content-digest: only exclude when no body; when body exists, sign it so
   //   HyperBEAM can map content-digest → body → ao-body-key field in committed list
-  const metadataFields = ["body-keys", "path", "ao-types", "accept-bundle", "content-length"]
+  // Note: "path" as a data field (e.g., path: "credit-notice") should be signed.
+  // The @path derived component (HTTP request URL) is handled separately.
+  const metadataFields = ["body-keys", "ao-types", "accept-bundle", "content-length"]
   if (!body) {
     metadataFields.push("content-digest")
   }
@@ -464,13 +469,35 @@ export function signer(config) {
     fields,
     { encoded: _encoded = false, path: signPath = true } = {}
   ) => {
-    const { path = "/relay/process", method = "POST", ...aoFields } = fields
+    const { method = "POST", ...restFields } = fields
+
+    // Distinguish URL paths from data fields:
+    // - URL paths start with "/" (e.g., "/relay/process")
+    // - Data fields don't (e.g., "credit-notice" for P4 ledger actions)
+    const fieldsPath = restFields.path
+    const isUrlPath = typeof fieldsPath === "string" && fieldsPath.startsWith("/")
+    const path = isUrlPath ? fieldsPath : "/relay/process"
+
+    // Keep path in data fields if it's not a URL path
+    let aoFields
+    if (isUrlPath) {
+      const { path: _, ...rest } = restFields
+      aoFields = rest
+    } else {
+      aoFields = restFields  // path stays as data field
+    }
+
     const filteredFields = filterUndefined(aoFields)
     // Pre-convert device-stack arrays to RFC 8941 strings before encoding
     const preprocessed = preprocessStackArrays(filteredFields)
+    // Never pass path to encode():
+    // - If isUrlPath is true (e.g., "/~scheduler@1.0/schedule"): path is only for
+    //   HTTP request routing, not a data field to sign
+    // - If isUrlPath is false (e.g., "credit-notice"): path is already in aoFields
+    //   as a data field, so encode() will process it naturally
     const encoded = _encoded
       ? filteredFields
-      : await encode(preprocessed, path)
+      : await encode(preprocessed, null)
     return await _sign({ path, signPath, method, encoded, signer, url })
   }
 }

@@ -105,8 +105,11 @@ export const commit = async (obj, opts) => {
   // Also track lowercase keys already in body to prevent duplicates
   const bodyKeysLower = new Set(Object.keys(body).map(k => k.toLowerCase()))
   for (const [key, value] of Object.entries(obj)) {
-    if (key === "path" || key === "method") continue
+    // Skip HTTP method (not a data field)
+    if (key === "method") continue
+    // Skip if already in committed set (was signed)
     if (committedSetLower.has(key.toLowerCase())) continue
+    // Skip if already in body (duplicate prevention)
     if (bodyKeysLower.has(key.toLowerCase())) continue
     if (value === undefined) continue
     body[key] = value
