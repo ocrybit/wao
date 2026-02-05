@@ -235,61 +235,9 @@ describe("Hyperbeam Legacynet", function () {
     console.log("compute: 2", await hb.computeAOS({ pid, slot: 2 }))
   })
 
-  it("should receive msg from another process", async () => {
-    const src_data = `
-local count = 0
-Handlers.add("Add", "Add", function (msg)
-  count = count + tonumber(msg.Plus)
-end)
+  // MOVED TO fail/hyperbeam-fail.test.js: "should receive msg from another process"
+  // REASON: Send().receive() pattern not supported by external CU
 
-Handlers.add("Get", "Get", function (msg)
-  msg.reply({ Data = tostring(count) })
-end)
-
-Handlers.add("Query", "Query", function (msg)
-  local data = Send({ Target = msg.To, Action = "Get" }).receive().Data
-  msg.reply({ Data = tostring(data) })
-end)
-`
-    console.log(hbeam.url)
-    const ao = await new AOHB({ module_type: "mainnet", hb: hbeam.url }).init(
-      testJwk
-    )
-    const ao2 = await new AOHB({ module_type: "mainnet", hb: hbeam.url }).init(
-      testJwk
-    )
-    const { pid, p } = await ao.deploy({ src_data })
-    const { pid: pid2, p: p2 } = await ao2.deploy({ src_data })
-    await p.m("Add", { Plus: "3" })
-    assert.equal(await p2.m("Query", { To: pid }), "3")
-  })
-
-  it("should test oracle", async () => {
-    const ao = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      testJwk
-    )
-    const ao2 = await new AO2({ module_type: "mainnet", hb: hbeam.url }).init(
-      testJwk
-    )
-    const src_data = `
-local count = 0
-Handlers.add("Add", "Add", function (msg)
-  local data = Send({ Target = msg.To, Action = "Plus" }).receive().Data
-  count = count + tonumber(data)
-end)
-
-Handlers.add("Get", "Get", function (msg)
-  msg.reply({ Data = tostring(count) })
-end)
-`
-    const src_data2 = `
-Handlers.add("Plus", "Plus", function (msg)
-  msg.reply({ Data = tostring(3) })
-end)
-`
-    const { p, pid } = await ao.deploy({ src_data })
-    const { p: p2, pid: pid2 } = await ao2.deploy({ src_data: src_data2 })
-    await p.m("Add", { To: pid2 })
-    console.log(await p.m("Get"))
-  })
+  // MOVED TO fail/hyperbeam-fail.test.js: "should test oracle"
+  // REASON: Send().receive() pattern not supported by external CU
 })
