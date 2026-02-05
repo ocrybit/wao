@@ -25,39 +25,61 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 
 ## Session Setup (each fresh session)
 
-1. Read `setup.md` and install HyperBEAM from submodule
-2. Verify HyperBEAM submodule points to the commit recorded in the Checkpoints table (Merged HB column)
-3. Verify current branch commit history matches progress, update Working branch in Current Progress section if on new branch
-4. **Report current working progress to user** (which CP, which task, which test)
-5. After each commit, verify you are committing to the correct branch
-
-### Offline Setup (Using Prebuilt Tarball)
-
-For offline environments, use the prebuilt tarball instead of building from source:
+### Quick Start (Copy-Paste Commands)
 
 ```bash
-cd HyperBEAM
+# 1. Setup Erlang environment
+cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
+. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# Extract prebuilt dependencies (includes prometheus, quantile_estimator, wallet)
-tar -xJf ../installation/hyperbeam-prebuilt.tar.xz
+# 2. Initialize submodule and extract prebuilt HyperBEAM
+cd /home/user/wao
+git submodule update --init --recursive
+cd HyperBEAM && tar -xJf ../installation/hyperbeam-prebuilt.tar.xz
 
-# IMPORTANT: The tarball includes .wallet.json - verify it was extracted
-ls -la .wallet.json  # Must exist for tests to pass
+# 3. Verify critical files extracted
+ls -la .wallet.json _build/default/lib/hb/ebin/hb_cache_control.beam
 
-# The tarball contains:
-# - _build/default/lib/* (all compiled Erlang dependencies including prometheus)
-# - _build/wamr/* (WAMR runtime for WASM execution)
-# - priv/* (NIFs and HTML files)
-# - .wallet.json (test signing key - REQUIRED for tests)
+# 4. Setup rebar config for offline compilation
+rm -f rebar.lock && cp ../installation/hyperbeam_rebar.config rebar.config
 
-# If using rebar.config from installation/ instead of the one in HyperBEAM/:
-# The installation/hyperbeam_rebar.config includes prometheus deps for offline use
-cp ../installation/hyperbeam_rebar.config rebar.config
+# 5. Build hbsig and install npm dependencies
+cd /home/user/wao/hbsig && yarn build
+cd /home/user/wao && npm install
+
+# 6. Create genesis-wasm-server symlink (for CU path resolution)
+cd /home/user/wao/HyperBEAM && ln -sf _build/genesis-wasm-server genesis-wasm-server
 ```
 
-**Note on prometheus dependencies:** HyperBEAM's `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally. The tarball includes prebuilt prometheus, prometheus_httpd, prometheus_cowboy, and quantile_estimator. If building from source in an offline environment, these deps must be available locally.
+### Verification Steps
 
-**Note on .wallet.json:** Tests require this file for signing messages. Without it, tests fail with "Cannot read properties of undefined (reading 'n')" because the JWK is missing. The tarball includes this file - always verify it was extracted.
+After setup, verify:
+1. `HyperBEAM submodule commit`: `cd HyperBEAM && git log -1 --oneline` (should match Merged HB in checkpoint table)
+2. `.wallet.json exists`: Required for signing tests
+3. `hb_cache_control.beam patched`: Contains try-catch for delegated CU cache errors
+4. `genesis-wasm-server symlink`: Required for CU to find WASM modules
+
+### What the Tarball Contains
+
+The `hyperbeam-prebuilt.tar.xz` includes:
+- `_build/default/lib/*` - Compiled Erlang dependencies (prometheus, quantile_estimator, cowboy, etc.)
+- `_build/wamr/*` - WAMR runtime for WASM execution
+- `priv/*` - NIFs and HTML files
+- `.wallet.json` - Test signing key (REQUIRED)
+- **Patched `hb_cache_control.beam`** - Contains try-catch fix for delegated CU cache errors
+
+**IMPORTANT**: The tarball includes a patched version of `hb_cache_control.beam` that adds try-catch error handling around cache writes. This is required because when HyperBEAM caches compute results from a delegated CU, the results may contain references to messages not in the local cache. Without this patch, tests fail with `necessary_message_not_found` errors.
+
+### Session Checklist
+
+1. ✅ Extract Erlang/asdf from tarball
+2. ✅ Initialize HyperBEAM submodule
+3. ✅ Extract prebuilt HyperBEAM from tarball
+4. ✅ Verify .wallet.json and patched .beam files exist
+5. ✅ Build hbsig and install npm deps
+6. ✅ Create genesis-wasm-server symlink
+7. ✅ Verify current branch matches expected working branch
+8. ✅ Report current progress to user
 
 ## Checkpoint Task Loop
 
