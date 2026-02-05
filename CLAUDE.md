@@ -196,7 +196,7 @@ Using official upstream release tags as checkpoints.
 3. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
 4. **Upload #2**: CU validation issues
 
-### Fix Applied: prometheus_http Stub (2026-02-05)
+### Fix Applied: Prometheus Dependencies (2026-02-05)
 
 **Problem:** Tests using `computeLegacy` failed with:
 ```
@@ -204,28 +204,34 @@ prometheus_http:status_class/"�" [No details]
 hb_http_client:httpc_req/3 [/home/user/wao/HyperBEAM/src/hb_http_client.erl:96]
 ```
 
-**Root Cause:** The `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally at line 747, but prometheus modules were not included in the HyperBEAM build. In offline environments, the full prometheus library cannot be fetched from github.
+**Root Cause:** The `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally at line 747, but prometheus modules were not included in the HyperBEAM build.
 
-**Fix Applied (commit 0b29f977 on wao-m1):**
-Added a minimal stub `HyperBEAM/src/prometheus_http.erl` that provides the `status_class/1` function:
+**Fix Applied:**
+Added prometheus dependencies to `HyperBEAM/rebar.config`:
 ```erlang
--module(prometheus_http).
--export([status_class/1]).
-
-status_class(Status) when is_integer(Status), Status >= 100, Status < 200 -> "1xx";
-status_class(Status) when is_integer(Status), Status >= 200, Status < 300 -> "2xx";
-status_class(Status) when is_integer(Status), Status >= 300, Status < 400 -> "3xx";
-status_class(Status) when is_integer(Status), Status >= 400, Status < 500 -> "4xx";
-status_class(Status) when is_integer(Status), Status >= 500, Status < 600 -> "5xx";
-status_class(_) -> "unknown".
+{deps, [
+    ...
+    {quantile_estimator, {git, "https://github.com/odo/quantile_estimator.git", {ref, "3c4c505246f165e179619ebe6690080210c84830"}}},
+    {prometheus, {git, "https://github.com/deadtrickster/prometheus.erl.git", {tag, "v4.11.0"}}},
+    {prometheus_httpd, {git, "https://github.com/deadtrickster/prometheus_httpd.git", {tag, "v2.1.11"}}},
+    {prometheus_cowboy, {git, "https://github.com/deadtrickster/prometheus-cowboy.git", {tag, "v0.1.8"}}}
+]}.
 ```
 
-**Note:** This stub needs to be pushed to wao-m1 branch. Requires GitHub authentication.
+Also added overrides to prevent dependency conflicts:
+```erlang
+{overrides, [
+    ...
+    {override, prometheus_cowboy, [{deps, []}, {plugins, []}]},
+    {override, prometheus_httpd, [{deps, []}, {plugins, []}, {extra_src_dirs, []}]},
+    {override, prometheus, [{deps, []}, {plugins, []}]}
+]}.
+```
 
 **Additional fix:** Created symlink `HyperBEAM/genesis-wasm-server -> _build/genesis-wasm-server` for CU path resolution.
 
 **Current Status:**
-- ✅ prometheus_http stub compiles and loads
+- ✅ Prometheus modules compile and load properly
 - ✅ No more `prometheus_http:status_class` errors
 - ✅ ans104 test now passes 2/2
 
