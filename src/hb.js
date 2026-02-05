@@ -269,7 +269,7 @@ class HB {
   }
 
   async scheduleLua({ action = "Eval", tags = {}, ...rest }) {
-    if (action) tags.action = action
+    if (action) tags.Action = action
     return await this.schedule({ tags, ...rest })
   }
 
@@ -386,8 +386,8 @@ class HB {
   }
 
   async scheduleLegacy({ action = "Eval", tags = {}, ...rest } = {}) {
-    // Use lowercase 'action' to match HTTP Message Signature field normalization
-    if (action) tags.action = action
+    // Use uppercase 'Action' to match AOS handler matching (msg.Action)
+    if (action) tags.Action = action
     return await this.schedule({ tags, ...rest })
   }
 
@@ -411,7 +411,7 @@ class HB {
   }
 
   async dryrun({ tags = {}, pid, action, data } = {}) {
-    if (typeof action === "string") tags.action = action
+    if (typeof action === "string") tags.Action = action
     let json = { Tags: buildTags({ ...tags }), Owner: this.addr }
     if (data) json.Data = data
     const res = await this.post({
@@ -618,7 +618,7 @@ class HB {
   }
 
   async scheduleAOS({ action = "Eval", tags = {}, ...rest }) {
-    if (action) tags.action = action
+    if (action) tags.Action = action
     return await this.schedule({ tags, ...rest })
   }
 }
