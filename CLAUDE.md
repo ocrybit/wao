@@ -188,7 +188,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`710ce4ce`](https://github.com/ocrybit/HyperBEAM/commit/710ce4ce) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`996e9485`](https://github.com/ocrybit/HyperBEAM/commit/996e9485) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -198,7 +198,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`710ce4ce`](https://github.com/ocrybit/HyperBEAM/commit/710ce4ce) - Fix cache_module to decode base64-encoded WASM data
+**Merged HB:** [`996e9485`](https://github.com/ocrybit/HyperBEAM/commit/996e9485) - Fix HTTPSig signature verification for JS nested commitments
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
@@ -679,21 +679,48 @@ Allow path as a data field (removed skip for path in non-committed loop).
 
 **Result:** P4 test #1 passes (spawn and cacheScript work correctly).
 
-### ⚠️ KNOWN ISSUE: P4 Test #2 Type Conversion (2026-02-05)
+### ✅ FIXED: HTTPSig Signature Verification for JS Nested Commitments (2026-02-05)
 
-**Problem:** P4 test #2 fails with `invalid_commitment` for scheduleNP with `path: "credit-notice", quantity: 100`.
+**Problem:** P4 test #2 failed with `invalid_commitment` for scheduleNP with `path: "credit-notice"`.
 
-**Root Cause:** HyperBEAM's JSON codec applies type conversion (based on `ao-types`) BEFORE signature verification.
-- We sign string values: `quantity: "100"` (string), `ao-types: "quantity=\"integer\""`
-- HyperBEAM parses JSON and converts: `quantity: 100` (integer)
-- Signature verification fails because the values don't match
+**Root Cause:** When JS clients send JSON with embedded HTTPSig commitments, HyperBEAM's `signature_params_line()` function was rebuilding the signature-input from the committed list, applying `add_derived_specifiers()` which transforms `path` to `@path`. But JS clients sign with literal `path` (no @ prefix) when path is a data field, not the HTTP request path.
 
-**Observations:**
-- The committed fields are correct: `[nonce, path, quantity, recipient]`
-- The path value is correct: `path: "credit-notice"`
-- The error shows `quantity => 100` (integer) instead of `quantity => "100"` (binary string)
+The signature base mismatch:
+- JS signed: `("nonce" "path" "quantity" "recipient");alg=...`
+- HyperBEAM rebuilt: `("nonce" "@path" "quantity" "recipient");alg=...`
 
-**Status:** Requires HyperBEAM-side fix. The JSON codec needs to verify signatures BEFORE applying type conversion, or use string values for verification.
+**Fix in `HyperBEAM/src/dev_codec_httpsig.erl`:**
+```erlang
+signature_params_line(RawCommitment, Opts) ->
+    case maps:get(<<"signature-input">>, RawCommitment, not_found) of
+        not_found ->
+            % No stored signature-input, rebuild from committed list
+            rebuild_signature_params_line(RawCommitment, Opts);
+        StoredSigInput when is_binary(StoredSigInput) ->
+            % Use stored signature-input directly
+            extract_params_from_sig_input(StoredSigInput);
+        _ ->
+            rebuild_signature_params_line(RawCommitment, Opts)
+    end.
+
+extract_params_from_sig_input(SigInput) ->
+    case binary:split(SigInput, <<"=">>) of
+        [_SigName, ParamsLine] -> ParamsLine;
+        _ -> throw({invalid_signature_input, SigInput})
+    end.
+```
+
+**Key insight:** JS commits include the original `signature-input` in the commitment. HyperBEAM should use this directly instead of rebuilding it.
+
+**Result:** The `invalid_commitment` error is fixed. Signature verification now passes. The remaining P4 test #2 error (`404: not_found`) is related to P4/ledger process setup, not signature verification.
+
+### ⚠️ REMAINING ISSUE: P4 Test #2 Ledger Process (2026-02-05)
+
+**Problem:** P4 test #2 now fails with `404: not_found` instead of `invalid_commitment`.
+
+**Current Status:** Signature verification passes, but the `ledger` process isn't being created correctly when the second HyperBEAM instance starts with `p4_lua` configuration.
+
+**Next Steps:** Investigate P4 device setup and ledger process creation.
 
 ### ✅ FIXED: Upload Tests ANS-104 Scheduling (2026-02-05)
 
