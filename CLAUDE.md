@@ -29,6 +29,34 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 4. **Report current working progress to user** (which CP, which task, which test)
 5. After each commit, verify you are committing to the correct branch
 
+### Offline Setup (Using Prebuilt Tarball)
+
+For offline environments, use the prebuilt tarball instead of building from source:
+
+```bash
+cd HyperBEAM
+
+# Extract prebuilt dependencies (includes prometheus, quantile_estimator, wallet)
+tar -xJf ../installation/hyperbeam-prebuilt.tar.xz
+
+# IMPORTANT: The tarball includes .wallet.json - verify it was extracted
+ls -la .wallet.json  # Must exist for tests to pass
+
+# The tarball contains:
+# - _build/default/lib/* (all compiled Erlang dependencies including prometheus)
+# - _build/wamr/* (WAMR runtime for WASM execution)
+# - priv/* (NIFs and HTML files)
+# - .wallet.json (test signing key - REQUIRED for tests)
+
+# If using rebar.config from installation/ instead of the one in HyperBEAM/:
+# The installation/hyperbeam_rebar.config includes prometheus deps for offline use
+cp ../installation/hyperbeam_rebar.config rebar.config
+```
+
+**Note on prometheus dependencies:** HyperBEAM's `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally. The tarball includes prebuilt prometheus, prometheus_httpd, prometheus_cowboy, and quantile_estimator. If building from source in an offline environment, these deps must be available locally.
+
+**Note on .wallet.json:** Tests require this file for signing messages. Without it, tests fail with "Cannot read properties of undefined (reading 'n')" because the JWK is missing. The tarball includes this file - always verify it was extracted.
+
 ## Checkpoint Task Loop
 
 For each checkpoint with status other than ✅ DONE:
@@ -163,7 +191,7 @@ Using official upstream release tags as checkpoints.
 
 | # | Test File | Pass/Total | Status | Notes |
 |---|-----------|------------|--------|-------|
-| 1 | `ans104.test.js` | 2/2 | ✅ DONE | Fixed: prometheus_http stub |
+| 1 | `ans104.test.js` | 2/2 | ✅ DONE | Fixed: prometheus deps |
 | 2 | `cache.test.js` | 1/1 | ✅ DONE | |
 | 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
@@ -175,7 +203,7 @@ Using official upstream release tags as checkpoints.
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
 | 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Test #2 hangs on second HyperBEAM startup |
-| 13 | `patch.test.js` | 2/3 | ⚠️ PARTIAL | AOS compute fails (fetch timeout) |
+| 13 | `patch.test.js` | 3/3 | ✅ DONE | Fixed: prometheus deps |
 | 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
 | 16 | `router.test.js` | 21/21 | ✅ DONE | Fixed: all 21 subtests passing |
@@ -187,14 +215,15 @@ Using official upstream release tags as checkpoints.
 | 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with cross-process messaging |
 
 **Summary (2026-02-05):**
-- ✅ Fully passing (15 files, 44 subtests): ans104 (2), cache, cron, eunit, faff, json, local_name, lookup, message, meta, process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
-- ⚠️ Partial (7 files): hyperbeam (8/14), p4 (1/2), patch (2/3), upload (1/3), wao-hb (2/4)
+- ✅ Fully passing (16 files, 47 subtests): ans104 (2), cache, cron, eunit, faff, json, local_name, lookup, message, meta, patch (3), process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (6 files): hyperbeam (8/14), p4 (1/2), upload (1/3), wao-hb (2/4)
 
 **Remaining failure categories:**
-1. **Cross-process messaging**: Tests involving Send().receive() across processes fail with Lua issues
-2. **Lua/AOS execution**: Tests using `spawnAOS`, `messageAOS`, `computeAOS` have partial failures
-3. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
-4. **Upload #2**: CU validation issues
+1. **Cross-process messaging**: Tests involving Send().receive() across processes fail (wao-hb test #3, #4)
+2. **Upload #0**: `badarg` error - `bundler_ans104: false` passed to `hb_http:prepare_request()` as peer URL
+3. **Upload #2 (it.only)**: CU validation - `Data-Protocol: ao` tag not found on ANS-104 spawned process
+4. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
+5. **Hyperbeam Suite2**: AOS/Lua execution issues
 
 ### Fix Applied: Prometheus Dependencies (2026-02-05)
 
