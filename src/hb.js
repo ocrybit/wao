@@ -130,27 +130,9 @@ class HB {
   }
 
   async computeLegacy({ pid, slot }) {
-    // In beta3, try to get results directly via bundle format which avoids cache lazy link issues
-    try {
-      const json = await this.compute({ pid, slot, path: "/results/json" })
-      const result = JSON.parse(json.body)
-      return result
-    } catch (e) {
-      // Fallback: get results via bundle and extract Output
-      const res = await this.getJSON({
-        path: `/${pid}/compute/results`,
-        slot,
-        headers: { "accept-bundle": "true" }
-      })
-      // Convert bundle format to legacy format
-      const output = res.Output || {}
-      return {
-        Messages: output.Messages || [],
-        Spawns: output.Spawns || [],
-        Output: output.Output || "",
-        Error: output.Error,
-      }
-    }
+    // Match master: compute and parse results.json.body
+    const json = await this.compute({ pid, slot })
+    return JSON.parse(json.results.json.body)
   }
 
   async cacheScript(data, type = "application/lua") {
@@ -251,7 +233,7 @@ class HB {
       })
       return { slot: res.out.slot, res, pid }
     } else {
-      let _tags = mergeLeft(tags, { type: "Message", target: pid })
+      let _tags = mergeLeft(tags, { Type: "Message", target: pid })
       if (data) _tags.data = data
 
       const res = await this.post({
@@ -359,15 +341,16 @@ class HB {
   async spawnLegacy({ module, tags = {}, data } = {}) {
     await this.setInfo()
     // Use genesis-wasm directly as execution-device for legacynet AOS
+    // Note: 'authority' excluded - conflicts with HTTP Message Signatures '@authority' derived component
     const legacyTags = {
-      "data-protocol": "ao",
-      variant: "ao.TN.1",
-      scheduler: this.operator ?? this.addr,
-      module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
+      "Data-Protocol": "ao",
+      Variant: "ao.TN.1",
+      Scheduler: this.operator ?? this.addr,
+      Module: module ?? "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s",
       device: "process@1.0",
       "execution-device": "genesis-wasm@1.0",
       "random-seed": seed(16),
-      type: "Process",
+      Type: "Process",
     }
     const t = mergeLeft(tags, legacyTags)
     if (data) t.data = data
