@@ -625,6 +625,79 @@ await hb2.init(hb.jwk)
 
 **Result:** All 3 upload tests pass (3/3): test #0 (ANS-104 spawn/push), test #1 (wao@1.0 with ANS-104), test #2 (genesis-wasm@1.0 with ANS-104).
 
+### ✅ FIXED: Action Tag Case and Tag Casing (2026-02-05)
+
+**Problem:** AOS handlers weren't being triggered because the `Action` tag was sent as lowercase `action`. Additionally, other tags had inconsistent casing compared to master branch.
+
+**Root Cause:** In the beta3 refactoring:
+1. `tags.Action` was changed to `tags.action` in 4 places in `src/hb.js`
+2. `spawnLegacy` and `schedule` functions used lowercase tag names
+3. AOS handlers match on `msg.Action` (uppercase), so lowercase `action` tags didn't trigger handlers
+
+**Fix Applied (commits e213905, 4e741b0):**
+
+1. Changed Action back to uppercase in `scheduleLua`, `scheduleLegacy`, `dryrun`, `scheduleAOS`:
+```javascript
+if (action) tags.Action = action  // was: tags.action = action
+```
+
+2. Fixed `schedule` function:
+```javascript
+let _tags = mergeLeft(tags, { Type: "Message", target: pid })  // was: type
+```
+
+3. Fixed `spawnLegacy` to match master's casing:
+```javascript
+const legacyTags = {
+  "Data-Protocol": "ao",  // was: "data-protocol"
+  Variant: "ao.TN.1",     // was: variant
+  Scheduler: this.operator ?? this.addr,  // was: scheduler
+  Module: module ?? "...",  // was: module
+  device: "process@1.0",
+  "execution-device": "genesis-wasm@1.0",
+  "random-seed": seed(16),
+  Type: "Process",  // was: type
+}
+```
+
+4. Removed `Authority` from `spawnLegacy` (conflicts with HTTP Message Signatures `@authority` derived component)
+
+5. Fixed `computeLegacy` to match master:
+```javascript
+async computeLegacy({ pid, slot }) {
+  const json = await this.compute({ pid, slot })
+  return JSON.parse(json.results.json.body)
+}
+```
+
+**Result:** wao-hb tests #1 and #3 now pass (basic interactions, Send without receive).
+
+### ⚠️ KNOWN ISSUE: Send().receive() Pattern (2026-02-05)
+
+**Problem:** wao-hb tests #2 and #4 fail with `null == 'Hello, Japan!'`. The AOS `Send().receive()` pattern returns null instead of the expected data.
+
+**Affected Lua Code:**
+```lua
+local name = Send({ Target = ao.id, Action = "Reply" }).receive().Data
+msg.reply({ Hello = "Hello, " .. name .. "!" })
+```
+
+**Observations:**
+- Messages ARE being pushed and computed (visible in CU logs)
+- The target process receives and processes the message
+- The Reply handler executes correctly
+- But `.receive()` returns null instead of the reply data
+
+**Comparison with Master:**
+- Master branch test uses `new HyperBEAM({ reset: true })` without `genesis_wasm: true`
+- Master relied on HyperBEAM's built-in execution device
+- Current test uses external CU (`genesis_wasm: true`) which may have different synchronization behavior
+
+**Status:** Requires further investigation. May be related to:
+1. External CU vs built-in execution device differences
+2. Message reference/X-Reference handling
+3. Timing/synchronization issues in the `.receive()` blocking call
+
 ---
 
 ## Local Reconstruction
