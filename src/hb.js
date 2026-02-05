@@ -132,7 +132,18 @@ class HB {
   async computeLegacy({ pid, slot }) {
     // Match master: compute and parse results.json.body
     const json = await this.compute({ pid, slot })
-    return JSON.parse(json.results.json.body)
+    if (json?.results?.json?.body) {
+      return JSON.parse(json.results.json.body)
+    }
+    // Fallback: try compute/results/json/body structure
+    if (json?.["compute/results/json"]?.body) {
+      return JSON.parse(json["compute/results/json"].body)
+    }
+    // Another fallback: check if it's the raw CU format
+    if (json?.Messages || json?.Output) {
+      return json
+    }
+    return json
   }
 
   async cacheScript(data, type = "application/lua") {

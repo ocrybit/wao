@@ -734,21 +734,52 @@ local name = Send({ Target = ao.id, Action = "Reply" }).receive().Data
 msg.reply({ Hello = "Hello, " .. name .. "!" })
 ```
 
-**Observations:**
-- Messages ARE being pushed and computed (visible in CU logs)
-- The target process receives and processes the message
-- The Reply handler executes correctly
-- But `.receive()` returns null instead of the reply data
+**Root Cause Analysis:**
+The external CU (genesis-wasm-server) does not support the synchronous `.receive()` pattern. When the handler calls `Send().receive()`:
+1. The `Send()` creates an outbox message correctly
+2. But `.receive()` returns nil immediately instead of blocking
+3. Lua fails on `"Hello, " .. name .. "!"` concatenation (nil value)
+4. The expected `msg.reply()` is never called
+5. The outbox message with `Action: "Reply"` ends up in Messages without a `Hello` tag or `Data`
 
-**Comparison with Master:**
-- Master branch test uses `new HyperBEAM({ reset: true })` without `genesis_wasm: true`
-- Master relied on HyperBEAM's built-in execution device
-- Current test uses external CU (`genesis_wasm: true`) which may have different synchronization behavior
+**Debug Output Confirmed:**
+```json
+{
+  "Messages": [{
+    "Tags": [{"name": "Action", "value": "Reply"}, ...],
+    "Target": "...",
+    "Anchor": "..."
+  }]
+}
+```
+Note: No `Hello` tag or `Data` field - this is the Send's outbox message, not the expected reply.
 
-**Status:** Requires further investigation. May be related to:
-1. External CU vs built-in execution device differences
-2. Message reference/X-Reference handling
-3. Timing/synchronization issues in the `.receive()` blocking call
+**Fundamental Limitation:**
+The `.receive()` function in AOS 2.0 requires synchronous message processing within a single evaluation context. This works with HyperBEAM's built-in execution device, but the external CU (genesis-wasm-server) processes messages asynchronously and cannot support this pattern.
+
+**Status:** Requires CU-level changes to support synchronous receive. These tests pass on master branch without `genesis_wasm: true`.
+
+### ✅ FIXED: modGet Default Behavior for undefined get Parameter (2026-02-05)
+
+**Problem:** wao-hb tests #1 and #3 failed with `null == '0'`. The compute results had correct Messages with Data, but `getTagVal` returned null.
+
+**Root Cause:**
+When `ao.msg()` was called without a `get` option:
+1. `modGet(undefined)` returned `undefined` (via Ramda's `clone(undefined)`)
+2. `typeof undefined !== "object"`, so `getTagVal` never entered the data extraction logic
+3. `out` stayed `null` even though Messages contained valid Data
+
+**Fix in `src/utils.js`:**
+```javascript
+const modGet = get => {
+  // Default to extracting Data when no get option specified
+  if (isNil(get)) return { data: true }
+  let _get = clone(get)
+  // ... rest of function
+}
+```
+
+**Result:** wao-hb tests #1 and #3 now pass. `getTagVal` correctly extracts `Message.Data` by default.
 
 ---
 
