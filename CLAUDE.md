@@ -221,9 +221,24 @@ Using official upstream release tags as checkpoints.
 - ⚠️ Partial (3 files): hyperbeam (8/14), p4 (1/2), wao-hb (2/4)
 
 **Remaining failure categories:**
-1. **Cross-process messaging**: Tests involving Send().receive() across processes fail (wao-hb test #3, #4)
+1. **Cross-process messaging**: Tests involving Send().receive() across processes fail (wao-hb test #2, #4)
 2. **P4 #2**: P4 ledger returns 500 error on balance query (Lua execution issue)
 3. **Hyperbeam Suite2**: AOS/Lua execution issues
+
+### ✅ FIXED: Action Tag Case (2026-02-05)
+
+**Problem:** AOS handlers weren't being triggered because the `Action` tag was sent as lowercase `action`.
+
+**Root Cause:** In the beta3 refactoring, `tags.Action` was changed to `tags.action` in 4 places in `src/hb.js`. AOS handlers match on `msg.Action` (uppercase), so lowercase `action` tags didn't trigger handlers.
+
+**Fix Applied (commit e213905):**
+Changed back to uppercase in 4 functions:
+```javascript
+// scheduleLua, scheduleLegacy, dryrun, scheduleAOS
+if (action) tags.Action = action  // was: tags.action = action
+```
+
+**Result:** AOS handler matching works correctly. Tests that don't use `Send().receive()` now pass.
 
 ### Fix Applied: Prometheus Dependencies (2026-02-05)
 
