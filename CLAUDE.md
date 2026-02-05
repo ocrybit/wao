@@ -126,7 +126,7 @@ Using official upstream release tags as checkpoints.
 
 ## Current Progress: CP2
 
-**Working branch:** [`claude/continue-cp2-SFiQM`](https://github.com/ocrybit/wao/tree/claude/continue-cp2-SFiQM)
+**Working branch:** [`claude/continue-from-claude-md-IpzZJ`](https://github.com/ocrybit/wao/tree/claude/continue-from-claude-md-IpzZJ)
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
@@ -139,7 +139,7 @@ Using official upstream release tags as checkpoints.
 - [ ] Task 4: Receive Confirmation from Human
 - [ ] Task 5: Mark Done
 
-### Test Results Report (Last Updated: 2026-02-04)
+### Test Results Report (Last Updated: 2026-02-05)
 
 #### hbsig Tests (Task 2) - ✅ ALL PASSING
 
@@ -163,19 +163,19 @@ Using official upstream release tags as checkpoints.
 
 | # | Test File | Pass/Total | Status | Notes |
 |---|-----------|------------|--------|-------|
-| 1 | `ans104.test.js` | 1/2 | ⚠️ PARTIAL | ANS-104 passes; HTTPSig commitment parsing |
+| 1 | `ans104.test.js` | 2/2 | ✅ DONE | Fixed: prometheus_http stub |
 | 2 | `cache.test.js` | 1/1 | ✅ DONE | |
 | 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
-| 6 | `hyperbeam.test.js` | 7/14 | ⚠️ PARTIAL | Suite1 passes; Suite2 AOS/Lua issues |
+| 6 | `hyperbeam.test.js` | 8/14 | ⚠️ PARTIAL | Suite1 passes; Suite2 AOS/Lua issues |
 | 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: accept-bundle inline data assertions |
 | 8 | `local_name.test.js` | 1/1 | ✅ DONE | |
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
 | 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Test #2 hangs on second HyperBEAM startup |
-| 13 | `patch.test.js` | 3/3 | ✅ DONE | Fixed: cache_module base64 decoding |
+| 13 | `patch.test.js` | 2/3 | ⚠️ PARTIAL | AOS compute fails (fetch timeout) |
 | 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
 | 16 | `router.test.js` | 21/21 | ✅ DONE | Fixed: all 21 subtests passing |
@@ -183,12 +183,12 @@ Using official upstream release tags as checkpoints.
 | 18 | `server.test.js` | 2/2 | ✅ DONE | |
 | 19 | `simple-pay.test.js` | 1/1 | ✅ DONE | |
 | 20 | `stack.test.js` | 2/2 | ✅ DONE | dev_add NIF compiled |
-| 21 | `upload.test.js` | 2/3 | ⚠️ PARTIAL | #0 and #1 pass; #2 CU tag validation |
-| 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with Lua/WASM issues |
+| 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL | #1 pass; #0, #2 fail (badarg, tag validation) |
+| 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with cross-process messaging |
 
-**Summary (2026-02-04):**
-- ✅ Fully passing (16 files, 43 subtests): cache, cron, eunit, faff, json, local_name, lookup, message, meta, patch (3), process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
-- ⚠️ Partial (6 files): ans104 (1/2), hyperbeam (7/14), p4 (1/2), upload (2/3), wao-hb (2/4)
+**Summary (2026-02-05):**
+- ✅ Fully passing (15 files, 44 subtests): ans104 (2), cache, cron, eunit, faff, json, local_name, lookup, message, meta, process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (7 files): hyperbeam (8/14), p4 (1/2), patch (2/3), upload (1/3), wao-hb (2/4)
 
 **Remaining failure categories:**
 1. **Cross-process messaging**: Tests involving Send().receive() across processes fail with Lua issues
@@ -196,7 +196,7 @@ Using official upstream release tags as checkpoints.
 3. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
 4. **Upload #2**: CU validation issues
 
-### Fix Applied: Prometheus Dependencies (2026-02-02)
+### Fix Applied: prometheus_http Stub (2026-02-05)
 
 **Problem:** Tests using `computeLegacy` failed with:
 ```
@@ -204,23 +204,30 @@ prometheus_http:status_class/"�" [No details]
 hb_http_client:httpc_req/3 [/home/user/wao/HyperBEAM/src/hb_http_client.erl:96]
 ```
 
-**Root Cause:** The `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally at line 747, but prometheus modules were not included in the HyperBEAM build dependencies.
+**Root Cause:** The `hb_http_client.erl` calls `prometheus_http:status_class()` unconditionally at line 747, but prometheus modules were not included in the HyperBEAM build. In offline environments, the full prometheus library cannot be fetched from github.
 
-**Fix Applied (commit b2da5db9 on wao-m1, pushed):**
-Added prometheus dependencies to `HyperBEAM/rebar.config`:
-- `quantile_estimator` (required by prometheus)
-- `prometheus` (v4.11.0)
-- `prometheus_httpd` (v2.1.11)
-- `prometheus_cowboy` (v0.1.8)
+**Fix Applied (commit 0b29f977 on wao-m1):**
+Added a minimal stub `HyperBEAM/src/prometheus_http.erl` that provides the `status_class/1` function:
+```erlang
+-module(prometheus_http).
+-export([status_class/1]).
 
-Also added overrides to prevent hex.pm dependency conflicts.
+status_class(Status) when is_integer(Status), Status >= 100, Status < 200 -> "1xx";
+status_class(Status) when is_integer(Status), Status >= 200, Status < 300 -> "2xx";
+status_class(Status) when is_integer(Status), Status >= 300, Status < 400 -> "3xx";
+status_class(Status) when is_integer(Status), Status >= 400, Status < 500 -> "4xx";
+status_class(Status) when is_integer(Status), Status >= 500, Status < 600 -> "5xx";
+status_class(_) -> "unknown".
+```
+
+**Note:** This stub needs to be pushed to wao-m1 branch. Requires GitHub authentication.
 
 **Additional fix:** Created symlink `HyperBEAM/genesis-wasm-server -> _build/genesis-wasm-server` for CU path resolution.
 
 **Current Status:**
-- ✅ Prometheus modules compile and load
+- ✅ prometheus_http stub compiles and loads
 - ✅ No more `prometheus_http:status_class` errors
-- ✅ multiple_matches issue fixed (see below)
+- ✅ ans104 test now passes 2/2
 
 ### ✅ FIXED: multiple_matches in dev_json_iface.erl (2026-02-02)
 
