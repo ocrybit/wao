@@ -1,10 +1,15 @@
 /**
  * Failing test from p4.test.js
  *
- * KNOWN ISSUE: Type Conversion Before Signature Verification
- * HyperBEAM's JSON codec applies type conversion (based on ao-types) BEFORE signature
- * verification. We sign string values but HyperBEAM converts them to integers before
- * verification, causing invalid_commitment errors.
+ * KNOWN ISSUE: HTTPSig over JSON transport
+ * The scheduleNP() function sends JSON body with embedded HTTPSig commitment metadata.
+ * HTTPSig signatures are created against structured field HTTP headers, but when
+ * HyperBEAM receives JSON, it must reconstruct the exact header format to verify.
+ * This reconstruction fails because JSON and structured fields have different
+ * representations (e.g., string quoting, field ordering).
+ *
+ * This is a fundamental limitation of using HTTPSig with JSON transport.
+ * The workaround is to use standard hb.schedule() which sends HTTPSig over HTTP headers.
  */
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
@@ -43,7 +48,7 @@ describe("p4 FAIL #1: Type conversion before signature verification", function (
     )
     const tags = {
       path: "credit-notice",
-      quantity: 100,
+      quantity: "100",
       recipient: addr2,
     }
     const lua_msg = await hb3.commit(tags)
