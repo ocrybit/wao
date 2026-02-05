@@ -196,11 +196,22 @@ class HB {
 
   async scheduleNP({ pid, tags = {}, data } = {}) {
     if (data) tags.data = data
-    let res = await this.post({
-      path: `/${pid}~node-process@1.0/schedule`,
-      body: await this.commit(tags),
+    // Use direct fetch to avoid post() path conflation.
+    // Commit tags without mixing in the request path.
+    tags.nonce ??= seed(8)
+    const committed = await this.commit(tags, { path: false })
+    const requestPath = `/${pid}~node-process@1.0/schedule`
+    const response = await fetch(`${this.url}${requestPath}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "accept-bundle": "true" },
+      body: JSON.stringify(committed),
     })
-    return { slot: res.out.slot, res, pid }
+    if (response.status >= 400) {
+      const text = await response.text()
+      throw new Error(`${response.status}: ${text}`)
+    }
+    const res = await result(response)
+    return { slot: res.out?.slot, res, pid }
   }
 
   async send104({ path = "/~process@1.0/schedule", item }) {
@@ -430,10 +441,13 @@ class HB {
     // Flatten nested 'body' object to top-level fields for JSON POST.
     // Old API used body: { key: value } for multipart POST; now these
     // fields must be at the top level for JSON POST with commitments.
+    // Preserve request metadata (path) that shouldn't be overwritten by body fields.
     if (obj.body && typeof obj.body === "object" && !Buffer.isBuffer(obj.body)
         && !(obj.body instanceof Blob) && !Array.isArray(obj.body)) {
+      const originalPath = obj.path
       const { body, ...rest } = obj
       obj = { ...rest, ...body }
+      if (originalPath) obj.path = originalPath  // Don't let body.path overwrite request path
     }
     // Convert Buffer body to UTF-8 string for JSON POST.
     // JSON can't represent raw binary; Buffers get base64-encoded by JSON.stringify,

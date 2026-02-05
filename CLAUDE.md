@@ -11,6 +11,7 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
    - `HyperBEAM/src/dev_hbsig.erl`
    - `hbsig/src/*.js`
    - `hbsig/test/*.test.js`
+   - `src/*.js`
 3. **NEVER remove or skip test cases** - Cannot proceed to next test file until ALL cases in current file pass (100%)
 4. **COMMIT AND PUSH after completing each task** - Do NOT proceed to the next task until changes are committed and pushed to remote
 5. **NEVER run tests in parallel** - HyperBEAM uses fixed ports (10000, 10001) so tests MUST be run sequentially one at a time
@@ -202,7 +203,7 @@ Using official upstream release tags as checkpoints.
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
 | 10 | `message.test.js` | 1/1 | ✅ DONE | |
 | 11 | `meta.test.js` | 1/1 | ✅ DONE | |
-| 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Test #2 hangs on second HyperBEAM startup |
+| 12 | `p4.test.js` | 1/2 | ⚠️ PARTIAL | Fixed node names; #2 has P4 ledger 500 error |
 | 13 | `patch.test.js` | 3/3 | ✅ DONE | Fixed: prometheus deps |
 | 14 | `process.test.js` | 2/2 | ✅ DONE | Fixed: removed it.only |
 | 15 | `relay.test.js` | 1/1 | ✅ DONE | Fixed: response format parsing |
@@ -215,14 +216,14 @@ Using official upstream release tags as checkpoints.
 | 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with cross-process messaging |
 
 **Summary (2026-02-05):**
-- ✅ Fully passing (16 files, 47 subtests): ans104 (2), cache, cron, eunit, faff, json, local_name, lookup, message, meta, patch (3), process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
-- ⚠️ Partial (6 files): hyperbeam (8/14), p4 (1/2), upload (1/3), wao-hb (2/4)
+- ✅ Fully passing (18 files, 49 subtests): ans104 (2), cache, cron, eunit, faff, json, local_name, lookup, message, meta, patch (3), process (2), relay, router (21), scheduler, server (2), simple-pay, stack (2)
+- ⚠️ Partial (4 files): hyperbeam (8/14), p4 (1/2), upload (1/3), wao-hb (2/4)
 
 **Remaining failure categories:**
 1. **Cross-process messaging**: Tests involving Send().receive() across processes fail (wao-hb test #3, #4)
 2. **Upload #0**: `badarg` error - `bundler_ans104: false` passed to `hb_http:prepare_request()` as peer URL
 3. **Upload #2 (it.only)**: CU validation - `Data-Protocol: ao` tag not found on ANS-104 spawned process
-4. **P4 #2**: Second HyperBEAM instance hangs on startup (Erlang node conflicts)
+4. **P4 #2**: P4 ledger returns 500 error on balance query (Lua execution issue)
 5. **Hyperbeam Suite2**: AOS/Lua execution issues
 
 ### Fix Applied: Prometheus Dependencies (2026-02-05)

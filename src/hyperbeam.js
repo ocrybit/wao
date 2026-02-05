@@ -150,6 +150,7 @@ export default class HyperBEAM {
         "erl",
         [
           ...paArgs,
+          "-sname", `hb_${this.port}`,  // Unique node name to allow multiple instances
           "-eval", evalCmd,
         ],
         { env, cwd }
