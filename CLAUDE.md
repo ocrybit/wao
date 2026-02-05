@@ -272,6 +272,58 @@ Using official upstream release tags as checkpoints.
 **Failure categories:**
 1. **Send().receive() pattern (4 tests)**: External CU (genesis-wasm-server) doesn't support synchronous receive
 
+### ⚠️ FUNDAMENTAL LIMITATION: Send().receive() Pattern (2026-02-05)
+
+**Problem:** The AOS 2.0 `Send().receive()` pattern does not work in the current execution environments.
+
+**Affected Code Pattern:**
+```lua
+local name = Send({ Target = ao.id, Action = "Reply" }).receive().Data
+msg.reply({ Hello = "Hello, " .. name .. "!" })
+```
+
+**Root Cause Analysis:**
+
+1. **Genesis-wasm-server (External CU)** - Uses `@permaweb/ao-loader` which is a **single-pass evaluator**:
+   - Each message is evaluated in isolation with one call to `wasmInstance()`
+   - No coroutine/yield support - evaluation returns immediately
+   - No cross-message state or response routing
+   - Messages go to outbox, not to waiting handlers
+   - File: `HyperBEAM/_build/genesis-wasm-server/src/effects/worker/evaluate.js`
+
+2. **HyperBEAM's built-in Lua (hyper-aos.lua)** - Explicitly not implemented:
+   ```lua
+   -- HyperBEAM/test/hyper-aos.lua:1062-1064
+   function handlers.receive(pattern)
+     return 'not implemented'
+   end
+   ```
+
+**What Send().receive() Requires:**
+1. Coroutine-based execution where handlers can yield/suspend
+2. Multi-pass evaluation that processes outbox and resumes waiting handlers
+3. Response routing from scheduled messages back to suspended handlers
+4. Cross-evaluation state tracking for correlating requests and responses
+
+**What Actually Happens:**
+1. `Send()` creates outbox message correctly
+2. `.receive()` returns `nil` immediately (no blocking)
+3. Lua fails on concatenation: `"Hello, " .. nil .. "!"`
+4. Handler crashes before `msg.reply()` is called
+5. Only the Send's outbox message ends up in Messages (no reply)
+
+**Why This Cannot Be Fixed Without Major Changes:**
+- Genesis-wasm-server uses AoLoader which has no yield/resume API
+- HyperBEAM's Lua device doesn't implement the coroutine plumbing
+- Would require rewriting the entire evaluation pipeline to support suspendable handlers
+
+**Workarounds That DO Work:**
+1. **Fire-and-Forget**: `Send({ Target = addr, Action = "Notify" })` ✅
+2. **Separate Handler**: Use `Handlers.add("Reply", ...)` to handle responses ✅
+3. **Async Callback Pattern**: Process responses in separate message handlers ✅
+
+**Tests Affected:** All 4 tests in `test/hyperbeam/fail/` use this pattern.
+
 ### ✅ FIXED: Action Tag Case (2026-02-05)
 
 **Problem:** AOS handlers weren't being triggered because the `Action` tag was sent as lowercase `action`.
