@@ -368,9 +368,9 @@ export default class HyperBEAM {
         ? `, gateway => <<"http://localhost:${gateway}">>`
         : ""
 
-    // store option will be overwritten by hb.erl
+    // Store config: use "name" key (not "prefix") as expected by hb_store_fs
     const _store = this.store_prefix
-      ? `, store => [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"${this.store_prefix}">> }, #{ <<"store-module">> => hb_store_gateway, <<"subindex">> => [#{ <<"name">> => <<"Data-Protocol">>, <<"value">> => <<"ao">> }], <<"store">> => [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"${this.store_prefix}">> }] }, #{ <<"store-module">> => hb_store_gateway, <<"store">> => [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"${this.store_prefix}">> }] }]`
+      ? `, store => [#{ <<"store-module">> => hb_store_fs, <<"name">> => <<"${this.store_prefix}">> }, #{ <<"store-module">> => hb_store_gateway, <<"subindex">> => [#{ <<"name">> => <<"Data-Protocol">>, <<"value">> => <<"ao">> }], <<"store">> => [#{ <<"store-module">> => hb_store_fs, <<"name">> => <<"${this.store_prefix}">> }] }, #{ <<"store-module">> => hb_store_gateway, <<"store">> => [#{ <<"store-module">> => hb_store_fs, <<"name">> => <<"${this.store_prefix}">> }] }]`
       : ""
     let _bundler = this.bundler
       ? `, bundler_httpsig => <<"${this.bundler}">>`
@@ -399,11 +399,32 @@ export default class HyperBEAM {
     const _spp = this.spp ? `, simple_pay_price => ${this.spp}` : ""
     const _genesis_wasm_port = this.genesis_wasm ? `, genesis_wasm_port => ${this.cu_port}` : ""
 
+    // Helper to format module(s) for Erlang - supports ID string, inline object, or array
+    const formatModule = (mod) => {
+      if (typeof mod === "string") {
+        // ID string
+        return `<<"${mod}">>`
+      } else if (Array.isArray(mod)) {
+        // Array of inline modules
+        return `[${mod.map(m => `#{ <<"content-type">> => <<"text/x-lua">>, <<"body">> => <<"${escapeErlangString(m.body)}">>${m.name ? `, <<"name">> => <<"${m.name}">>` : ""} }`).join(", ")}]`
+      } else if (mod && mod.body) {
+        // Single inline module object
+        return `#{ <<"content-type">> => <<"text/x-lua">>, <<"body">> => <<"${escapeErlangString(mod.body)}">>${mod.name ? `, <<"name">> => <<"${mod.name}">>` : ""} }`
+      }
+      return `<<"${mod}">>`
+    }
+
+    // Helper to escape special characters for Erlang binary strings
+    const escapeErlangString = (str) => {
+      if (!str) return str
+      return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
+    }
+
     const _node_processes = this.p4_lua
-      ? `, node_processes => #{ <<"ledger">> => #{ <<"device">> => <<"process@1.0">>, <<"execution-device">> => <<"lua@5.3a">>, <<"scheduler-device">> => <<"scheduler@1.0">>, <<"module">> => <<"${this.p4_lua.processor}">>, <<"operator">> => <<"${this.operator}">> } }`
+      ? `, node_processes => #{ <<"ledger">> => #{ <<"device">> => <<"process@1.0">>, <<"execution-device">> => <<"lua@5.3a">>, <<"scheduler-device">> => <<"scheduler@1.0">>, <<"module">> => ${formatModule(this.p4_lua.processor)}, <<"operator">> => <<"${this.operator}">>${this.p4_lua.admin ? `, <<"admin">> => <<"${this.p4_lua.admin}">>` : ""}${this.p4_lua.balance ? `, <<"balance">> => #{ ${Object.entries(this.p4_lua.balance).map(([k, v]) => `<<"${k}">> => ${v}`).join(", ")} }` : ""} } }`
       : ""
     const processor = this.p4_lua
-      ? `#{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"simple-pay@1.0">>, <<"ledger-device">> => <<"lua@5.3a">>, <<"module">> => <<"${this.p4_lua.client}">>, <<"ledger-path">> => <<"/ledger~node-process@1.0">> }`
+      ? `#{ <<"device">> => <<"p4@1.0">>, <<"pricing-device">> => <<"simple-pay@1.0">>, <<"ledger-device">> => <<"lua@5.3a">>, <<"module">> => ${formatModule(this.p4_lua.client)}, <<"ledger-path">> => <<"/ledger~node-process@1.0">> }`
       : ""
     const _port = `port => ${this.port}`
     const _faff = isNil(this.faff)
@@ -457,12 +478,14 @@ export default class HyperBEAM {
     // Force-load dev_hbsig early to apply hot-patches (dev_stack binary parsing, hb_util atom fix)
     // before any device-stack processing occurs
     const loadHbsig = `code:ensure_loaded(dev_hbsig), `
-    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}, prometheus => false}).`
+    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
 
     // Debug: show the eval command being sent
     if (this.logs) {
       console.log("[HB DEBUG] Eval command includes relay_http_client:", start.includes("relay_http_client"))
       console.log("[HB DEBUG] Eval command clears proxy:", start.includes("httpc:set_options"))
+      console.log("[HB DEBUG] node_processes:", _node_processes ? "YES" : "NO")
+      console.log("[HB DEBUG] store:", _store ? "YES" : "NO")
     }
 
     return start
