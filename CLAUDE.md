@@ -158,9 +158,11 @@ Tests in `test/hyperbeam/fail/` have known issues requiring upstream changes:
 
 | # | Test File | Issue | Required Fix |
 |---|-----------|-------|--------------|
-| 1 | `hyperbeam-fail.test.js` | Send().receive() pattern | CU-level sync message support |
-| 2 | `p4-fail.test.js` | Type conversion before sig verify | HyperBEAM JSON codec fix |
-| 3 | `wao-hb-fail.test.js` | Send().receive() pattern | CU-level sync message support |
+| 1 | `hyperbeam-fail-1.test.js` | Send().receive() cross-process query | CU-level sync message support |
+| 2 | `hyperbeam-fail-2.test.js` | Send().receive() oracle pattern | CU-level sync message support |
+| 3 | `p4-fail-1.test.js` | Type conversion before sig verify | HyperBEAM JSON codec fix |
+| 4 | `wao-hb-fail-1.test.js` | Send().receive() self-message | CU-level sync message support |
+| 5 | `wao-hb-fail-2.test.js` | Send().receive() cross-process | CU-level sync message support |
 
 Commands:
 ```bash
@@ -259,11 +261,13 @@ Using official upstream release tags as checkpoints.
 
 #### Failing Tests (test/hyperbeam/fail/) - Requires Upstream Changes
 
-| # | Test File | Tests | Issue | Required Fix |
-|---|-----------|-------|-------|--------------|
-| 1 | `hyperbeam-fail.test.js` | 2 | Send().receive() pattern | CU-level sync message support |
-| 2 | `p4-fail.test.js` | 1 | Type conversion before sig verify | HyperBEAM JSON codec fix |
-| 3 | `wao-hb-fail.test.js` | 2 | Send().receive() pattern | CU-level sync message support |
+| # | Test File | Issue | Required Fix |
+|---|-----------|-------|--------------|
+| 1 | `hyperbeam-fail-1.test.js` | Send().receive() cross-process query | CU-level sync message support |
+| 2 | `hyperbeam-fail-2.test.js` | Send().receive() oracle pattern | CU-level sync message support |
+| 3 | `p4-fail-1.test.js` | Type conversion before sig verify | HyperBEAM JSON codec fix |
+| 4 | `wao-hb-fail-1.test.js` | Send().receive() self-message | CU-level sync message support |
+| 5 | `wao-hb-fail-2.test.js` | Send().receive() cross-process | CU-level sync message support |
 
 **Failure categories:**
 1. **Send().receive() pattern (4 tests)**: External CU (genesis-wasm-server) doesn't support synchronous receive

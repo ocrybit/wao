@@ -1,5 +1,5 @@
 /**
- * Failing tests from p4.test.js
+ * Failing test from p4.test.js
  *
  * KNOWN ISSUE: Type Conversion Before Signature Verification
  * HyperBEAM's JSON codec applies type conversion (based on ao-types) BEFORE signature
@@ -12,7 +12,7 @@ import { acc, toAddr } from "../../../src/test.js"
 import HB from "../../../src/hb.js"
 import HyperBEAM from "../../../src/hyperbeam.js"
 
-describe("p4 FAIL: Type conversion issue", function () {
+describe("p4 FAIL #1: Type conversion before signature verification", function () {
   let hb, hbeam
   before(async () => {
     hbeam = await new HyperBEAM({
