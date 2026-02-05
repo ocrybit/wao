@@ -9,6 +9,7 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 1. **HyperBEAM commits go to `wao-m1` branch only** (ask for GitHub token if needed to push)
 2. **Only modify these files:**
    - `HyperBEAM/src/dev_hbsig.erl`
+   - `HyperBEAM/src/dev_wao.erl`
    - `hbsig/src/*.js`
    - `hbsig/test/*.test.js`
    - `src/*.js`
@@ -212,7 +213,7 @@ Using official upstream release tags as checkpoints.
 | 18 | `server.test.js` | 2/2 | ✅ DONE | |
 | 19 | `simple-pay.test.js` | 1/1 | ✅ DONE | |
 | 20 | `stack.test.js` | 2/2 | ✅ DONE | dev_add NIF compiled |
-| 21 | `upload.test.js` | 1/3 | ⚠️ PARTIAL | #1 pass; #0, #2 fail (badarg, tag validation) |
+| 21 | `upload.test.js` | 2/3 | ⚠️ PARTIAL | #0,#2 pass; #1 fails (wao@1.0+ANS-104 incompatible) |
 | 22 | `wao-hb.test.js` | 2/4 | ⚠️ PARTIAL | AOS tests fail with cross-process messaging |
 
 **Summary (2026-02-05):**
@@ -221,10 +222,9 @@ Using official upstream release tags as checkpoints.
 
 **Remaining failure categories:**
 1. **Cross-process messaging**: Tests involving Send().receive() across processes fail (wao-hb test #3, #4)
-2. **Upload #0**: `badarg` error - `bundler_ans104: false` passed to `hb_http:prepare_request()` as peer URL
-3. **Upload #2 (it.only)**: CU validation - `Data-Protocol: ao` tag not found on ANS-104 spawned process
-4. **P4 #2**: P4 ledger returns 500 error on balance query (Lua execution issue)
-5. **Hyperbeam Suite2**: AOS/Lua execution issues
+2. **Upload #1**: `wao@1.0` execution device incompatible with `format: "ans104"` client - compute endpoint returns 404
+3. **P4 #2**: P4 ledger returns 500 error on balance query (Lua execution issue)
+4. **Hyperbeam Suite2**: AOS/Lua execution issues
 
 ### Fix Applied: Prometheus Dependencies (2026-02-05)
 
@@ -513,6 +513,73 @@ is_likely_base64(Data) when is_binary(Data) ->
 ```
 
 **Result:** `patch.test.js` now passes 3/3, with the AOS WASM module loading correctly in WAMR.
+
+### ✅ FIXED: Multiple HyperBEAM Instance Conflicts (2026-02-05)
+
+**Problem:** P4 test #2 hung during the second HyperBEAM instance startup. The second node couldn't start properly.
+
+**Root Cause:** Both HyperBEAM instances were using the same Erlang node name, causing EPMD conflicts. When running multiple instances on different ports, each needs a unique node name.
+
+**Fix in `src/hyperbeam.js`:**
+```javascript
+this._shell = spawn(
+  "erl",
+  [
+    ...paArgs,
+    "-sname", `hb_${this.port}`,  // Unique node name based on port
+    "-eval", evalCmd,
+  ],
+  { env, cwd }
+)
+```
+
+**Result:** Both HyperBEAM instances now start successfully, and P4 test #1 passes.
+
+### ✅ FIXED: bundler_ans104: false badarg Error (2026-02-05)
+
+**Problem:** Upload test #0 failed with `badarg` - `list_to_binary(false)` was called in `hb_http:prepare_request`.
+
+**Root Cause:** When `bundler_ans104: false` was passed to HyperBEAM constructor, the code generated `bundler_ans104 => false` in the Erlang options. But Erlang code expected either no option or a valid URL string, not the atom `false`.
+
+**Fix in `src/hyperbeam.js`:**
+```javascript
+// Only include bundler_ans104 if it's a truthy value (port number or URL)
+// When false or omitted, don't include it - Erlang code expects either no option or a valid URL
+let _bundler_ans104 = this.bundler_ans104 && this.bundler_ans104 !== false
+  ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
+  : ""
+```
+
+**Result:** Upload test #0 now passes (2/3 total for upload.test.js).
+
+### ✅ FIXED: URL Path Collision in scheduleNP (2026-02-05)
+
+**Problem:** P4 test #2 failed with URL parse error: `http://localhost:10002credit-notice` (missing slash).
+
+**Root Cause:** The `post()` method flattened the body object into the request, and if `body.path` existed, it overwrote the HTTP request path.
+
+**Fix in `src/hb.js`:**
+1. Preserve `originalPath` before body flattening:
+```javascript
+if (obj.body && typeof obj.body === "object") {
+  const originalPath = obj.path
+  const { body, ...rest } = obj
+  obj = { ...rest, ...body }
+  if (originalPath) obj.path = originalPath  // Don't let body.path overwrite
+}
+```
+
+2. Rewrite `scheduleNP()` to use direct fetch:
+```javascript
+async scheduleNP({ pid, tags = {}, data } = {}) {
+  // Use direct fetch to avoid post() path conflation
+  const committed = await this.commit(tags, { path: false })
+  const requestPath = `/${pid}~node-process@1.0/schedule`
+  const response = await fetch(`${this.url}${requestPath}`, {...})
+}
+```
+
+**Result:** P4 test #1 passes. P4 test #2 still fails with Lua ledger 500 error (separate issue).
 
 ---
 

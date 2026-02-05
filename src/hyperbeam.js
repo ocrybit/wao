@@ -375,12 +375,11 @@ export default class HyperBEAM {
     let _bundler = this.bundler
       ? `, bundler_httpsig => <<"${this.bundler}">>`
       : ""
-    let _bundler_ans104 =
-      this.bundler_ans104 === false
-        ? ", bundler_ans104 => false"
-        : this.bundler_ans104
-          ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
-          : ""
+    // Only include bundler_ans104 if it's a truthy value (port number or URL)
+    // When false or omitted, don't include it - Erlang code expects either no option or a valid URL
+    let _bundler_ans104 = this.bundler_ans104 && this.bundler_ans104 !== false
+      ? `, bundler_ans104 => <<"http://localhost:${this.bundler_ans104}">>`
+      : ""
     /*
     const _routes = `, routes => [#{ <<"template">> => <<"/result/.*">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${this.cu}">> } }, #{ <<\"template\">> => <<\"/dry-run\">>, <<\"node\">> => #{ <<\"prefix\">> => <<\"http://localhost:${this.cu}\">> } }, #{ <<"template">> => <<"/graphql">>, <<"nodes">> => [#{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => httpc, protocol => http2 } }, #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } }] }, #{ <<"template">> => <<"/raw">>, <<"node">> => #{ <<"prefix">> => <<"http://localhost:${gateway}">>, <<"opts">> => #{ http_client => gun, protocol => http2 } } }]`
     */
