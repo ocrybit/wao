@@ -265,13 +265,16 @@ Using official upstream release tags as checkpoints.
 |---|-----------|-------|--------------|
 | 1 | `hyperbeam-fail-1.test.js` | Send().receive() cross-process query | CU-level sync message support |
 | 2 | `hyperbeam-fail-2.test.js` | Send().receive() oracle pattern | CU-level sync message support |
-| 3 | `p4-fail-1.test.js` | Type conversion before sig verify | HyperBEAM JSON codec fix |
+| 3 | `p4-fail-1.test.js` | Multiple issues (see below) | Cross-instance module access, type conversion |
 | 4 | `wao-hb-fail-1.test.js` | Send().receive() self-message | CU-level sync message support |
 | 5 | `wao-hb-fail-2.test.js` | Send().receive() cross-process | CU-level sync message support |
 
 **Failure categories:**
 1. **Send().receive() pattern (4 tests)**: External CU (genesis-wasm-server) doesn't support synchronous receive
-2. **Type conversion (1 test)**: HyperBEAM applies ao-types conversion BEFORE signature verification
+2. **P4 test (1 test)**: Multiple issues:
+   - ✅ HTTPSig signature verification for JS nested commitments (FIXED in dev_codec_httpsig.erl)
+   - ⚠️ Cross-instance module access: Scripts cached on HyperBEAM #1 not accessible from #2
+   - ⚠️ Type conversion: HyperBEAM applies ao-types conversion BEFORE signature verification
 
 ### ✅ FIXED: Action Tag Case (2026-02-05)
 

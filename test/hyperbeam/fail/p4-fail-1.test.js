@@ -1,15 +1,23 @@
 /**
  * Failing test from p4.test.js
  *
- * KNOWN ISSUE: HTTPSig over JSON transport
- * The scheduleNP() function sends JSON body with embedded HTTPSig commitment metadata.
- * HTTPSig signatures are created against structured field HTTP headers, but when
- * HyperBEAM receives JSON, it must reconstruct the exact header format to verify.
- * This reconstruction fails because JSON and structured fields have different
- * representations (e.g., string quoting, field ordering).
+ * MULTIPLE ISSUES:
  *
- * This is a fundamental limitation of using HTTPSig with JSON transport.
- * The workaround is to use standard hb.schedule() which sends HTTPSig over HTTP headers.
+ * 1. ✅ FIXED: HTTPSig signature verification for JS nested commitments
+ *    The signature_params_line() in dev_codec_httpsig.erl was rebuilding signature-input
+ *    instead of using the stored one. This caused `path` to be transformed to `@path`
+ *    during verification, breaking signatures. Fixed by using stored signature-input directly.
+ *
+ * 2. ⚠️ Cross-instance module access:
+ *    Test caches Lua scripts on HyperBEAM #1, gets IDs, then starts HyperBEAM #2
+ *    with those IDs in p4_lua config. HyperBEAM #2 can't access #1's cache, so
+ *    dev_lua:load_modules() returns 404. Fix: Pass module content inline or
+ *    configure routes to fetch from #1.
+ *
+ * 3. ⚠️ Type conversion before signature verification:
+ *    HyperBEAM's JSON codec applies ao-types conversion BEFORE signature verification.
+ *    This causes numeric values like quantity: "100" to be converted during parsing,
+ *    invalidating the original signature.
  */
 import assert from "assert"
 import { after, describe, it, before, beforeEach } from "node:test"
