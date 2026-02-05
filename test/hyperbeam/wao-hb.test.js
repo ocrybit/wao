@@ -28,6 +28,7 @@ end)
 
 describe("Hyperbeam Legacynet", function () {
   let hbeam, ao, ao2
+  // genesis_wasm: true required - HyperBEAM delegates compute to external CU
   before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
 
   beforeEach(async () => {
