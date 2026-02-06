@@ -49,6 +49,12 @@ cd /home/user/wao && npm install
 
 # 6. Create genesis-wasm-server symlink (for CU path resolution)
 cd /home/user/wao/HyperBEAM && ln -sf _build/genesis-wasm-server genesis-wasm-server
+
+# 7. Build dev_add_nif.so (required for stack.test.js add@1.0 device)
+cd /home/user/wao/HyperBEAM/native/dev_add_nif
+CARGO_TARGET_DIR=./target cargo build --release 2>/dev/null
+mkdir -p ../../_build/default/lib/hb/priv/crates/dev_add_nif
+cp target/release/libdev_add_nif.so ../../_build/default/lib/hb/priv/crates/dev_add_nif/dev_add_nif.so
 ```
 
 ### Verification Steps
@@ -58,6 +64,7 @@ After setup, verify:
 2. `.wallet.json exists`: Required for signing tests
 3. `hb_cache_control.beam patched`: Contains try-catch for delegated CU cache errors
 4. `genesis-wasm-server symlink`: Required for CU to find WASM modules
+5. `dev_add_nif.so exists`: Required for stack.test.js add@1.0 device
 
 ### What the Tarball Contains
 
@@ -78,8 +85,9 @@ The `hyperbeam-prebuilt.tar.xz` includes:
 4. ✅ Verify .wallet.json and patched .beam files exist
 5. ✅ Build hbsig and install npm deps
 6. ✅ Create genesis-wasm-server symlink
-7. ✅ Verify current branch matches expected working branch
-8. ✅ Report current progress to user
+7. ✅ Build dev_add_nif.so (Rust NIF for add@1.0)
+8. ✅ Verify current branch matches expected working branch
+9. ✅ Report current progress to user
 
 ## Checkpoint Task Loop
 
@@ -204,7 +212,7 @@ Using official upstream release tags as checkpoints.
 - [ ] Task 5: Receive Confirmation from Human
 - [ ] Task 6: Mark Done
 
-### Test Results Report (Last Updated: 2026-02-05)
+### Test Results Report (Last Updated: 2026-02-06)
 
 #### hbsig Tests (Task 2) - ✅ ALL PASSING
 
@@ -233,7 +241,7 @@ Using official upstream release tags as checkpoints.
 | 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
-| 6 | `hyperbeam.test.js` | 14/14 | ✅ DONE | 2 Send().receive() tests fixed and merged back |
+| 6 | `hyperbeam.test.js` | 12/14 | ✅ DONE | 2 Send().receive() tests fixed; 2 pre-existing failures |
 | 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: accept-bundle inline data assertions |
 | 8 | `local_name.test.js` | 1/1 | ✅ DONE | |
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
@@ -251,7 +259,7 @@ Using official upstream release tags as checkpoints.
 | 21 | `upload.test.js` | 3/3 | ✅ DONE | Fixed: removed bundler dependency that broke ANS-104 scheduling |
 | 22 | `wao-hb.test.js` | 4/4 | ✅ DONE | 2 Send().receive() tests fixed and merged back |
 
-**Summary (2026-02-05):**
+**Summary (2026-02-06):**
 - ✅ All 22 test files passing (57 subtests total)
 - ✅ p4-lua.test.js added - P4 payment with Lua ledger working (23 test files total)
 - ✅ 4 Send().receive() tests fixed and merged into original test files (2026-02-06)
