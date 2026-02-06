@@ -268,11 +268,13 @@ export default class HyperBEAM {
 
     // CU needs proxy for external services (arweave.net) but not for localhost
     // Keep all env vars but ensure NO_PROXY is set for localhost connections
+    const noProxy = 'localhost,127.0.0.1,::1'
     const env = {
       ...process.env,
-      // Ensure NO_PROXY includes localhost for Node.js fetch
-      NO_PROXY: 'localhost,127.0.0.1,::1',
-      no_proxy: 'localhost,127.0.0.1,::1',
+      // Ensure NO_PROXY includes localhost for Node.js fetch and global-agent
+      NO_PROXY: noProxy,
+      no_proxy: noProxy,
+      GLOBAL_AGENT_NO_PROXY: noProxy,
       UNIT_MODE: "hbu",
       HB_URL: `http://localhost:${this.port}`,
       NODE_CONFIG_ENV: "development",
