@@ -192,7 +192,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`8b3f41ee`](https://github.com/ocrybit/HyperBEAM/commit/8b3f41ee) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`e21e20ca`](https://github.com/ocrybit/HyperBEAM/commit/e21e20ca) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -202,7 +202,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`8b3f41ee`](https://github.com/ocrybit/HyperBEAM/commit/8b3f41ee) - Add prometheus ETS table pre-creation in dev_hbsig on_load
+**Merged HB:** [`e21e20ca`](https://github.com/ocrybit/HyperBEAM/commit/e21e20ca) - Remove redundant prometheus_http stub (already in prometheus dep)
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
