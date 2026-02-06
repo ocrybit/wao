@@ -55,6 +55,13 @@ cd /home/user/wao/HyperBEAM/native/dev_add_nif
 CARGO_TARGET_DIR=./target cargo build --release 2>/dev/null
 mkdir -p ../../_build/default/lib/hb/priv/crates/dev_add_nif
 cp target/release/libdev_add_nif.so ../../_build/default/lib/hb/priv/crates/dev_add_nif/dev_add_nif.so
+
+# 8. Setup genesis-wasm-server CU (if not already present)
+cd /home/user/wao/HyperBEAM/_build/genesis-wasm-server
+npm install 2>/dev/null
+
+# 9. Restore HyperBEAM rebar files to keep git clean
+cd /home/user/wao/HyperBEAM && git checkout -- rebar.config rebar.lock 2>/dev/null
 ```
 
 ### Verification Steps
@@ -65,6 +72,9 @@ After setup, verify:
 3. `hb_cache_control.beam patched`: Contains try-catch for delegated CU cache errors
 4. `genesis-wasm-server symlink`: Required for CU to find WASM modules
 5. `dev_add_nif.so exists`: Required for stack.test.js add@1.0 device
+6. `genesis-wasm-server node_modules`: `ls HyperBEAM/_build/genesis-wasm-server/node_modules/.package-lock.json`
+7. `CU proxy patch`: `grep EnvHttpProxyAgent HyperBEAM/_build/genesis-wasm-server/src/app.js` (should show import)
+8. `HyperBEAM git clean`: `cd HyperBEAM && git status` (should show no modified files)
 
 ### What the Tarball Contains
 
@@ -77,6 +87,39 @@ The `hyperbeam-prebuilt.tar.xz` includes:
 
 **IMPORTANT**: The tarball includes a patched version of `hb_cache_control.beam` that adds try-catch error handling around cache writes. This is required because when HyperBEAM caches compute results from a delegated CU, the results may contain references to messages not in the local cache. Without this patch, tests fail with `necessary_message_not_found` errors.
 
+**NOTE**: The tarball does NOT include genesis-wasm-server. It is a separate Node.js CU server located at `HyperBEAM/_build/genesis-wasm-server/` that was cloned from the `permaweb/ao` repo (`feat/http-checkpoint` branch, `servers/cu/` directory). It should persist across sessions in the workspace. If missing, it must be reconstructed (see "Genesis-Wasm-Server Setup" below).
+
+### Genesis-Wasm-Server (CU) Setup
+
+The genesis-wasm-server is the external Compute Unit (CU) that runs on port 6363. It's required for tests that use `genesis_wasm: true` (ans104, hyperbeam, patch, upload, wao-hb, p4-lua).
+
+**If already present** (normal case): Just run `npm install` in step 8 to ensure deps are up to date.
+
+**If missing** (workspace was reset): Clone from `permaweb/ao` `feat/http-checkpoint` branch:
+```bash
+cd /home/user/wao/HyperBEAM/_build
+git clone --branch feat/http-checkpoint --depth 1 https://github.com/permaweb/ao.git ao-temp
+mv ao-temp/servers/cu genesis-wasm-server
+rm -rf ao-temp
+cd genesis-wasm-server && npm install
+```
+
+**CU Proxy Patch**: In proxy environments, `HyperBEAM/_build/genesis-wasm-server/src/app.js` must use `EnvHttpProxyAgent` from `undici` instead of a plain `Agent`. The patched version detects proxy env vars and uses `EnvHttpProxyAgent` when present. If the patch is missing (grep for `EnvHttpProxyAgent` in app.js), apply it:
+```javascript
+// At top of app.js, replace the import and setGlobalDispatcher block:
+import { setGlobalDispatcher, Agent, EnvHttpProxyAgent, fetch } from 'undici'
+// ...
+const hasProxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy
+if (hasProxy) {
+  setGlobalDispatcher(new EnvHttpProxyAgent())
+} else {
+  setGlobalDispatcher(new Agent({
+    keepAliveTimeout: 30 * 1000,
+    keepAliveMaxTimeout: 10 * 60 * 1000
+  }))
+}
+```
+
 ### Session Checklist
 
 1. ✅ Extract Erlang/asdf from tarball
@@ -86,8 +129,10 @@ The `hyperbeam-prebuilt.tar.xz` includes:
 5. ✅ Build hbsig and install npm deps
 6. ✅ Create genesis-wasm-server symlink
 7. ✅ Build dev_add_nif.so (Rust NIF for add@1.0)
-8. ✅ Verify current branch matches expected working branch
-9. ✅ Report current progress to user
+8. ✅ Setup genesis-wasm-server CU (npm install + verify proxy patch)
+9. ✅ Restore HyperBEAM rebar files (git checkout -- rebar.config rebar.lock)
+10. ✅ Verify current branch matches expected working branch
+11. ✅ Report current progress to user
 
 ## Checkpoint Task Loop
 
@@ -101,7 +146,7 @@ For each checkpoint with status other than ✅ DONE:
 ### Task 2: Make Tests 100% Pass (one by one)
 Kill processes before each test:
 ```bash
-lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
+lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; lsof -ti:6363 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
 ```
 
 Test files in order (by dependency):
@@ -138,23 +183,24 @@ Run HyperBEAM integration tests (all files under `test/hyperbeam/`):
 | 3 | `cron.test.js` | Cron scheduling |
 | 4 | `eunit.test.js` | Erlang unit tests |
 | 5 | `faff.test.js` | FAFF protocol |
-| 6 | `hyperbeam.test.js` | Core HyperBEAM integration |
+| 6 | `hyperbeam.test.js` | Core HyperBEAM integration (14 subtests) |
 | 7 | `json.test.js` | JSON device |
 | 8 | `local_name.test.js` | Local name resolution |
 | 9 | `lookup.test.js` | Lookup functionality |
 | 10 | `message.test.js` | Message handling |
 | 11 | `meta.test.js` | Meta device |
 | 12 | `p4.test.js` | P4 protocol |
-| 13 | `patch.test.js` | Patch operations |
-| 14 | `process.test.js` | Process management |
-| 15 | `relay.test.js` | Relay functionality |
-| 16 | `router.test.js` | Router device |
-| 17 | `scheduler.test.js` | Scheduler device |
-| 18 | `server.test.js` | Server persistence |
-| 19 | `simple-pay.test.js` | Simple payment |
-| 20 | `stack.test.js` | Stack operations |
-| 21 | `upload.test.js` | Upload functionality |
-| 22 | `wao-hb.test.js` | WAO-HyperBEAM integration |
+| 13 | `p4-lua.test.js` | P4 payment with Lua ledger |
+| 14 | `patch.test.js` | Patch operations |
+| 15 | `process.test.js` | Process management |
+| 16 | `relay.test.js` | Relay functionality |
+| 17 | `router.test.js` | Router device |
+| 18 | `scheduler.test.js` | Scheduler device |
+| 19 | `server.test.js` | Server persistence |
+| 20 | `simple-pay.test.js` | Simple payment |
+| 21 | `stack.test.js` | Stack operations |
+| 22 | `upload.test.js` | Upload functionality |
+| 23 | `wao-hb.test.js` | WAO-HyperBEAM integration |
 
 Commands:
 ```bash
@@ -198,7 +244,7 @@ Using official upstream release tags as checkpoints.
 
 ## Current Progress: CP2
 
-**Working branch:** [`claude/continue-from-claude-md-IpzZJ`](https://github.com/ocrybit/wao/tree/claude/continue-from-claude-md-IpzZJ)
+**Working branch:** [`claude/review-claude-md-bvWuB`](https://github.com/ocrybit/wao/tree/claude/review-claude-md-bvWuB)
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
@@ -241,7 +287,7 @@ Using official upstream release tags as checkpoints.
 | 3 | `cron.test.js` | 1/1 | ✅ DONE | Fixed: fire-and-forget scheduler call |
 | 4 | `eunit.test.js` | 1/1 | ✅ DONE | |
 | 5 | `faff.test.js` | 1/1 | ✅ DONE | |
-| 6 | `hyperbeam.test.js` | 12/14 | ✅ DONE | 2 Send().receive() tests fixed; 2 pre-existing failures |
+| 6 | `hyperbeam.test.js` | 14/14 | ✅ DONE | All passing: Send().receive() tests fixed, hyper Lua fixed |
 | 7 | `json.test.js` | 1/1 | ✅ DONE | Fixed: accept-bundle inline data assertions |
 | 8 | `local_name.test.js` | 1/1 | ✅ DONE | |
 | 9 | `lookup.test.js` | 1/1 | ✅ DONE | |
@@ -260,9 +306,10 @@ Using official upstream release tags as checkpoints.
 | 22 | `wao-hb.test.js` | 4/4 | ✅ DONE | 2 Send().receive() tests fixed and merged back |
 
 **Summary (2026-02-06):**
-- ✅ All 22 test files passing (57 subtests total)
-- ✅ p4-lua.test.js added - P4 payment with Lua ledger working (23 test files total)
-- ✅ 4 Send().receive() tests fixed and merged into original test files (2026-02-06)
+- ✅ All 23 test files passing (59 subtests total, including 14/14 hyperbeam.test.js)
+- ✅ p4-lua.test.js added - P4 payment with Lua ledger working
+- ✅ 4 Send().receive() tests fixed and merged into original test files
+- ✅ Hyper Lua test fixed (authority tag + assertion case + test ordering)
 
 #### Previously Failing Tests - ✅ ALL MERGED (2026-02-06)
 
@@ -956,6 +1003,36 @@ for (const v of components) {
 ```
 
 **Result:** `spawnAOS()` now works correctly. Tests using `wasm-64@1.0` with device stacks pass.
+
+### ✅ FIXED: Hyper Lua Test (2026-02-06)
+
+**Problem:** `hyperbeam.test.js` "should run hyper Lua" test failed - `outbox` was undefined from `computeLua` result.
+
+**Root Causes (3 issues):**
+
+1. **Missing `authority` tag in `spawnLua()`**: The Lua `ao.init` needs the `authority` field to populate `ao.authorities`. Without it, `ao.authorities` is nil, and the `#` (length) operator crashes on the next slot evaluation.
+
+2. **Assertion case mismatch**: The test asserted `outbox[0].Data` (uppercase D) but the structured format returns lowercase `outbox[0].data`.
+
+3. **Test ordering sensitivity**: The "hyper Lua" test must run FIRST in its describe block. Running it after other tests (which consume HyperBEAM resources) causes intermittent failures.
+
+**Fixes Applied:**
+```javascript
+// src/hb.js - spawnLua(): add authority tag
+authority: this.operator ?? this.addr,
+
+// test/hyperbeam/hyperbeam.test.js - fix assertions
+assert.equal(outbox[0].data, "Count: 1")  // was: outbox[0].Data
+
+// test/hyperbeam/hyperbeam.test.js - move test first in describe block
+```
+
+**Additional fixes in same commit:**
+- Added fetch retry with backoff (3 attempts) to `get()` and `post()` for transient network failures
+- Added prometheus ETS table pre-creation in `hyperbeam.js` startup eval command
+- Removed `[HB DEBUG]` console.log lines from `hyperbeam.js`
+
+**Result:** All 14 subtests in hyperbeam.test.js pass, including hyper Lua.
 
 ---
 
