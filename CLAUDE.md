@@ -920,6 +920,38 @@ const modGet = get => {
 
 **Result:** wao-hb tests #1 and #3 now pass. `getTagVal` correctly extracts `Message.Data` by default.
 
+### ✅ FIXED: device-stack Array Encoding in commit.js (2026-02-06)
+
+**Problem:** `spawnAOS()` failed with `invalid_commitment` error. The `device-stack` field was being linkified during JSON transmission.
+
+**Root Cause:**
+1. The signer preprocesses `device-stack` array to RFC 8941 string format
+2. `commit.js` was sending the original array in the JSON body
+3. HyperBEAM linkified the array, causing signature verification to fail
+4. The signature was computed with the string, but verification used the linkified array hash
+
+**Fix in `hbsig/src/commit.js`:**
+```javascript
+// Fields that are preprocessed to RFC 8941 strings by the signer.
+// These MUST use the header value (the preprocessed string) instead of the original array,
+// because the signature was computed with the string value.
+const PREPROCESSED_ARRAY_FIELDS = new Set(["device-stack"])
+
+for (const v of components) {
+  // ...
+  if (PREPROCESSED_ARRAY_FIELDS.has(key)) {
+    const headerValue = headerLookup.get(key)
+    if (headerValue !== undefined) {
+      body[key] = headerValue
+    }
+    continue
+  }
+  // ...
+}
+```
+
+**Result:** `spawnAOS()` now works correctly. Tests using `wasm-64@1.0` with device stacks pass.
+
 ---
 
 ## Local Reconstruction
