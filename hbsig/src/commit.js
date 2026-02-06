@@ -81,12 +81,28 @@ export const commit = async (obj, opts) => {
     objLookup.set(k.toLowerCase(), v)
   }
 
+  // Fields that are preprocessed to RFC 8941 strings by the signer.
+  // These MUST use the header value (the preprocessed string) instead of the original array,
+  // because the signature was computed with the string value.
+  const PREPROCESSED_ARRAY_FIELDS = new Set(["device-stack"])
+
   for (const v of components) {
     const key = v === "@path" ? "path" : v
     if (key === "content-length") continue
     if (key === "content-digest") continue
     if (key === "inline-body-key") continue
     if (isNativeBodyKey && key === "ao-body-key") continue
+
+    // For preprocessed array fields (like device-stack), use the header value (preprocessed string)
+    // because the signature was computed with the preprocessed value, not the original array.
+    // HyperBEAM's dev_hbsig hot-patch will parse the string back to a map for dev_stack.
+    if (PREPROCESSED_ARRAY_FIELDS.has(key)) {
+      const headerValue = headerLookup.get(key)
+      if (headerValue !== undefined) {
+        body[key] = headerValue
+      }
+      continue
+    }
 
     // Prefer original value from input object (preserves integer/boolean/etc. types)
     // Fall back to header string value if not found in original object
