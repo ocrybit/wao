@@ -35,13 +35,6 @@ const hasNonPrintableChars = str => {
   return false
 }
 
-// Helper to encode a string as a structured field byte sequence
-// Format: :base64data: (RFC 8941)
-const encodeAsByteSequence = str => {
-  const buffer = Buffer.from(str, "utf-8")
-  return `:${buffer.toString("base64")}:`
-}
-
 const isValid = encoded => {
   if (!encoded || typeof encoded !== "object") return false
 
@@ -103,195 +96,6 @@ const hasBinaryData = obj => {
   return false
 }
 
-// Helper to check if value is a simple array that should use structured fields
-const isSimpleArray = value => {
-  if (!Array.isArray(value)) return false
-
-  return value.every(item => {
-    // Simple types that can be in structured field lists
-    if (typeof item === "string") return true
-    if (typeof item === "number") return true
-    if (typeof item === "boolean") return true
-    if (isBytes(item)) return true
-
-    // Complex types cannot be in structured field lists
-    if (item && typeof item === "object") return false
-
-    return true
-  })
-}
-
-// Helper to encode array as structured field list
-const encodeAsStructuredFieldList = arr => {
-  return arr
-    .map(item => {
-      if (typeof item === "string") {
-        // String values are quoted
-        return `"${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
-      } else if (typeof item === "number") {
-        // Numbers are bare
-        return String(item)
-      } else if (typeof item === "boolean") {
-        // Booleans use ?0 or ?1
-        return item ? "?1" : "?0"
-      } else if (isBytes(item)) {
-        // Binary data as byte sequences
-        const buffer = Buffer.isBuffer(item) ? item : Buffer.from(item)
-        return `:${buffer.toString("base64")}:`
-      } else {
-        // Fallback
-        return `"${String(item)}"`
-      }
-    })
-    .join(", ")
-}
-
-const smartSign = async (obj, path) => {
-  try {
-    // Filter out undefined values
-    const filtered = filterUndefined(obj)
-
-    // Check if we can encode everything as headers (no multipart needed)
-    let canUseSimpleEncoding = true
-    let hasBodyField = false
-
-    for (const [key, value] of Object.entries(filtered)) {
-      if (key === "path") continue
-
-      // Check if this is the "body" field
-      if (key === "body" || key === "data") {
-        hasBodyField = true
-        // Only use multipart if body/data is non-empty binary
-        if (isBytes(value) && value.length > 0) {
-          canUseSimpleEncoding = false
-          break
-        }
-      }
-
-      // Non-empty buffers in any key need multipart (they can't be HTTP headers)
-      if (isBytes(value) && value.length > 0) {
-        canUseSimpleEncoding = false
-        break
-      }
-
-      // Complex nested objects need multipart
-      if (
-        value &&
-        typeof value === "object" &&
-        !Array.isArray(value) &&
-        !isBytes(value)
-      ) {
-        if (Object.keys(value).length > 0) {
-          canUseSimpleEncoding = false
-          break
-        }
-      }
-
-      // Arrays with complex items need multipart
-      if (Array.isArray(value) && !isSimpleArray(value)) {
-        canUseSimpleEncoding = false
-        break
-      }
-    }
-
-    if (canUseSimpleEncoding) {
-      // Build a simple message that won't trigger multipart
-      const message = {}
-      if (path) message.path = path
-
-      const types = []
-
-      for (const [key, value] of Object.entries(filtered)) {
-        if (key === "path") continue
-
-        if (value === "" || (Buffer.isBuffer(value) && value.length === 0)) {
-          // Empty string/buffer - just include key with empty value, no type annotation needed
-          message[key] = ""
-        } else if (Array.isArray(value) && value.length === 0) {
-          // Empty array - use "list" type annotation
-          types.push(`${key}="list"`)
-          message[key] = ""
-        } else if (
-          value &&
-          typeof value === "object" &&
-          !Buffer.isBuffer(value) &&
-          Object.keys(value).length === 0
-        ) {
-          // Empty object - use "map" type annotation
-          types.push(`${key}="map"`)
-          message[key] = ""
-        } else if (isSimpleArray(value)) {
-          types.push(`${key}="list"`)
-          message[key] = encodeAsStructuredFieldList(value)
-        } else if (typeof value === "number") {
-          types.push(
-            `${key}="${Number.isInteger(value) ? "integer" : "float"}"`
-          )
-          message[key] = String(value)
-        } else if (typeof value === "boolean") {
-          types.push(`${key}="atom"`)
-          message[key] = String(value)
-        } else if (value === null || value === undefined) {
-          types.push(`${key}="atom"`)
-          message[key] = String(value)
-        } else if (typeof value === "string") {
-          // Check if string has non-printable characters (like newlines in Lua code)
-          // If so, encode as structured field byte sequence format: :base64:
-          // This allows the value to be a valid HTTP header and thus be signed
-          if (hasNonPrintableChars(value)) {
-            types.push(`${key}="binary"`)
-            message[key] = encodeAsByteSequence(value)
-          } else {
-            message[key] = value
-          }
-        }
-      }
-
-      if (types.length > 0) {
-        message["ao-types"] = types.join(", ")
-      }
-
-      return httpsig_to(message)
-    }
-
-    // For complex structures that need multipart, use enc()
-    const normalized = normalize({
-      ...filtered,
-      ...(path && { path }),
-    })
-    const result = await enc(normalized)
-
-    // enc() returns { headers: {...}, body: ... }
-    // We need to flatten this for httpsig_to
-    const flattened = {
-      ...result.headers,
-      body: result.body,
-      ...(path && { path }),
-    }
-
-    // httpsig_to expects the structured format
-    const encoded = httpsig_to(flattened)
-
-    return encoded
-  } catch (error) {
-    console.error("Encoding failed:", error)
-
-    // Fallback: create a simple structure
-    const result = {}
-    if (path) result.path = path
-
-    for (const [key, value] of Object.entries(obj)) {
-      if (key === "path") continue
-
-      if (!isBytes(value) && value !== undefined) {
-        result[key] = value
-      }
-    }
-
-    return result
-  }
-}
-
 // Helper to build ao-types string from an object
 const buildAoTypes = (obj) => {
   const types = []
@@ -326,9 +130,11 @@ const encode = async (obj, path) => {
 
   // Build ao-types annotation for typed values (integers, booleans, etc.)
   // This tells HyperBEAM how to convert values during verification
+  // Merge with any existing ao-types (e.g., list annotations from hb.js)
   const aoTypes = buildAoTypes(filtered)
   if (aoTypes) {
-    fields["ao-types"] = aoTypes
+    const existing = fields["ao-types"]
+    fields["ao-types"] = existing ? existing + ", " + aoTypes : aoTypes
   }
 
   // Try the standard encoding pipeline
@@ -465,28 +271,6 @@ async function _sign({
   return result
 }
 
-// Pre-convert specific array fields (like device-stack) to RFC 8941 string format
-// so they are encoded as header values (committed/signed) rather than multipart body parts.
-// HyperBEAM's dev_hbsig hot-patch will parse these strings back to maps for dev_stack.
-const STACK_ARRAY_FIELDS = ["device-stack"]
-const preprocessStackArrays = obj => {
-  let hasChanges = false
-  for (const field of STACK_ARRAY_FIELDS) {
-    if (Array.isArray(obj[field]) && isSimpleArray(obj[field])) {
-      hasChanges = true
-      break
-    }
-  }
-  if (!hasChanges) return obj
-  const result = { ...obj }
-  for (const field of STACK_ARRAY_FIELDS) {
-    if (Array.isArray(result[field]) && isSimpleArray(result[field])) {
-      result[field] = encodeAsStructuredFieldList(result[field])
-    }
-  }
-  return result
-}
-
 export function signer(config) {
   const { signer, url = "http://localhost:10001" } = config
   if (!signer) throw new Error("Signer is required for mainnet mode")
@@ -513,16 +297,9 @@ export function signer(config) {
     }
 
     const filteredFields = filterUndefined(aoFields)
-    // Pre-convert device-stack arrays to RFC 8941 strings before encoding
-    const preprocessed = preprocessStackArrays(filteredFields)
-    // Never pass path to encode():
-    // - If isUrlPath is true (e.g., "/~scheduler@1.0/schedule"): path is only for
-    //   HTTP request routing, not a data field to sign
-    // - If isUrlPath is false (e.g., "credit-notice"): path is already in aoFields
-    //   as a data field, so encode() will process it naturally
     const encoded = _encoded
       ? filteredFields
-      : await encode(preprocessed, null)
+      : await encode(filteredFields, null)
     return await _sign({ path, signPath, method, encoded, signer, url })
   }
 }

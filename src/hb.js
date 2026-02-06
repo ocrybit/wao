@@ -445,6 +445,22 @@ class HB {
       obj = { ...rest, ...body }
       if (originalPath) obj.path = originalPath  // Don't let body.path overwrite request path
     }
+
+    // Pre-process device-stack arrays to RFC 8941 list strings.
+    // Arrays can't survive the signing pipeline (structured_from converts them
+    // to numbered maps that trigger multipart body encoding). Encoding them as
+    // RFC 8941 strings keeps them as simple header values through signing.
+    // On the Erlang side, hb_ao:normalize_keys is patched (via dev_hbsig.erl
+    // on_load) to parse these strings back into numbered maps for dev_stack.
+    if (Array.isArray(obj["device-stack"])) {
+      obj["device-stack"] = obj["device-stack"].map(item => {
+        if (typeof item === "string") {
+          return `"${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+        }
+        return `"${String(item)}"`
+      }).join(", ")
+    }
+
     // Convert Buffer body to UTF-8 string for JSON POST.
     // JSON can't represent raw binary; Buffers get base64-encoded by JSON.stringify,
     // which causes content-digest hash mismatch (SHA-256 of base64 ≠ SHA-256 of binary).

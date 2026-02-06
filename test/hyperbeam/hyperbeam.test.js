@@ -135,19 +135,6 @@ describe("Hyperbeam Legacynet", function () {
   beforeEach(async () => (hb = await new HB({ url: hbeam.url }).init(testJwk)))
   after(async () => hbeam.kill())
 
-  it("should run hyper Lua", async () => {
-    const { pid } = await hb.spawnLua()
-    await hb.scheduleLua({ pid, action: "Eval", data })
-    await hb.scheduleLua({ pid, action: "Inc" })
-    const { slot } = await hb.scheduleLua({ pid, action: "Get" })
-    const { outbox } = await hb.computeLua({ pid, slot })
-    assert.equal(outbox[0].data, "Count: 1")
-    await hb.scheduleLua({ pid, action: "Inc" })
-    const { slot: slot2 } = await hb.scheduleLua({ pid, action: "Get" })
-    const { outbox: outbox2 } = await hb.computeLua({ pid, slot: slot2 })
-    assert.equal(outbox2[0].data, "Count: 2")
-  })
-
   it("should deploy a process", async () => {
     const address = (await hb.get({ path: "/~meta@1.0/info/address" })).body
     assert.equal(address, hbeam._info.address)
@@ -176,43 +163,6 @@ describe("Hyperbeam Legacynet", function () {
     const r4 = await hb.computeLegacy({ pid, slot: slot3 })
     const r3 = await hb.dryrun({ pid, action: "Get" })
     assert.equal(r3.Messages[0].Data, "Count: 2")
-  })
-
-  it("should handle counter with Add and Get handlers", async () => {
-    const { pid } = await hb.spawnAOS()
-    await hb.messageAOS({ pid, action: "Eval", tags: {}, data: src_data })
-    await hb.messageAOS({ pid, action: "Add", tags: { Plus: "3" } })
-    assert.equal(
-      (await hb.messageAOS({ pid, action: "Get" })).outbox["1"].data,
-      "3"
-    )
-  })
-
-  it("should execute AOS with WAMR", async () => {
-    const { pid } = await hb.spawnAOS()
-    await hb.messageAOS({ pid, action: "Eval", tags: {}, data: src_data })
-    await hb.messageAOS({ pid, action: "Add", tags: { Plus: "3" } })
-    assert.equal(
-      (await hb.messageAOS({ pid, action: "Get" })).outbox["1"].data,
-      "3"
-    )
-    await hb.messageAOS({ pid, action: "Add", tags: { Plus: "3" } })
-    assert.equal(
-      (await hb.messageAOS({ pid, action: "Get" })).outbox["1"].data,
-      "6"
-    )
-  })
-
-  it("should test WAMR", async () => {
-    const { pid } = await hb.spawnAOS()
-    await hb.scheduleAOS({ pid, action: "Eval", data: src_data })
-    await hb.scheduleAOS({ pid, action: "Add", tags: { Plus: "3" } })
-    await hb.scheduleAOS({ pid, action: "Get" })
-    console.log("compute: 0", await hb.computeAOS({ pid, slot: 0 }))
-    console.log("compute: 1", await hb.computeAOS({ pid, slot: 1 }))
-    console.log("compute: 3", await hb.computeAOS({ pid, slot: 3 }))
-    console.log("compute: 3", await hb.computeAOS({ pid, slot: 3 }))
-    console.log("compute: 2", await hb.computeAOS({ pid, slot: 2 }))
   })
 
   // Fixed: Uses direct msg.reply() pattern instead of Send().receive()

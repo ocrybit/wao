@@ -469,16 +469,20 @@ export default class HyperBEAM {
     // This ensures no proxy is used regardless of any OS-level or cached settings
     const clearProxy = `application:ensure_all_started(inets), httpc:set_options([{proxy, {undefined, []}}, {ipfamily, inet}]), `
 
-    // Force-load dev_hbsig early to apply hot-patches (dev_stack binary parsing, hb_util atom fix)
+    // Force-load dev_hbsig early so its codec functions are available
     // before any device-stack processing occurs
     const loadHbsig = `code:ensure_loaded(dev_hbsig), `
+
+    // Pre-register device name atoms so hb_util:atom/1 (which uses list_to_existing_atom)
+    // doesn't crash with badarg when resolving device names from HTTP headers/binaries
+    const preRegisterAtoms = `lists:foreach(fun list_to_atom/1, ["wao@1.0", "hbsig@1.0", "stack@1.0", "patch@1.0", "inc@1.0", "double@1.0", "add@1.0", "mul@1.0", "inc2@1.0", "square@1.0", "mydev@1.0", "lua@5.3a", "process@1.0", "scheduler@1.0", "message@1.0", "meta@1.0", "cache@1.0", "json@1.0", "structured@1.0", "httpsig@1.0", "flat@1.0", "genesis-wasm@1.0", "compute@1.0", "delegated-compute@1.0", "relay@1.0", "router@1.0", "cron@1.0", "node-process@1.0", "p4@1.0", "simple-pay@1.0", "faff@1.0", "ans104@1.0", "test-device@1.0", "lookup@1.0", "local-name@1.0", "upload@1.0", "hook@1.0", "auth-hook@1.0", "http-auth@1.0", "greenzone@1.0", "apply@1.0", "dedup@1.0", "cookie@1.0", "push@1.0", "query@1.0", "manifest@1.0", "name@1.0", "profile@1.0", "monitor@1.0", "multipass@1.0", "poda@1.0", "snp@1.0", "trie@1.0", "volume@1.0", "secret@1.0", "wasi@1.0", "wasm-64@1.0", "whois@1.0", "cacheviz@1.0", "hyperbuddy@1.0", "copycat@1.0", "json-iface@1.0", "arweave@2.9-pre"]), `
 
     // Pre-create prometheus ETS tables owned by the shell process.
     // dev_hbsig on_load also does this, but the module loads lazily so this
     // covers the gap between rebar3 boot and module loading.
     const initPrometheus = `lists:foreach(fun({N,{T,C}}) -> case ets:info(N) of undefined -> ets:new(N,[T,named_table,public,{C,true}]); _ -> ok end; ({N,C}) -> case ets:info(N) of undefined -> ets:new(N,[set,named_table,public,{C,true}]); _ -> ok end end, [{prometheus_registry_table,{bag,read_concurrency}},{prometheus_counter_table,write_concurrency},{prometheus_gauge_table,write_concurrency},{prometheus_summary_table,write_concurrency},{prometheus_quantile_summary_table,write_concurrency},{prometheus_histogram_table,write_concurrency},{prometheus_boolean_table,write_concurrency}]), `
 
-    const start = `${clearProxy}${initPrometheus}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
+    const start = `${clearProxy}${initPrometheus}${preRegisterAtoms}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
 
     return start
   }
