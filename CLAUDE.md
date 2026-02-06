@@ -25,114 +25,80 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 
 ## Session Setup (each fresh session)
 
-### Quick Start (Copy-Paste Commands)
+There are **two setup options**. Choose based on what you need:
+
+### Option A: WAO/hbsig-enabled HyperBEAM (default for development)
+
+Includes: wao devices (dev_hbsig, dev_wao), patched hb_cache_control, genesis-wasm-server CU, proxy patches, dev_add_nif.so
 
 ```bash
 # 1. Setup Erlang environment
 cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
-# 2. Initialize submodule and extract prebuilt HyperBEAM
+# 2. Initialize submodule and extract prebuilt HyperBEAM (includes genesis-wasm-server)
 cd /home/user/wao
 git submodule update --init --recursive
 cd HyperBEAM && tar -xJf ../installation/hyperbeam-prebuilt.tar.xz
 
 # 3. Verify critical files extracted
-ls -la .wallet.json _build/default/lib/hb/ebin/hb_cache_control.beam
+ls -la .wallet.json _build/default/lib/hb/ebin/dev_hbsig.beam _build/genesis-wasm-server/package.json
 
-# 4. Setup rebar config for offline compilation
-rm -f rebar.lock && cp ../installation/hyperbeam_rebar.config rebar.config
+# 4. Extract prebuilt node_modules and hbsig dist (no compilation needed)
+cd /home/user/wao && tar -xJf installation/wao-prebuilt.tar.xz
 
-# 5. Build hbsig and install npm dependencies
-cd /home/user/wao/hbsig && yarn build
-cd /home/user/wao && npm install
-
-# 6. Create genesis-wasm-server symlink (for CU path resolution)
+# 5. Create genesis-wasm-server symlink (for CU path resolution)
 cd /home/user/wao/HyperBEAM && ln -sf _build/genesis-wasm-server genesis-wasm-server
-
-# 7. Build dev_add_nif.so (required for stack.test.js add@1.0 device)
-cd /home/user/wao/HyperBEAM/native/dev_add_nif
-CARGO_TARGET_DIR=./target cargo build --release 2>/dev/null
-mkdir -p ../../_build/default/lib/hb/priv/crates/dev_add_nif
-cp target/release/libdev_add_nif.so ../../_build/default/lib/hb/priv/crates/dev_add_nif/dev_add_nif.so
-
-# 8. Setup genesis-wasm-server CU (if not already present)
-cd /home/user/wao/HyperBEAM/_build/genesis-wasm-server
-npm install 2>/dev/null
-
-# 9. Restore HyperBEAM rebar files to keep git clean
-cd /home/user/wao/HyperBEAM && git checkout -- rebar.config rebar.lock 2>/dev/null
 ```
+
+### Option B: Vanilla Beta-3 HyperBEAM (upstream release, no wao modifications)
+
+Includes: stock upstream v0.9-milestone-3-beta-3, no custom devices, no genesis-wasm-server
+
+```bash
+# 1. Setup Erlang environment
+cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
+. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
+
+# 2. Initialize submodule and extract vanilla HyperBEAM
+cd /home/user/wao
+git submodule update --init --recursive
+cd HyperBEAM && tar -xJf ../installation/hyperbeam-vanilla-beta3.tar.xz
+
+# 3. Verify critical files extracted
+ls -la .wallet.json _build/default/lib/hb/ebin/hb.beam
+```
+
+### What the Tarballs Contain
+
+| Tarball | Size | Contents |
+|---------|------|----------|
+| `hyperbeam-prebuilt.tar.xz` | 43MB | WAO-enabled: compiled BEAM files (with dev_hbsig, dev_wao, patched hb_cache_control), WAMR, NIFs, genesis-wasm-server (with node_modules + proxy patch), .wallet.json |
+| `hyperbeam-vanilla-beta3.tar.xz` | 35MB | Vanilla upstream: compiled BEAM files (stock), WAMR, NIFs, .wallet.json |
+| `wao-prebuilt.tar.xz` | 62MB | node_modules/, hbsig/node_modules/, hbsig/dist/ (no npm install or yarn build needed) |
+| `asdf-erlang-rebar.tar.xz` | 23MB | Erlang 27.3.4.6, rebar 3.26.0, asdf runtime |
 
 ### Verification Steps
 
-After setup, verify:
+After Option A setup, verify:
 1. `HyperBEAM submodule commit`: `cd HyperBEAM && git log -1 --oneline` (should match Merged HB in checkpoint table)
 2. `.wallet.json exists`: Required for signing tests
-3. `hb_cache_control.beam patched`: Contains try-catch for delegated CU cache errors
-4. `genesis-wasm-server symlink`: Required for CU to find WASM modules
-5. `dev_add_nif.so exists`: Required for stack.test.js add@1.0 device
-6. `genesis-wasm-server node_modules`: `ls HyperBEAM/_build/genesis-wasm-server/node_modules/.package-lock.json`
-7. `CU proxy patch`: `grep EnvHttpProxyAgent HyperBEAM/_build/genesis-wasm-server/src/app.js` (should show import)
-8. `HyperBEAM git clean`: `cd HyperBEAM && git status` (should show no modified files)
-
-### What the Tarball Contains
-
-The `hyperbeam-prebuilt.tar.xz` includes:
-- `_build/default/lib/*` - Compiled Erlang dependencies (prometheus, quantile_estimator, cowboy, etc.)
-- `_build/wamr/*` - WAMR runtime for WASM execution
-- `priv/*` - NIFs and HTML files
-- `.wallet.json` - Test signing key (REQUIRED)
-- **Patched `hb_cache_control.beam`** - Contains try-catch fix for delegated CU cache errors
-
-**IMPORTANT**: The tarball includes a patched version of `hb_cache_control.beam` that adds try-catch error handling around cache writes. This is required because when HyperBEAM caches compute results from a delegated CU, the results may contain references to messages not in the local cache. Without this patch, tests fail with `necessary_message_not_found` errors.
-
-**NOTE**: The tarball does NOT include genesis-wasm-server. It is a separate Node.js CU server located at `HyperBEAM/_build/genesis-wasm-server/` that was cloned from the `permaweb/ao` repo (`feat/http-checkpoint` branch, `servers/cu/` directory). It should persist across sessions in the workspace. If missing, it must be reconstructed (see "Genesis-Wasm-Server Setup" below).
-
-### Genesis-Wasm-Server (CU) Setup
-
-The genesis-wasm-server is the external Compute Unit (CU) that runs on port 6363. It's required for tests that use `genesis_wasm: true` (ans104, hyperbeam, patch, upload, wao-hb, p4-lua).
-
-**If already present** (normal case): Just run `npm install` in step 8 to ensure deps are up to date.
-
-**If missing** (workspace was reset): Clone from `permaweb/ao` `feat/http-checkpoint` branch:
-```bash
-cd /home/user/wao/HyperBEAM/_build
-git clone --branch feat/http-checkpoint --depth 1 https://github.com/permaweb/ao.git ao-temp
-mv ao-temp/servers/cu genesis-wasm-server
-rm -rf ao-temp
-cd genesis-wasm-server && npm install
-```
-
-**CU Proxy Patch**: In proxy environments, `HyperBEAM/_build/genesis-wasm-server/src/app.js` must use `EnvHttpProxyAgent` from `undici` instead of a plain `Agent`. The patched version detects proxy env vars and uses `EnvHttpProxyAgent` when present. If the patch is missing (grep for `EnvHttpProxyAgent` in app.js), apply it:
-```javascript
-// At top of app.js, replace the import and setGlobalDispatcher block:
-import { setGlobalDispatcher, Agent, EnvHttpProxyAgent, fetch } from 'undici'
-// ...
-const hasProxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy
-if (hasProxy) {
-  setGlobalDispatcher(new EnvHttpProxyAgent())
-} else {
-  setGlobalDispatcher(new Agent({
-    keepAliveTimeout: 30 * 1000,
-    keepAliveMaxTimeout: 10 * 60 * 1000
-  }))
-}
-```
+3. `dev_hbsig.beam exists`: `ls HyperBEAM/_build/default/lib/hb/ebin/dev_hbsig.beam`
+4. `genesis-wasm-server symlink`: `ls -la HyperBEAM/genesis-wasm-server`
+5. `dev_add_nif.so exists`: `ls HyperBEAM/_build/default/lib/hb/priv/crates/dev_add_nif/dev_add_nif.so`
+6. `CU proxy patch`: `grep EnvHttpProxyAgent HyperBEAM/_build/genesis-wasm-server/src/app.js`
+7. `node_modules exists`: `ls node_modules/.package-lock.json hbsig/dist/index.js`
 
 ### Session Checklist
 
 1. ✅ Extract Erlang/asdf from tarball
 2. ✅ Initialize HyperBEAM submodule
-3. ✅ Extract prebuilt HyperBEAM from tarball
-4. ✅ Verify .wallet.json and patched .beam files exist
-5. ✅ Build hbsig and install npm deps
-6. ✅ Create genesis-wasm-server symlink
-7. ✅ Build dev_add_nif.so (Rust NIF for add@1.0)
-8. ✅ Setup genesis-wasm-server CU (npm install + verify proxy patch)
-9. ✅ Restore HyperBEAM rebar files (git checkout -- rebar.config rebar.lock)
-10. ✅ Verify current branch matches expected working branch
-11. ✅ Report current progress to user
+3. ✅ Extract prebuilt HyperBEAM tarball (Option A or B)
+4. ✅ Verify critical files exist
+5. ✅ Extract wao-prebuilt (node_modules + hbsig dist)
+6. ✅ Create genesis-wasm-server symlink (Option A only)
+7. ✅ Verify current branch matches expected working branch
+8. ✅ Report current progress to user
 
 ## Checkpoint Task Loop
 
