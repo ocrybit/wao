@@ -104,14 +104,6 @@ export default class HyperBEAM {
     const cwd = resolve(process.cwd(), this.cwd)
     const env = this.genEnv() // genEnv() returns filtered process.env without proxy vars
 
-    // Debug: verify proxy filtering
-    if (this.logs) {
-      console.log(`[HB DEBUG] rebar3 mode: ${this.rebar3}`)
-      console.log(`[HB DEBUG] HTTPS_PROXY in parent env: ${process.env.HTTPS_PROXY ? 'SET' : 'NOT SET'}`)
-      console.log(`[HB DEBUG] HTTPS_PROXY in child env: ${env.HTTPS_PROXY ? 'SET' : 'NOT SET'}`)
-      console.log(`[HB DEBUG] HTTP_PROXY in child env: ${env.HTTP_PROXY ? 'SET' : 'NOT SET'}`)
-    }
-
     if (this.rebar3) {
       // rebar3 shell mode
       const _as = this.as.length === 0 ? [] : ["as", this.as.join(",")]
@@ -268,13 +260,11 @@ export default class HyperBEAM {
 
     // CU needs proxy for external services (arweave.net) but not for localhost
     // Keep all env vars but ensure NO_PROXY is set for localhost connections
-    const noProxy = 'localhost,127.0.0.1,::1'
     const env = {
       ...process.env,
-      // Ensure NO_PROXY includes localhost for Node.js fetch and global-agent
-      NO_PROXY: noProxy,
-      no_proxy: noProxy,
-      GLOBAL_AGENT_NO_PROXY: noProxy,
+      // Ensure NO_PROXY includes localhost for Node.js fetch
+      NO_PROXY: 'localhost,127.0.0.1,::1',
+      no_proxy: 'localhost,127.0.0.1,::1',
       UNIT_MODE: "hbu",
       HB_URL: `http://localhost:${this.port}`,
       NODE_CONFIG_ENV: "development",
@@ -480,15 +470,13 @@ export default class HyperBEAM {
     // Force-load dev_hbsig early to apply hot-patches (dev_stack binary parsing, hb_util atom fix)
     // before any device-stack processing occurs
     const loadHbsig = `code:ensure_loaded(dev_hbsig), `
-    const start = `${clearProxy}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
 
-    // Debug: show the eval command being sent
-    if (this.logs) {
-      console.log("[HB DEBUG] Eval command includes relay_http_client:", start.includes("relay_http_client"))
-      console.log("[HB DEBUG] Eval command clears proxy:", start.includes("httpc:set_options"))
-      console.log("[HB DEBUG] node_processes:", _node_processes ? "YES" : "NO")
-      console.log("[HB DEBUG] store:", _store ? "YES" : "NO")
-    }
+    // Pre-create prometheus ETS tables owned by the shell process.
+    // dev_hbsig on_load also does this, but the module loads lazily so this
+    // covers the gap between rebar3 boot and module loading.
+    const initPrometheus = `lists:foreach(fun({N,{T,C}}) -> case ets:info(N) of undefined -> ets:new(N,[T,named_table,public,{C,true}]); _ -> ok end; ({N,C}) -> case ets:info(N) of undefined -> ets:new(N,[set,named_table,public,{C,true}]); _ -> ok end end, [{prometheus_registry_table,{bag,read_concurrency}},{prometheus_counter_table,write_concurrency},{prometheus_gauge_table,write_concurrency},{prometheus_summary_table,write_concurrency},{prometheus_quantile_summary_table,write_concurrency},{prometheus_histogram_table,write_concurrency},{prometheus_boolean_table,write_concurrency}]), `
+
+    const start = `${clearProxy}${initPrometheus}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
 
     return start
   }
