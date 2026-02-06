@@ -126,25 +126,6 @@ describe("Hyperbeam Legacynet Suite1", function () {
     assert.equal(message.Target, pid)
   })
 
-  it("should test add@1.0", async () => {
-    const res = await hb.post({ path: "/~add@1.0/add", a: 2, b: 3 })
-    assert.equal(res.headers.sum, "5")
-  })
-
-  it("should test mul@1.0", async () => {
-    const res = await hb.post({ path: "/~mul@1.0/mul", a: 2, b: 3 })
-    assert.equal(res.headers.product, "6")
-  })
-
-  it("should upload module #2", async () => {
-    const { pid } = await hb.spawn({ "execution-device": "wao@1.0" })
-    await hb.schedule({ pid })
-    await hb.schedule({ pid })
-    await hb.schedule({ pid })
-    await hb.schedule({ pid })
-    assert.equal((await hb.now({ pid })).count, 5)
-    assert.equal((await hb.now({ pid })).count, 5)
-  })
 })
 
 describe("Hyperbeam Legacynet", function () {

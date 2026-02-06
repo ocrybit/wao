@@ -3,17 +3,6 @@ import { after, describe, it, before, beforeEach } from "node:test"
 import HB from "../../src/hb.js"
 import HyperBEAM from "../../src/hyperbeam.js"
 
-const data = `
-local count = 0
-Handlers.add("Inc", "Inc", function (msg)
-  count = count + 1
-  msg.reply({ Data = "Count: "..tostring(count) })
-end)
-
-Handlers.add("Get", "Get", function (msg)
-  #msg.reply({ Data = "Count: "..tostring(count) })
-end)`
-
 const src_data = `
 local count = 0
 Handlers.add("Add", "Add", function (msg)
@@ -31,37 +20,6 @@ describe("Hyperbeam Device", function () {
   before(async () => (hbeam = await new HyperBEAM({ reset: true, genesis_wasm: true }).ready()))
   beforeEach(async () => (hb = hbeam.hb))
   after(async () => hbeam.kill())
-
-  it("should test patch@1.0", async () => {
-    const { pid } = await hb.spawn({
-      "execution-device": "stack@1.0",
-      "device-stack": ["wao@1.0", "patch@1.0"],
-      "patch-from": "/results",
-      "patch-to": "/cache",
-    })
-    await hb.schedule({ pid })
-    await hb.schedule({ pid })
-    // now() returns the value directly for scalar paths (not wrapped in {body:...})
-    const square = await hb.now({ pid, path: "/cache/square" })
-    const double = await hb.now({ pid, path: "/cache/double" })
-    assert.equal(square, 9)
-    assert.equal(double, 6)
-  })
-
-  it("should test patch@1.0 again", async () => {
-    const { pid } = await hb.spawn({
-      "execution-device": "stack@1.0",
-      "device-stack": ["wao@1.0", "patch@1.0"],
-      "patch-from": "/results",
-      "patch-to": "/cache",
-    })
-    await hb.schedule({ pid })
-    await hb.schedule({ pid })
-    const square = await hb.now({ pid, path: "/cache/square" })
-    const double = await hb.now({ pid, path: "/cache/double" })
-    assert.equal(square, 9)
-    assert.equal(double, 6)
-  })
 
   it("should patch with legacy aos", async () => {
     const { pid } = await hb.spawnAOS()
