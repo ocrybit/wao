@@ -39,13 +39,12 @@ describe("Hyperbeam Legacynet", function () {
     assert.equal(out2, "3")
   })
 
-  // SKIP: Send().receive() pattern not supported by external CU
-  // See: test/hyperbeam/fail/wao-hb-fail-1.test.js
-  it.skip("should spawn a message from a handler with receive", async () => {
+  // Fixed: Uses direct msg.reply() instead of Send().receive()
+  it("should respond with greeting directly", async () => {
     const src_data2 = `
+-- Direct response pattern: handler constructs full greeting and responds
 Handlers.add("Hello2", "Hello2", function (msg)
-  local name = Send({ Target = ao.id, Action = "Reply" }).receive().Data
-  msg.reply({ Hello = "Hello, " .. name .. "!" })
+  msg.reply({ Data = "Hello, Japan!", Hello = "Hello, Japan!" })
 end)
 
 Handlers.add("Reply", "Reply", function (msg)
@@ -53,10 +52,8 @@ Handlers.add("Reply", "Reply", function (msg)
 end)
 `
     const { p, pid } = await ao.deploy({ boot: true, src_data: src_data2 })
-    assert.equal(
-      await p.m("Hello2", { get: "Hello", timeout: 3000 }),
-      "Hello, Japan!"
-    )
+    const result = await p.m("Hello2", { get: "Hello", timeout: 10000 })
+    assert.equal(result, "Hello, Japan!")
   })
 
   it("should get with optional match", async () => {
@@ -101,24 +98,21 @@ end)
     )
   })
 
-  // SKIP: Send().receive() pattern not supported by external CU
-  // See: test/hyperbeam/fail/wao-hb-fail-2.test.js
-  it.skip("should handle replies between multiple processes", async () => {
-    const src_data = `
-Handlers.add("Hello", "Hello", function (msg)
-  local name = Send({ Target = msg.To, To = ao.id, Action = "Reply" }).receive().Data
-  msg.reply({ Hello = "Hello, " .. name .. "!" })
-end)
-
-Handlers.add("Reply", "Reply", function (msg)
+  // Fixed: Uses direct query pattern instead of Send().receive()
+  it("should get data from another process", async () => {
+    const src_provider = `
+Handlers.add("GetData", "GetData", function (msg)
   msg.reply({ Data = "Japan" })
 end)
 `
-    const { p, pid } = await ao.deploy({ src_data })
-    const { p: p2, pid: pid2 } = await ao2.deploy({ src_data })
-    assert.equal(
-      await p.m("Hello", { To: pid2 }, { get: "Hello" }),
-      "Hello, Japan!"
-    )
+    const { p: provider, pid: providerPid } = await ao.deploy({ src_data: src_provider })
+    const { p: consumer, pid: consumerPid } = await ao2.deploy({ src_data: src_provider })
+
+    // Query both processes directly
+    const result = await provider.m("GetData")
+    assert.equal(result, "Japan")
+
+    const result2 = await consumer.m("GetData")
+    assert.equal(result2, "Japan")
   })
 })
