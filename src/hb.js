@@ -268,7 +268,6 @@ class HB {
 
   async spawnLua(lua) {
     await this.setInfo()
-    // Note: 'authority' excluded - conflicts with HTTP Message Signatures '@authority'
     const tags = {
       "data-protocol": "ao",
       variant: "ao.N.1",
@@ -276,6 +275,9 @@ class HB {
       "execution-device": "lua@5.3a",
       "push-device": "push@1.0",
       "patch-from": "/results/outbox",
+      // ao.init needs authority to set ao.authorities; without it, the field
+      // becomes nil and the # operator crashes at the next slot.
+      authority: this.operator ?? this.addr,
     }
     return this.spawn(tags)
   }
@@ -476,11 +478,22 @@ class HB {
       return value
     }
     const jsonBody = JSON.stringify(committed, jsonReplacer)
-    const response = await fetch(`${this.url}${obj.path}`, {
+    const fetchUrl = `${this.url}${obj.path}`
+    const fetchOpts = {
       method: "POST",
       headers: { "content-type": "application/json", "accept-bundle": "true" },
       body: jsonBody,
-    })
+    }
+    let response
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await fetch(fetchUrl, fetchOpts)
+        break
+      } catch (e) {
+        if (attempt === 2) throw e
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+      }
+    }
     if (response.status >= 400) {
       const text = await response.text()
       throw new Error(`${response.status}: ${text}`)
@@ -553,9 +566,17 @@ class HB {
       }
     }
     // Add accept-bundle header to get inline data instead of links (beta3 compatibility)
-    const response = await fetch(`${this.url}${path}${_json}${_params}`, {
-      headers: { "accept-bundle": "true" }
-    })
+    const url = `${this.url}${path}${_json}${_params}`
+    let response
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await fetch(url, { headers: { "accept-bundle": "true" } })
+        break
+      } catch (e) {
+        if (attempt === 2) throw e
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+      }
+    }
     return this._decodeResult(await result(response))
   }
 

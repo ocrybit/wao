@@ -154,6 +154,19 @@ describe("Hyperbeam Legacynet", function () {
   beforeEach(async () => (hb = await new HB({ url: hbeam.url }).init(testJwk)))
   after(async () => hbeam.kill())
 
+  it("should run hyper Lua", async () => {
+    const { pid } = await hb.spawnLua()
+    await hb.scheduleLua({ pid, action: "Eval", data })
+    await hb.scheduleLua({ pid, action: "Inc" })
+    const { slot } = await hb.scheduleLua({ pid, action: "Get" })
+    const { outbox } = await hb.computeLua({ pid, slot })
+    assert.equal(outbox[0].data, "Count: 1")
+    await hb.scheduleLua({ pid, action: "Inc" })
+    const { slot: slot2 } = await hb.scheduleLua({ pid, action: "Get" })
+    const { outbox: outbox2 } = await hb.computeLua({ pid, slot: slot2 })
+    assert.equal(outbox2[0].data, "Count: 2")
+  })
+
   it("should deploy a process", async () => {
     const address = (await hb.get({ path: "/~meta@1.0/info/address" })).body
     assert.equal(address, hbeam._info.address)
@@ -169,20 +182,6 @@ describe("Hyperbeam Legacynet", function () {
     assert.equal(r4.Messages[0].Data, "Count: 2")
     const d4 = await hb.dryrun({ pid, action: "Get" })
     assert.equal(d4.Messages[0].Data, "Count: 2")
-  })
-
-  it("should run hyper Lua", async () => {
-    const { pid } = await hb.spawnLua()
-    await hb.scheduleLua({ pid, action: "Eval", data })
-    await hb.scheduleLua({ pid, action: "Inc" })
-    const { slot } = await hb.scheduleLua({ pid, action: "Get" })
-    const { outbox } = await hb.computeLua({ pid, slot })
-    assert.equal(outbox[0].Data, "Count: 1")
-    await hb.scheduleLua({ pid, action: "Inc" })
-    const { slot: slot2 } = await hb.scheduleLua({ pid, action: "Get" })
-    const { outbox: outbox2 } = await hb.computeLua({ pid, slot: slot2 })
-    assert.equal(outbox2[0].Data, "Count: 2")
-    console.log(await hb.computeLua({ pid, slot }))
   })
 
   it("should interact with a hyperbeam node", async () => {
