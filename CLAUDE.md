@@ -7,7 +7,7 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 ## Rules (STRICT)
 
 1. **HyperBEAM commits go to `wao-m1` branch only** (ask for GitHub token if needed to push)
-2. **NEVER use `asdf.sh` for local tests or setup** - rebar3/erlang/node are available system-wide. Do NOT source `~/.asdf/asdf.sh` in any test commands or setup scripts.
+2. **NEVER use `asdf.sh` for local tests or setup** - rebar3/erlang/node are available system-wide. Do NOT source `~/.asdf/asdf.sh` in any test commands or setup scripts. On remote (Claude Code), after extracting the asdf tarball during Session Setup, add rebar3/erlang to PATH directly: `export PATH="/root/.asdf/installs/rebar/3.26.0/bin:/root/.asdf/installs/erlang/27.3.4.6/bin:$PATH"`
 3. **Only modify these files:**
    - `HyperBEAM/src/dev_hbsig.erl`
    - `HyperBEAM/src/dev_wao.erl`
