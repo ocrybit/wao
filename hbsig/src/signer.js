@@ -143,7 +143,8 @@ const encode = async (obj, path) => {
   // Check if the encoded result is valid for HTTP headers
   if (!isValid(encoded)) {
     // If invalid, fall back to enc()
-    return await enc(filtered)
+    const encResult = await enc(filtered)
+    return encResult
   }
 
   // For non-binary data, return in the same format as enc()
@@ -247,6 +248,7 @@ async function _sign({
 
   // Only add @path if signPath is enabled AND path header exists
   if (signPath !== false && isPath) signingFields.push("@path")
+
 
   const signedRequest = await toHttpSigner(signer)({
     request: { url: _url, method, headers: lowercaseHeaders },

@@ -248,7 +248,7 @@ export default class HyperBEAM {
 
   // Start the genesis-wasm CU server
   async startCU() {
-    const cuDir = resolve(this.dirname, "_build/genesis-wasm-server")
+    const cuDir = resolve(this.dirname, "genesis-wasm-server")
     const dbDir = resolve(this.dirname, "cache-mainnet/genesis-wasm")
 
     // Ensure DB directory exists
@@ -482,7 +482,21 @@ export default class HyperBEAM {
     // covers the gap between rebar3 boot and module loading.
     const initPrometheus = `lists:foreach(fun({N,{T,C}}) -> case ets:info(N) of undefined -> ets:new(N,[T,named_table,public,{C,true}]); _ -> ok end; ({N,C}) -> case ets:info(N) of undefined -> ets:new(N,[set,named_table,public,{C,true}]); _ -> ok end end, [{prometheus_registry_table,{bag,read_concurrency}},{prometheus_counter_table,write_concurrency},{prometheus_gauge_table,write_concurrency},{prometheus_summary_table,write_concurrency},{prometheus_quantile_summary_table,write_concurrency},{prometheus_histogram_table,write_concurrency},{prometheus_boolean_table,write_concurrency}]), `
 
-    const start = `${clearProxy}${initPrometheus}${preRegisterAtoms}${loadHbsig}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}, prometheus => false}).`
+    // When running multiple HyperBEAM instances, rebar3 shell auto-starts the
+    // hb app which binds port 8734 (default). The second instance fails to start
+    // the hb app because port 8734 is already in use. This leaves hb_sup,
+    // dev_scheduler_registry, and ar_timestamp uninitialized. We idempotently
+    // ensure they are running before calling start_mainnet.
+    const ensureInit = `(fun() -> try hb:init() catch _:_ -> ok end, case whereis(hb_sup) of undefined -> catch hb_sup:start_link(); _ -> ok end, catch dev_scheduler_registry:start(), catch ar_timestamp:start() end)(), `
+
+    // node_processes definitions include an 'authority' field (set by augment_definition)
+    // which conflicts with HTTP Signatures' @authority derived component (RFC 9421).
+    // The HTTPSig codec transforms 'authority' to '@authority' in signature params but
+    // not in component lines, causing internal message verification to fail.
+    // Disable verification for node_processes configs until upstream fixes this.
+    const _verify_assignments = this.p4_lua ? `, verify_assignments => false` : ""
+
+    const start = `${clearProxy}${initPrometheus}${preRegisterAtoms}${loadHbsig}${ensureInit}hb:start_mainnet(#{ ${_port}${_gateway}${_wallet}${_faff}${_bundler}${_bundler_ans104}${_on}${_p4_non_chargable}${_operator}${_spp}${_genesis_wasm_port}${_devices}${_node_processes}${_cache_writers}${_relay_http_client}${_routes}${_store}${_verify_assignments}, prometheus => false, linkify_mode => false}).`
 
     return start
   }

@@ -7,7 +7,8 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 ## Rules (STRICT)
 
 1. **HyperBEAM commits go to `wao-m1` branch only** (ask for GitHub token if needed to push)
-2. **Only modify these files:**
+2. **NEVER use `asdf.sh` for local tests or setup** - rebar3/erlang/node are available system-wide. Do NOT source `~/.asdf/asdf.sh` in any test commands or setup scripts.
+3. **Only modify these files:**
    - `HyperBEAM/src/dev_hbsig.erl`
    - `HyperBEAM/src/dev_wao.erl`
    - `hbsig/src/*.js`
@@ -193,7 +194,7 @@ Using official upstream release tags as checkpoints.
 |----|-----------------|-----------|-------------------|------|---------|--------|
 | 0 | [`b2743e4a`](https://github.com/permaweb/HyperBEAM/commit/b2743e4a) | [`30e00c77`](https://github.com/ocrybit/HyperBEAM/commit/30e00c77) | | 2025-05-19 | Merge pull request #268 from permaweb/dpshade/docs-content-styling | ✅ DONE |
 | 1 | [`2c8c6286`](https://github.com/permaweb/HyperBEAM/commit/2c8c6286) | [`bda11b6b`](https://github.com/ocrybit/HyperBEAM/commit/bda11b6b) | | 2025-06-08 | [v0.9-milestone-3-beta-1](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-1) | ✅ DONE |
-| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`69f65acb`](https://github.com/ocrybit/HyperBEAM/commit/69f65acb) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
+| 2 | [`d58f16b8`](https://github.com/permaweb/HyperBEAM/commit/d58f16b8) | [`95953224`](https://github.com/ocrybit/HyperBEAM/commit/95953224) | | 2025-10-02 | [v0.9-milestone-3-beta-3](https://github.com/permaweb/HyperBEAM/tree/v0.9-milestone-3-beta-3) | 🔄 CURRENT |
 
 ---
 
@@ -203,7 +204,7 @@ Using official upstream release tags as checkpoints.
 
 **Note:** CP2 rebase already completed. Beta3 has JSON POST with commitment signatures for proper owner field preservation.
 
-**Merged HB:** [`69f65acb`](https://github.com/ocrybit/HyperBEAM/commit/69f65acb) - Add on_load hook to patch hb_ao:normalize_keys for RFC 8941 list strings
+**Merged HB:** [`95953224`](https://github.com/ocrybit/HyperBEAM/commit/95953224) - Clean dev_wao.erl and simplify rebar.config for offline build
 
 ### Tasks
 - [x] Task 1: Rebase and Merge Upstream (already done for CP2)
@@ -309,12 +310,33 @@ cd hbsig && yarn build && cd ..
 
 # 3. Install npm deps (from root)
 npm install
-
-# 4. Run tests (example)
-cd hbsig && yarn test test/commit.test.js
 ```
 
 **Important:** `yarn build` runs from `hbsig/`, `npm install` runs from project root. The root `npm install` links the local `hbsig` package so tests can import it.
+
+### Running Tests
+
+All test commands run from the **project root**. Kill processes before each test to avoid port conflicts:
+```bash
+lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
+```
+
+**NEVER run tests in parallel** — HyperBEAM uses fixed ports (10000, 10001) and will hang.
+
+#### hbsig tests (codec/signing unit tests)
+```bash
+HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/<file>.test.js
+```
+
+#### hyperbeam tests (vanilla HyperBEAM integration — no custom devices)
+```bash
+node --experimental-wasm-memory64 --test test/hyperbeam/<file>.test.js
+```
+
+#### wao-hbsig tests (tests that depend on dev_wao, dev_hbsig, or custom devices)
+```bash
+node --experimental-wasm-memory64 --test test/wao-hbsig/<file>.test.js
+```
 
 ### Verify correct branches/commits
 

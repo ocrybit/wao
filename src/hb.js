@@ -275,9 +275,8 @@ class HB {
       "execution-device": "lua@5.3a",
       "push-device": "push@1.0",
       "patch-from": "/results/outbox",
-      // ao.init needs authority to set ao.authorities; without it, the field
-      // becomes nil and the # operator crashes at the next slot.
-      authority: this.operator ?? this.addr,
+      // Note: 'authority' excluded - conflicts with HTTP Message Signatures '@authority'
+      // The Lua boot module (hyper-aos.js) is patched to default ao.authorities to {}
     }
     return this.spawn(tags)
   }
@@ -434,55 +433,64 @@ class HB {
   async post(obj, opt = {}) {
     const _json = opt.json ? "/~json@1.0/serialize" : ""
     obj.path += _json
-    // Flatten nested 'body' object to top-level fields for JSON POST.
+    // Flatten nested 'body' object to top-level fields.
     // Old API used body: { key: value } for multipart POST; now these
-    // fields must be at the top level for JSON POST with commitments.
-    // Preserve request metadata (path) that shouldn't be overwritten by body fields.
+    // fields must be at the top level for the signing pipeline.
     if (obj.body && typeof obj.body === "object" && !Buffer.isBuffer(obj.body)
         && !(obj.body instanceof Blob) && !Array.isArray(obj.body)) {
       const originalPath = obj.path
       const { body, ...rest } = obj
       obj = { ...rest, ...body }
-      if (originalPath) obj.path = originalPath  // Don't let body.path overwrite request path
+      if (originalPath) obj.path = originalPath
     }
-
-    // Pre-process device-stack arrays to RFC 8941 list strings.
-    // Arrays can't survive the signing pipeline (structured_from converts them
-    // to numbered maps that trigger multipart body encoding). Encoding them as
-    // RFC 8941 strings keeps them as simple header values through signing.
-    // On the Erlang side, hb_ao:normalize_keys is patched (via dev_hbsig.erl
-    // on_load) to parse these strings back into numbered maps for dev_stack.
-    if (Array.isArray(obj["device-stack"])) {
-      obj["device-stack"] = obj["device-stack"].map(item => {
-        if (typeof item === "string") {
-          return `"${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
-        }
-        return `"${String(item)}"`
-      }).join(", ")
-    }
-
-    // Convert Buffer body to UTF-8 string for JSON POST.
-    // JSON can't represent raw binary; Buffers get base64-encoded by JSON.stringify,
-    // which causes content-digest hash mismatch (SHA-256 of base64 ≠ SHA-256 of binary).
-    // Converting to string before signing ensures the signed content matches the JSON value.
     if (Buffer.isBuffer(obj.body)) {
       obj.body = obj.body.toString()
     }
-    // Remove ao-body-key when it points to "body" - the encoding pipeline handles
-    // "body" fields natively without this header. When ao-body-key: "body" is signed,
-    // it causes invalid_commitment because HyperBEAM's to() doesn't produce ao-body-key
-    // for "body" fields (only for non-default names like "data").
     if (obj["ao-body-key"] === "body") {
       delete obj["ao-body-key"]
     }
-    // Add nonce to ensure committed list is never empty.
-    // HyperBEAM rejects messages with empty committed lists as invalid_commitment.
-    // This also prevents replay attacks.
     obj.nonce ??= seed(8)
-    // Always use JSON POST with commitment signatures (beta3-compatible)
+
+    // Check if message has nested objects/arrays (excluding metadata fields).
+    // Nested values require multipart encoding for the signer to properly
+    // handle them. JSON POST can't preserve nested structures through the
+    // signing→verification round-trip because the structured codec changes
+    // the value representation (linkification) before verification.
+    const hasNested = Object.entries(obj).some(([key, value]) => {
+      if (key === "path" || key === "body" || key === "commitments" || key === "ao-types") return false
+      if (Array.isArray(value)) return true
+      if (typeof value === "object" && value !== null
+          && !Buffer.isBuffer(value) && !(value instanceof Blob)) return true
+      return false
+    })
+
+    if (hasNested) {
+      // Direct HTTPSig multipart POST for messages with nested objects.
+      const signedMsg = await this.sign(obj)
+      let response
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await fetch(signedMsg.url, {
+            method: signedMsg.method || "POST",
+            headers: signedMsg.headers,
+            body: signedMsg.body,
+          })
+          break
+        } catch (e) {
+          if (attempt === 2) throw e
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      }
+      if (response.status >= 400) {
+        const text = await response.text()
+        throw new Error(`${response.status}: ${text}`)
+      }
+      return await result(response)
+    }
+
+    // JSON POST with commitment signatures for flat messages.
     // path: false because @path derived component causes mismatch when
     // HyperBEAM reconstructs signature base from committed field "path"
-    // All field values are header strings; ao-types guides type conversion
     const committed = await this.commit(obj, { path: false })
     const jsonReplacer = (key, value) => {
       if (value?.type === "Buffer" && Array.isArray(value?.data)) {
