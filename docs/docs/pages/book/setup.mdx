@@ -4,51 +4,21 @@ Get HyperBEAM running, write your first test, and create a minimal device.
 
 ## Clone the Repository
 
-Clone the wao repository which includes HyperBEAM as a submodule with all dependencies pre-built:
+This book is written for a specific release. Clone and checkout that version:
 
 ```bash [Terminal]
-git clone https://github.com/weavedb/wao.git
-cd wao
-git submodule update --init --recursive
+git clone https://github.com/permaweb/HyperBEAM.git
+cd HyperBEAM
+git checkout v0.9-milestone-3-beta-3
 ```
+
+:::warning
+Code examples in this book may not work with other versions. Always use the version above when following along.
+:::
 
 ## Installation
 
-All installation files are included in the `installation/` directory:
-
-### Step 1: Extract Erlang and setup asdf
-
-```bash [Terminal]
-cd ~ && tar -xJf /path/to/wao/installation/asdf-erlang-rebar.tar.xz
-. ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
-```
-
-### Step 2: Extract pre-built dependencies
-
-```bash [Terminal]
-cd /path/to/wao/HyperBEAM
-tar -xJf ../installation/hyperbeam-prebuilt.tar.xz _build priv .wallet.json
-```
-
-### Step 3: Configure and compile
-
-```bash [Terminal]
-cp ../installation/hyperbeam_rebar.config rebar.config
-rm -f rebar.lock
-rm -rf _build/wamr/lib/CMakeCache.txt _build/wamr/lib/CMakeFiles
-. ~/.asdf/asdf.sh && rebar3 compile
-```
-
-### Step 4: Setup NIFs
-
-```bash [Terminal]
-mkdir -p _build/default/lib/hb/priv
-cp -r priv/* _build/default/lib/hb/priv/
-```
-
-:::tip
-For detailed installation steps and troubleshooting, see `setup.md` in the repository root.
-:::
+Follow the [official installation guide](https://hyperbeam.ar.io/run/running-a-hyperbeam-node.html) to install all dependencies (Erlang/OTP 27, Rebar3, Node.js, and optionally Rust).
 
 ---
 
