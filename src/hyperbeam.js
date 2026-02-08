@@ -3,7 +3,7 @@ import { resolve } from "path"
 import { isNil, map } from "ramda"
 import { toAddr } from "./test.js"
 import HB from "./hb.js"
-import { rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "fs"
+import { rmSync, readFileSync, readdirSync, writeFileSync, existsSync, symlinkSync } from "fs"
 import devs from "./devs.js"
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.hyperbeam" })
@@ -249,6 +249,22 @@ export default class HyperBEAM {
   // Start the genesis-wasm CU server
   async startCU() {
     const cuDir = resolve(this.dirname, "genesis-wasm-server")
+    // Auto-create symlink if genesis-wasm-server doesn't exist at the top level
+    // rebar3 as genesis_wasm compile puts it in _build/genesis_wasm/genesis-wasm-server/
+    // prebuilt tarball puts it in _build/genesis-wasm-server/
+    if (!existsSync(cuDir)) {
+      const candidates = [
+        "_build/genesis-wasm-server",
+        "_build/genesis_wasm/genesis-wasm-server",
+      ]
+      for (const rel of candidates) {
+        if (existsSync(resolve(this.dirname, rel))) {
+          symlinkSync(rel, cuDir)
+          if (this.logs) console.log(`Created symlink: genesis-wasm-server -> ${rel}`)
+          break
+        }
+      }
+    }
     const dbDir = resolve(this.dirname, "cache-mainnet/genesis-wasm")
 
     // Ensure DB directory exists

@@ -42,9 +42,9 @@ There are **two environments**. Setup and test commands differ between them.
 git pull
 git submodule update --init --recursive
 
-# 1. Compile HyperBEAM
+# 1. Compile HyperBEAM (with genesis-wasm CU)
 cd HyperBEAM
-CC=gcc-12 CXX=g++-12 CMAKE_POLICY_VERSION_MINIMUM=3.5 rebar3 compile
+CC=gcc-12 CXX=g++-12 CMAKE_POLICY_VERSION_MINIMUM=3.5 rebar3 as genesis_wasm compile
 cd ..
 
 # 2. Build hbsig
@@ -53,6 +53,8 @@ cd hbsig && yarn build && cd ..
 # 3. Install npm deps
 npm install
 ```
+
+**Note:** `rebar3 as genesis_wasm compile` clones and builds genesis-wasm-server into `_build/genesis_wasm/genesis-wasm-server/`. The top-level symlink (`HyperBEAM/genesis-wasm-server`) is created automatically by `hyperbeam.js` when tests run.
 
 #### Local Test Commands
 
