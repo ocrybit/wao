@@ -7,7 +7,9 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
 ## Rules (STRICT)
 
 1. **HyperBEAM commits go to `wao-m1` branch only** (ask for GitHub token if needed to push)
-2. **NEVER use `asdf.sh` for local tests or setup** - rebar3/erlang/node are available system-wide. Do NOT source `~/.asdf/asdf.sh` in any test commands or setup scripts. On remote (Claude Code), after extracting the asdf tarball during Session Setup, add rebar3/erlang to PATH directly: `export PATH="/root/.asdf/installs/rebar/3.26.0/bin:/root/.asdf/installs/erlang/27.3.4.6/bin:$PATH"`
+2. **Two environments with different setups:**
+   - **Local (user's machine):** rebar3/erlang/node are system-wide. Do NOT source `~/.asdf/asdf.sh`. Test commands do NOT need any PATH setup.
+   - **Remote (Claude Code):** Tools come from asdf tarball. MUST source `. ~/.asdf/asdf.sh` before every test command, OR export PATH: `export PATH="/root/.asdf/installs/rebar/3.26.0/bin:/root/.asdf/installs/erlang/27.3.4.6/bin:$PATH"`
 3. **Only modify these files:**
    - `HyperBEAM/src/dev_hbsig.erl`
    - `HyperBEAM/src/dev_wao.erl`
@@ -25,16 +27,64 @@ Each checkpoint follows a task loop. The todo list tracks progress within the cu
    - Commit and push CLAUDE.md
    - The Merged HB must always point to the LATEST working commit, not the initial rebase commit
 
-## Session Setup (each fresh session)
+## Setup & Running Tests
 
-There are **two setup options**. Choose based on what you need:
+There are **two environments**. Setup and test commands differ between them.
 
-### Option A: WAO/hbsig-enabled HyperBEAM (default for development)
+---
+
+### LOCAL (user's machine)
+
+**Prerequisites:** `gcc-12`, `g++-12`, `rebar3`, `erlang`, `cargo` (Rust), `node`, `yarn` — all system-wide, no asdf.
+
+#### Local Setup
+```bash
+git pull
+git submodule update --init --recursive
+
+# 1. Compile HyperBEAM
+cd HyperBEAM
+CC=gcc-12 CXX=g++-12 CMAKE_POLICY_VERSION_MINIMUM=3.5 rebar3 compile
+cd ..
+
+# 2. Build hbsig
+cd hbsig && yarn build && cd ..
+
+# 3. Install npm deps
+npm install
+```
+
+#### Local Test Commands
+
+Kill processes before each test:
+```bash
+lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; sleep 2
+```
+
+hbsig tests:
+```bash
+HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/<file>.test.js
+```
+
+hyperbeam tests:
+```bash
+node --experimental-wasm-memory64 --test test/hyperbeam/<file>.test.js
+```
+
+---
+
+### REMOTE (Claude Code)
+
+**Prerequisites:** Everything comes from prebuilt tarballs. No compilation needed.
+
+#### Remote Session Setup (each fresh session)
+
+**Option A: WAO/hbsig-enabled HyperBEAM** (default for development)
 
 Includes: wao devices (dev_hbsig, dev_wao), patched hb_cache_control, genesis-wasm-server CU, proxy patches, dev_add_nif.so
 
 ```bash
-# 1. Setup Erlang environment
+# 1. Setup Erlang environment from tarball
 cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
@@ -53,12 +103,12 @@ cd /home/user/wao && tar -xJf installation/wao-prebuilt.tar.xz
 cd /home/user/wao/HyperBEAM && ln -sf _build/genesis-wasm-server genesis-wasm-server
 ```
 
-### Option B: Vanilla Beta-3 HyperBEAM (upstream release, no wao modifications)
+**Option B: Vanilla Beta-3 HyperBEAM** (upstream release, no wao modifications)
 
 Includes: stock upstream v0.9-milestone-3-beta-3, no custom devices, no genesis-wasm-server
 
 ```bash
-# 1. Setup Erlang environment
+# 1. Setup Erlang environment from tarball
 cd ~ && tar -xJf /home/user/wao/installation/asdf-erlang-rebar.tar.xz
 . ~/.asdf/asdf.sh && asdf global erlang 27.3.4.6 && asdf global rebar 3.26.0
 
@@ -71,7 +121,30 @@ cd HyperBEAM && tar -xJf ../installation/hyperbeam-vanilla-beta3.tar.xz
 ls -la .wallet.json _build/default/lib/hb/ebin/hb.beam
 ```
 
-### What the Tarballs Contain
+#### Remote Test Commands
+
+Kill processes before each test:
+```bash
+pkill -9 -f beam.smp 2>/dev/null; pkill -9 -f epmd 2>/dev/null; sleep 2
+```
+
+hbsig tests (prefix with `. ~/.asdf/asdf.sh &&` for erl in PATH):
+```bash
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/erl_json.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/flat.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/structured.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/httpsig.test.js
+. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
+```
+
+hyperbeam tests:
+```bash
+. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/<file>.test.js
+```
+
+#### What the Tarballs Contain
 
 | Tarball | Size | Contents |
 |---------|------|----------|
@@ -80,7 +153,7 @@ ls -la .wallet.json _build/default/lib/hb/ebin/hb.beam
 | `wao-prebuilt.tar.xz` | 62MB | node_modules/, hbsig/node_modules/, hbsig/dist/ (no npm install or yarn build needed) |
 | `asdf-erlang-rebar.tar.xz` | 23MB | Erlang 27.3.4.6, rebar 3.26.0, asdf runtime |
 
-### Verification Steps
+#### Verification Steps
 
 After Option A setup, verify:
 1. `HyperBEAM submodule commit`: `cd HyperBEAM && git log -1 --oneline` (should match Merged HB in checkpoint table)
@@ -91,7 +164,7 @@ After Option A setup, verify:
 6. `CU proxy patch`: `grep EnvHttpProxyAgent HyperBEAM/_build/genesis-wasm-server/src/app.js`
 7. `node_modules exists`: `ls node_modules/.package-lock.json hbsig/dist/index.js`
 
-### Session Checklist
+#### Session Checklist
 
 1. ✅ Extract Erlang/asdf from tarball
 2. ✅ Initialize HyperBEAM submodule
@@ -111,11 +184,7 @@ For each checkpoint with status other than ✅ DONE:
 - Update submodule to point to the merged commit
 - Record the merged HB commit in the checkpoint table
 
-### Task 2: Make Tests 100% Pass (one by one)
-Kill processes before each test:
-```bash
-lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; lsof -ti:6363 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
-```
+### Task 2: Make hbsig Tests 100% Pass (one by one)
 
 Test files in order (by dependency):
 | # | Test File | Purpose | Status |
@@ -130,19 +199,9 @@ Test files in order (by dependency):
 
 **After each fix, re-run ALL tests to confirm no regressions.**
 
-Commands:
-```bash
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/id.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/commit.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/erl_json.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/flat.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/structured.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/httpsig.test.js
-. ~/.asdf/asdf.sh && HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/signer.test.js
-```
+Use the test commands from the "Setup & Running Tests" section above (local or remote).
 
 ### Task 3: Make wao/test/hyperbeam Tests 100% Pass
-Run HyperBEAM integration tests (all files under `test/hyperbeam/`):
 
 | # | Test File | Purpose |
 |---|-----------|---------|
@@ -170,10 +229,7 @@ Run HyperBEAM integration tests (all files under `test/hyperbeam/`):
 | 22 | `upload.test.js` | Upload functionality |
 | 23 | `wao-hb.test.js` | WAO-HyperBEAM integration |
 
-Commands:
-```bash
-. ~/.asdf/asdf.sh && node --experimental-wasm-memory64 --test test/hyperbeam/<test-file>.test.js
-```
+Use the test commands from the "Setup & Running Tests" section above (local or remote).
 
 ### Task 4: Make fail/ Tests Pass ✅ MERGED INTO ORIGINAL FILES
 The 4 Send().receive() tests have been fixed and merged back into their original test files:
@@ -326,60 +382,14 @@ assert.equal(outbox[0].data, "Count: 1")  // was: outbox[0].Data
 
 ---
 
-## Local Setup
+## Additional Notes
 
-### Prerequisites
+### `.env.hyperbeam` Configuration
 
 The `.env.hyperbeam` files (in root and `hbsig/`) configure build environment variables:
 - `CC=gcc-12` / `CXX=g++-12` - Required C/C++ compilers for NIF compilation
 - `CMAKE_POLICY_VERSION_MINIMUM=3.5`
 - `CWD=./HyperBEAM` (root) / `CWD=../HyperBEAM` (hbsig) - HyperBEAM working directory
-
-System requirements: `gcc-12`, `g++-12`, `rebar3`, `erlang`, `cargo` (Rust), `node`, `yarn`
-
-### Local Build & Test
-
-```bash
-git pull
-git submodule update --init --recursive
-
-# 1. Compile HyperBEAM (rebar3 with env from .env.hyperbeam)
-cd HyperBEAM
-CC=gcc-12 CXX=g++-12 CMAKE_POLICY_VERSION_MINIMUM=3.5 rebar3 compile
-cd ..
-
-# 2. Build hbsig (from hbsig folder)
-cd hbsig && yarn build && cd ..
-
-# 3. Install npm deps (from root)
-npm install
-```
-
-**Important:** `yarn build` runs from `hbsig/`, `npm install` runs from project root. The root `npm install` links the local `hbsig` package so tests can import it.
-
-### Running Tests
-
-All test commands run from the **project root**. Kill processes before each test to avoid port conflicts:
-```bash
-lsof -ti:10001 | xargs -r kill -9 2>/dev/null; lsof -ti:10000 | xargs -r kill -9 2>/dev/null; pkill -9 -f beam.smp; pkill -9 -f epmd; pkill -9 -f rebar3; sleep 2
-```
-
-**NEVER run tests in parallel** — HyperBEAM uses fixed ports (10000, 10001) and will hang.
-
-#### hbsig tests (codec/signing unit tests)
-```bash
-HB_TIMEOUT=120 node --experimental-wasm-memory64 --test hbsig/test/<file>.test.js
-```
-
-#### hyperbeam tests (vanilla HyperBEAM integration — no custom devices)
-```bash
-node --experimental-wasm-memory64 --test test/hyperbeam/<file>.test.js
-```
-
-#### wao-hbsig tests (tests that depend on dev_wao, dev_hbsig, or custom devices)
-```bash
-node --experimental-wasm-memory64 --test test/wao-hbsig/<file>.test.js
-```
 
 ### Verify correct branches/commits
 
@@ -392,20 +402,7 @@ git --no-pager log -1 --oneline
 cd HyperBEAM && git --no-pager log -1 --oneline && cd ..
 ```
 
-### Switching to a specific checkpoint
-
-Use the "Done Commit (wao)" from the checkpoint table to reconstruct a working state:
-
-```bash
-git checkout <DONE_COMMIT>  # e.g., fe0ce72 for CP1
-git submodule update --init --recursive
-cd HyperBEAM && CC=gcc-12 CXX=g++-12 CMAKE_POLICY_VERSION_MINIMUM=3.5 rebar3 compile && cd ..
-cd hbsig && yarn build && cd .. && npm install
-```
-
 ### Manually setting submodule to specific commit
-
-If the submodule is not at the correct commit:
 
 ```bash
 cd HyperBEAM

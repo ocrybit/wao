@@ -44,7 +44,7 @@ export default class HyperBEAM {
     } else if (envRebar3 !== undefined) {
       this.rebar3 = envRebar3.toLowerCase() !== "false"
     } else {
-      this.rebar3 = true // default to rebar3 mode
+      this.rebar3 = false // default to direct erl mode (no rebar3 needed)
     }
     this.genesis_wasm = genesis_wasm
     this.cu_port = cu_port
@@ -327,6 +327,9 @@ export default class HyperBEAM {
     let _env = Object.fromEntries(
       Object.entries(process.env).filter(([key]) => !proxyKeys.includes(key))
     )
+    // Prevent rebar3 from trying to fetch/verify packages from hex.pm
+    // All deps are pre-compiled in _build so hex lookups are unnecessary
+    _env.HEX_OFFLINE = "true"
     if (this.diagnostic) _env.DIAGNOSTIC = this.diagnostic
     if (this.c) {
       _env.CC = `gcc-${this.c}`
