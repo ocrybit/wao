@@ -280,6 +280,8 @@ const applyAoTypes = obj => {
             // General atoms (like "ok") become global Symbols
             obj[actualKey] = Symbol.for(strValue)
           }
+        } else if (type === "map" && (value === "" || value === undefined)) {
+          obj[actualKey] = {}
         }
       }
     }
